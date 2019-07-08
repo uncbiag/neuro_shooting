@@ -8,9 +8,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from torch.autograd import Function
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='odenet')
+parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
 parser.add_argument('--tol', type=float, default=1e-3)
 parser.add_argument('--adjoint', type=eval, default=False, choices=[True, False])
 parser.add_argument('--downsampling-method', type=str, default='conv', choices=['conv', 'res'])
@@ -134,46 +135,64 @@ class ODEBlock(nn.Module):
         self.odefunc.nfe = value
 
 
-class ShootingBlock(nn.Module):
+class ShootingForward(Function):
 
-    def __init__(self, x_params, p_params):
-        super(ShootingBlock, self).__init__()
+    @staticmethod
+    def forward(xsample, x_params, p_params):
 
-        self.integration_time = torch.tensor([0, 1]).float()
-        self.x_params = x_params
-        self.p_params = p_params
-
-    def forward(self, x):
-        self.integration_time = self.integration_time.type_as(x)
-
-        # TODO: these can be more exotic in the future
-        Mbar = torch.eye()
-        Mbar_b = torch.eye()
+        d = xsample.shape[0]
 
         # solve equation 3 for theta
-        theta = np.linalg.inv(Mbar) * - sum(self.p_params * nn.functional.relu(self.x_params))
+        def theta():
+            matprod = torch.mm(-p_params, nn.functional.relu(x_params))
+            # return np.linalg.inv(Mbar) * matprod
+            return matprod
 
         # solve equation 4 for b
-        b = np.linalg.inv(Mbar_b) * - sum(self.p_params)
+        def bias():
+            # return np.linalg.inv(Mbar_b) * torch.mm(-p_params, torch.ones([d, 1]))
+            return torch.mm(-p_params, torch.ones([d, 1]))
 
         # right hand side of equation 1
         def odefunc_x(t, x):
-            return theta[t] * nn.functional.relu(x) + b[t]
+            return theta() * nn.functional.relu(x) + bias()
 
         # right hand side of equation 2
         def odefunc_p(t, p):
-            return theta[t] * nn.functional.relu(x) + b[t]
+            Drelu = torch.eye(d)
+            return Drelu * theta().t * p
 
-        # Equation 1 at time 1 for initial condition x
-        out = odeint(odefunc_x, x, self.integration_time, rtol=args.tol, atol=args.tol)
+        # Equation 1 at time 1 for initial condition xsample
+        out = odeint(odefunc_x, xsample, 1, rtol=args.tol, atol=args.tol)
 
         # Equation 1 at time 1 for initial conditions x_params
-        self.x_params = odeint(odefunc_x, self.x_params, 1, rtol=args.tol, atol=args.tol)
+        x_params = odeint(odefunc_x, x_params, 1, rtol=args.tol, atol=args.tol)
 
         # Equation 2 at time 1 for initial conditions p_params
-        self.p_params = odeint(odefunc_p, self.p_params, 1, rtol=args.tol, atol=args.tol)
+        p_params = odeint(odefunc_p, p_params, 1, rtol=args.tol, atol=args.tol)
 
-        return out[1]
+        return out, x_params, p_params
+
+class ShootingBlock(nn.Module):
+    def __init__(self, K, d):
+        super(ShootingBlock, self).__init__()
+
+        # TODO: these can be more exotic in the future
+        self.Mbar = torch.eye(d)
+        self.Mbar_b = torch.eye(d)
+
+        self.x_params = nn.Parameter(torch.Tensor(d, K))
+        self.p_params = nn.Parameter(torch.Tensor(d, K))
+
+        self.x_params.data.uniform_(-0.1, 0.1)
+        self.p_params.data.uniform_(-0.1, 0.1)
+
+    def forward(self, xsample): # x is d by m tensor
+
+        out, self.x_params, self.p_params = ShootingForward.apply(xsample, self.x_params, self.p_params)
+
+        return out
+
 
 
 class Flatten(nn.Module):
@@ -347,7 +366,10 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [ShootingBlock()]
+        # TODO: don't hardcode K
+        K = 50
+        d = 64
+        feature_layers = [ShootingBlock(K,d)]
     else:
         feature_layers = [ResBlock(64, 64) for _ in range(6)]
 
