@@ -11,7 +11,7 @@ import torchvision.transforms as transforms
 from torch.autograd import Function
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
+parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='odenet')
 parser.add_argument('--tol', type=float, default=1e-3)
 parser.add_argument('--adjoint', type=eval, default=False, choices=[True, False])
 parser.add_argument('--downsampling-method', type=str, default='conv', choices=['conv', 'res'])
@@ -138,9 +138,11 @@ class ODEBlock(nn.Module):
 class ShootingForward(Function):
 
     @staticmethod
-    def forward(xsample, x_params, p_params):
+    def forward(ctx, input, x_params, p_params):
 
-        d = xsample.shape[0]
+        ctx.save_for_backward(input, x_params, p_params)
+
+        d = input.shape[0]
 
         # solve equation 3 for theta
         def theta():
@@ -163,7 +165,7 @@ class ShootingForward(Function):
             return Drelu * theta().t * p
 
         # Equation 1 at time 1 for initial condition xsample
-        out = odeint(odefunc_x, xsample, 1, rtol=args.tol, atol=args.tol)
+        out = odeint(odefunc_x, input, 1, rtol=args.tol, atol=args.tol)
 
         # Equation 1 at time 1 for initial conditions x_params
         x_params = odeint(odefunc_x, x_params, 1, rtol=args.tol, atol=args.tol)
@@ -187,11 +189,10 @@ class ShootingBlock(nn.Module):
         self.x_params.data.uniform_(-0.1, 0.1)
         self.p_params.data.uniform_(-0.1, 0.1)
 
-    def forward(self, xsample): # x is d by m tensor
+    def forward(self, xsample):
 
-        out, self.x_params, self.p_params = ShootingForward.apply(xsample, self.x_params, self.p_params)
+        return ShootingForward.apply(xsample, self.x_params, self.p_params)
 
-        return out
 
 
 
