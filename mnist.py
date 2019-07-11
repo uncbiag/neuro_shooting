@@ -8,7 +8,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from torch.autograd import Function
+
+from functools import partial
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='odenet')
@@ -135,64 +136,83 @@ class ODEBlock(nn.Module):
         self.odefunc.nfe = value
 
 
-class ShootingForward(Function):
-
-    @staticmethod
-    def forward(ctx, input, x_params, p_params):
-
-        ctx.save_for_backward(input, x_params, p_params)
-
-        d = input.shape[0]
-
-        # solve equation 3 for theta
-        def theta():
-            matprod = torch.mm(-p_params, nn.functional.relu(x_params))
-            # return np.linalg.inv(Mbar) * matprod
-            return matprod
-
-        # solve equation 4 for b
-        def bias():
-            # return np.linalg.inv(Mbar_b) * torch.mm(-p_params, torch.ones([d, 1]))
-            return torch.mm(-p_params, torch.ones([d, 1]))
-
-        # right hand side of equation 1
-        def odefunc_x(t, x):
-            return theta() * nn.functional.relu(x) + bias()
-
-        # right hand side of equation 2
-        def odefunc_p(t, p):
-            Drelu = torch.eye(d)
-            return Drelu * theta().t * p
-
-        # Equation 1 at time 1 for initial condition xsample
-        out = odeint(odefunc_x, input, 1, rtol=args.tol, atol=args.tol)
-
-        # Equation 1 at time 1 for initial conditions x_params
-        x_params = odeint(odefunc_x, x_params, 1, rtol=args.tol, atol=args.tol)
-
-        # Equation 2 at time 1 for initial conditions p_params
-        p_params = odeint(odefunc_p, p_params, 1, rtol=args.tol, atol=args.tol)
-
-        return out, x_params, p_params
-
+# TODO: copy and pasted from spiral.py. Need to customize for mnist
 class ShootingBlock(nn.Module):
-    def __init__(self, K, d):
+    def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
         super(ShootingBlock, self).__init__()
 
-        # TODO: these can be more exotic in the future
-        self.Mbar = torch.eye(d)
-        self.Mbar_b = torch.eye(d)
+        self.K = batch_y0.shape[0]
+        self.d = batch_y0.shape[2]
 
-        self.x_params = nn.Parameter(torch.Tensor(d, K))
-        self.p_params = nn.Parameter(torch.Tensor(d, K))
+        if Mbar is None:
+            self.Mbar = torch.eye(self.d)
+        else:
+            self.Mbar = Mbar
+        if Mbar_b is None:
+            self.Mbar_b = torch.eye(self.d)
+        else:
+            self.Mbar_b = Mbar_b
 
-        self.x_params.data.uniform_(-0.1, 0.1)
-        self.p_params.data.uniform_(-0.1, 0.1)
+        self.x_params = nn.Parameter(batch_y0)
+        self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
 
-    def forward(self, xsample):
 
-        return ShootingForward.apply(xsample, self.x_params, self.p_params)
+    def forward(self, input, batch_t):
+        """
 
+        :param input: 3D tensor of minibatch x 1 x feature dimension holding initial conditions
+        :param batch_t: 1D tensor holding time points for evaluation
+        :return: |batch_t| x minibatch x 1 x feature dimension
+        """
+
+        # solve Equation 3 for theta
+        theta = torch.matmul(-self.p_params.squeeze().transpose(0, 1), nn.functional.relu(self.x_params.squeeze()))
+        theta = torch.matmul(torch.inverse(self.Mbar), theta)
+
+        # solve Equation 4 for bias
+        bias = torch.matmul(-self.p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
+        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
+
+        # right hand side of Equation 1
+        def odefunc_x(t, x, theta, bias):
+            shapex = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
+            prod = torch.matmul(theta, shapex)
+            rhs = prod + bias
+            return rhs.unsqueeze(dim=1).transpose(0, 2)
+
+        # right hand side of Equation 2
+        def odefunc_p(t, p, x, theta):
+            # Drelu = torch.eye(d)
+            # prod = torch.matmul(Drelu,theta.transpose(0,1))
+            # rhs = torch.matmul(prod, p.squeeze().transpose(0,1))
+            rhs = []
+            for i in range(0, self.K):
+                Drelu = torch.diag((x[i, 0, :] >= 0).type(torch.FloatTensor))
+                prod = torch.matmul(Drelu, theta.transpose(0, 1))
+                rhs.append(torch.matmul(prod, p[i, :, :].transpose(0, 1)))
+            rhs = torch.cat(rhs, 1)
+
+            return rhs.unsqueeze(dim=1).transpose(0, 2)
+
+        # Equation 1 with INITIAL conditions x_params
+        func = partial(odefunc_x, theta=theta, bias=bias)
+        x_params = odeint(func, self.x_params, torch.tensor([1]).float())
+        x_params = torch.squeeze(x_params, dim=0)
+
+        # Equation 2 with FINAL conditions p_params
+        func = partial(odefunc_p, x=x_params, theta=theta)
+        p_params = odeint(func, self.p_params, torch.tensor([-1]).float())
+        p_params = torch.squeeze(p_params, dim=0)
+
+        # Once again solve Equations 3 and 4
+        theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(x_params.squeeze()))
+        bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
+
+        # Equation 1 for initial condition xsample
+        func = partial(odefunc_x, theta=theta, bias=bias)
+        output = odeint(func, input, batch_t)
+
+        return output
 
 
 
