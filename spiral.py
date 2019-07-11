@@ -16,7 +16,7 @@ parser.add_argument('--data_size', type=int, default=1000)
 parser.add_argument('--batch_time', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=20)
 parser.add_argument('--niters', type=int, default=2000)
-parser.add_argument('--test_freq', type=int, default=20)
+parser.add_argument('--test_freq', type=int, default=1)
 parser.add_argument('--viz', action='store_true')
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--adjoint', action='store_true')
@@ -186,24 +186,26 @@ class ShootingBlock(nn.Module):
             for i in range(0, self.K):
                 Drelu = torch.diag((x[i, 0, :] >= 0).type(torch.FloatTensor))
                 prod = torch.matmul(Drelu, theta.transpose(0, 1))
-                rhs.append(torch.matmul(prod, p[i, :, :].transpose(0, 1)))
+                rhs.append(torch.matmul(-prod, p[i, :, :].transpose(0, 1)))
             rhs = torch.cat(rhs, 1)
 
             return rhs.unsqueeze(dim=1).transpose(0, 2)
 
         # Equation 1 with INITIAL conditions x_params
         func = partial(odefunc_x, theta=theta, bias=bias)
-        x_params = odeint(func, self.x_params, torch.tensor([1]).float())
-        x_params = torch.squeeze(x_params, dim=0)
+        x_params = odeint(func, self.x_params, torch.tensor([0, 1]).float())
+        x_params = torch.squeeze(x_params[1,:,:,:], dim=0)
 
         # Equation 2 with FINAL conditions p_params
         func = partial(odefunc_p, x=x_params, theta=theta)
-        p_params = odeint(func, self.p_params, torch.tensor([-1]).float())
-        p_params = torch.squeeze(p_params, dim=0)
+        p_params = odeint(func, self.p_params, torch.tensor([0, 1]).float())
+        p_params = torch.squeeze(p_params[1,:,:,:], dim=0)
 
         # Once again solve Equations 3 and 4
         theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(x_params.squeeze()))
+        theta = torch.matmul(torch.inverse(self.Mbar), theta)
         bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
+        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
 
         # Equation 1 for initial condition xsample
         func = partial(odefunc_x, theta=theta, bias=bias)
@@ -242,9 +244,9 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 10
-        Mbar = 0.001*torch.eye(2)
-        Mbar_b = 0.001*torch.eye(2)
+        K = 50
+        Mbar = 0.01*torch.eye(2)
+        Mbar_b = 0.01*torch.eye(2)
         #
 
         batch_y0, batch_t, batch_y = get_batch(K)
