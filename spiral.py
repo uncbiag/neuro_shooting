@@ -190,20 +190,20 @@ class ShootingBlock2(nn.Module):
 
 
 class ShootingBlock(nn.Module):
-    def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
+    def __init__(self, batch_y0, Kernel_theta=None, Kernel_b=None):
         super(ShootingBlock, self).__init__()
 
         self.K = batch_y0.shape[0]
         self.d = batch_y0.shape[2]
 
-        if Mbar is None:
-            self.Mbar = float(self.K)*torch.eye(self.d)
+        if Kernel_theta is None:
+            self.Kernel_theta = float(self.K) * torch.eye(self.d)
         else:
-            self.Mbar = float(self.K)*Mbar
-        if Mbar_b is None:
-            self.Mbar_b = float(self.K)*torch.eye(self.d)
+            self.Kernel_theta = float(self.K) * Kernel_theta
+        if Kernel_b is None:
+            self.Kernel_b = float(self.K) * torch.eye(self.d)
         else:
-            self.Mbar_b = float(self.K)*Mbar_b
+            self.Kernel_b = float(self.K) * Kernel_b
 
         self.x_params = nn.Parameter(batch_y0)
         self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
@@ -219,11 +219,11 @@ class ShootingBlock(nn.Module):
 
         # solve Equation 3 for theta
         theta = torch.matmul(-self.p_params.squeeze().transpose(0, 1), nn.functional.relu(self.x_params.squeeze()))
-        theta = torch.matmul(torch.inverse(self.Mbar), theta)
+        theta = torch.matmul(torch.inverse(self.Kernel_theta), theta)
 
         # solve Equation 4 for bias
         bias = torch.matmul(-self.p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
-        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
+        bias = torch.matmul(torch.inverse(self.Kernel_b), bias)
 
         # right hand side of Equation 1
         def odefunc_x(t, x, theta, bias):
@@ -258,9 +258,9 @@ class ShootingBlock(nn.Module):
 
         # Once again solve Equations 3 and 4
         theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(x_params.squeeze()))
-        theta = torch.matmul(torch.inverse(self.Mbar), theta)
+        theta = torch.matmul(torch.inverse(self.Kernel_theta), theta)
         bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
-        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
+        bias = torch.matmul(torch.inverse(self.Kernel_b), bias)
 
         # Equation 1 for initial condition xsample
         func = partial(odefunc_x, theta=theta, bias=bias)
@@ -301,12 +301,12 @@ if __name__ == '__main__':
         # parameters to play with for shooting
         K = 40
         #Mbar = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
-        Mbar = torch.tensor([[1.0, 0.2], [0.2, 1.0]])
+        Kernel_theta = torch.tensor([[1.0, 0.2], [0.2, 1.0]])
         #Mbar_b = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
-        Mbar_b = torch.tensor([[1.0, 0.1], [0.1, 1.0]])
+        Kernel_b = torch.tensor([[1.0, 0.1], [0.1, 1.0]])
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock2(batch_y0, Mbar, Mbar_b)
+        shooting = ShootingBlock2(batch_y0, Kernel_theta, Kernel_b)
 
         ### uncomment this line to get Susan's implementation
         #shooting = ShootingBlock(batch_y0, Mbar, Mbar_b)
