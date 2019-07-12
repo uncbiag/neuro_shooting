@@ -133,6 +133,61 @@ class ODEFunc(nn.Module):
     def forward(self, t, y):
         return self.net(y**3)
 
+class ShootingBlock2(nn.Module):
+    def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
+        super(ShootingBlock, self).__init__()
+
+        self.K = batch_y0.shape[0]
+        self.d = batch_y0.shape[2]
+
+        if Mbar is None:
+            self.Mbar = 1./float(self.K)*torch.eye(self.d)
+        else:
+            self.Mbar = 1./float(self.K)*Mbar
+        if Mbar_b is None:
+            self.Mbar_b = 1./float(self.K)*torch.eye(self.d)
+        else:
+            self.Mbar_b = 1./float(self.K)*Mbar_b
+
+        self.q_params = nn.Parameter(batch_y0)
+        self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
+
+
+    def forward(self, input, batch_t):
+        """
+
+        :param input: 3D tensor of minibatch x 1 x feature dimension holding initial conditions
+        :param batch_t: 1D tensor holding time points for evaluation
+        :return: |batch_t| x minibatch x 1 x feature dimension
+        """
+        def odefunc(t,z):
+            x, q_params, p_params = z[0],z[1],z[2]
+            # solve Equation 3 for theta
+            theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(q_params.squeeze()))
+            theta = torch.matmul(self.Mbar, theta)
+
+            # solve Equation 4 for bias
+            bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
+            bias = torch.matmul(self.Mbar_b, bias)
+
+            temp_q = nn.functional.relu(q_params.squeeze(dim=1).transpose(0, 1))
+            temp_x = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
+            dot_x = torch.matmul(theta, temp_x) + bias
+            dot_q = torch.matmul(theta, temp_q) + bias
+            dot_x = dot_x.unsqueeze(dim=1).transpose(0, 2)
+            dot_q = dot_q.unsqueeze(dim=1).transpose(0, 2)
+            rhs = []
+            for i in range(0, self.K):
+                Drelu = torch.diag((q_params[i, 0, :] >= 0).type(torch.FloatTensor))
+                prod = torch.matmul(Drelu, theta.transpose(0, 1))
+                rhs.append(torch.matmul(-prod, p_params[i, :, :].transpose(0, 1)))
+            rhs = torch.cat(rhs, 1)
+            rhs = rhs.unsqueeze(dim=1).transpose(0, 2)
+            return (dot_x,dot_q,rhs)
+
+        output,dummy1,dummy2 = odeint(odefunc, (input,self.q_params,self.p_params), batch_t)
+        return output
+
 
 class ShootingBlock(nn.Module):
     def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
@@ -142,13 +197,13 @@ class ShootingBlock(nn.Module):
         self.d = batch_y0.shape[2]
 
         if Mbar is None:
-            self.Mbar = torch.eye(self.d)
+            self.Mbar = float(self.K)*torch.eye(self.d)
         else:
-            self.Mbar = Mbar
+            self.Mbar = float(self.K)*Mbar
         if Mbar_b is None:
-            self.Mbar_b = torch.eye(self.d)
+            self.Mbar_b = float(self.K)*torch.eye(self.d)
         else:
-            self.Mbar_b = Mbar_b
+            self.Mbar_b = float(self.K)*Mbar_b
 
         self.x_params = nn.Parameter(batch_y0)
         self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
@@ -216,7 +271,7 @@ class ShootingBlock(nn.Module):
 class RunningAverageMeter(object):
     """Computes and stores the average and current value"""
 
-    def __init__(self, momentum=0.99):
+    def __init__(self, momentum=0.9):
         self.momentum = momentum
         self.reset()
 
@@ -244,14 +299,19 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 50
-        Mbar = 0.01*torch.eye(2)
-        Mbar_b = 0.01*torch.eye(2)
-        #
+        K = 40
+        #Mbar = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
+        Mbar = torch.tensor([[1.0, 0.2], [0.2, 1.0]])
+        #Mbar_b = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
+        Mbar_b = torch.tensor([[1.0, 0.1], [0.1, 1.0]])
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock(batch_y0, Mbar, Mbar_b)
-        optimizer = optim.RMSprop(shooting.parameters(), lr=1e-3)
+        shooting = ShootingBlock2(batch_y0, Mbar, Mbar_b)
+
+        ### uncomment this line to get Susan's implementation
+        #shooting = ShootingBlock(batch_y0, Mbar, Mbar_b)
+
+        optimizer = optim.RMSprop(shooting.parameters(), lr=2e-4)
 
     end = time.time()
 
