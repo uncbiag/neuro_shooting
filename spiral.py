@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import custom_lr_scheduler
+
 from functools import partial
 
 parser = argparse.ArgumentParser('ODE demo')
@@ -179,21 +181,19 @@ class ShootingBlock(nn.Module):
 
         # right hand side of Equation 2
         def odefunc_p(t, p, x, theta):
-            rhs = []
-            for i in range(0, self.K):
-                Drelu = torch.diag((x[i, 0, :] >= 0).type(torch.FloatTensor))
-                prod = torch.matmul(Drelu, theta.transpose(0, 1))
-                rhs.append(torch.matmul(-prod, p[i, :, :].transpose(0, 1)))
-            rhs = torch.cat(rhs, 1)
-
-            return rhs.unsqueeze(dim=1).transpose(0, 2)
+            a = (x>=0).type(torch.FloatTensor).squeeze(dim=1)
+            b = torch.eye(a.size(1))
+            c = a.unsqueeze(2).expand(*a.size(), a.size(1))
+            Drelu = c * b
+            repeat_theta = torch.cat(self.K*[theta.transpose(0, 1).unsqueeze(0)])
+            prod = torch.einsum('ijk,ikl->ijl', [Drelu, repeat_theta])
+            return torch.einsum('ijk,ikl->ijl', [-prod, p.transpose(1,2)]).transpose(1,2)
 
         def RHS(t, concat_input, theta, bias, K):
             x = torch.index_select(concat_input,0,torch.arange(0,K))
             p = torch.index_select(concat_input,0,torch.arange(K,2*K))
             input = torch.index_select(concat_input,0,torch.arange(2*self.K,concat_input.shape[0]))
             return torch.cat((odefunc_x(t, x, theta, bias), odefunc_p(t, p, x, theta), odefunc_x(t, input, theta, bias)),0)
-
 
         func = partial(RHS, theta=theta,bias=bias, K=self.K)
         concat_input = torch.cat((self.x_params,self.p_params,input),0)
@@ -231,19 +231,22 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 15
-        Mbar = None
-        Mbar_b = None
+        K = 25
+        Mbar = 2*torch.eye(2)
+        Mbar_b = 2*torch.eye(2)
         #
 
-        batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock(batch_y0, Mbar, Mbar_b)
+        x_params, _, _ = get_batch(K)
+        shooting = ShootingBlock(x_params, Mbar, Mbar_b)
         optimizer = optim.RMSprop(shooting.parameters(), lr=1e-3)
+        # there are also parameters that can be adjusted in the custom lr scheduler
+        scheduler = custom_lr_scheduler.CustomReduceLROnPlateau(optimizer, 'min', verbose=True)
 
     end = time.time()
 
     time_meter = RunningAverageMeter(0.97)
     loss_meter = RunningAverageMeter(0.97)
+
 
     for itr in range(1, args.niters + 1):
 
@@ -258,6 +261,13 @@ if __name__ == '__main__':
         loss = torch.mean(torch.abs(pred_y - batch_y))
         loss.backward()
         optimizer.step()
+
+        # between epochs
+        if not is_odenet:
+            scheduler.step(loss.item())
+            if scheduler.has_convergence_been_reached():
+                print('INFO: Converence has been reached. Stopping iterations.')
+                break
 
         time_meter.update(time.time() - end)
         loss_meter.update(loss.item())
