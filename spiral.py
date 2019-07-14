@@ -16,7 +16,7 @@ parser.add_argument('--data_size', type=int, default=1000)
 parser.add_argument('--batch_time', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=20)
 parser.add_argument('--niters', type=int, default=2000)
-parser.add_argument('--test_freq', type=int, default=1)
+parser.add_argument('--test_freq', type=int, default=20)
 parser.add_argument('--viz', action='store_true')
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--adjoint', action='store_true')
@@ -172,16 +172,13 @@ class ShootingBlock(nn.Module):
 
         # right hand side of Equation 1
         def odefunc_x(t, x, theta, bias):
-            shapex = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
-            prod = torch.matmul(theta, shapex)
+            relux = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
+            prod = torch.matmul(theta, relux)
             rhs = prod + bias
             return rhs.unsqueeze(dim=1).transpose(0, 2)
 
         # right hand side of Equation 2
         def odefunc_p(t, p, x, theta):
-            # Drelu = torch.eye(d)
-            # prod = torch.matmul(Drelu,theta.transpose(0,1))
-            # rhs = torch.matmul(prod, p.squeeze().transpose(0,1))
             rhs = []
             for i in range(0, self.K):
                 Drelu = torch.diag((x[i, 0, :] >= 0).type(torch.FloatTensor))
@@ -191,27 +188,17 @@ class ShootingBlock(nn.Module):
 
             return rhs.unsqueeze(dim=1).transpose(0, 2)
 
-        # Equation 1 with INITIAL conditions x_params
-        func = partial(odefunc_x, theta=theta, bias=bias)
-        x_params = odeint(func, self.x_params, torch.tensor([0, 1]).float())
-        x_params = torch.squeeze(x_params[1,:,:,:], dim=0)
+        def RHS(t, concat_input, theta, bias, K):
+            x = torch.index_select(concat_input,0,torch.arange(0,K))
+            p = torch.index_select(concat_input,0,torch.arange(K,2*K))
+            input = torch.index_select(concat_input,0,torch.arange(2*self.K,concat_input.shape[0]))
+            return torch.cat((odefunc_x(t, x, theta, bias), odefunc_p(t, p, x, theta), odefunc_x(t, input, theta, bias)),0)
 
-        # Equation 2 with FINAL conditions p_params
-        func = partial(odefunc_p, x=x_params, theta=theta)
-        p_params = odeint(func, self.p_params, torch.tensor([0, 1]).float())
-        p_params = torch.squeeze(p_params[1,:,:,:], dim=0)
 
-        # Once again solve Equations 3 and 4
-        theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(x_params.squeeze()))
-        theta = torch.matmul(torch.inverse(self.Mbar), theta)
-        bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
-        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
-
-        # Equation 1 for initial condition xsample
-        func = partial(odefunc_x, theta=theta, bias=bias)
-        output = odeint(func, input, batch_t)
-
-        return output
+        func = partial(RHS, theta=theta,bias=bias, K=self.K)
+        concat_input = torch.cat((self.x_params,self.p_params,input),0)
+        output = odeint(func,concat_input,batch_t)
+        return torch.index_select(output,1,torch.arange(2*self.K,concat_input.shape[0]))
 
 class RunningAverageMeter(object):
     """Computes and stores the average and current value"""
@@ -244,9 +231,9 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 50
-        Mbar = 0.01*torch.eye(2)
-        Mbar_b = 0.01*torch.eye(2)
+        K = 15
+        Mbar = None
+        Mbar_b = None
         #
 
         batch_y0, batch_t, batch_y = get_batch(K)
@@ -282,8 +269,8 @@ if __name__ == '__main__':
                     pred_y = odeint(func, true_y0, t)
                     loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
                     print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-                    # TODO: visualize does not work for odenet
-                    visualize(true_y, pred_y, func, ii)
+                    # TODO: default visualize does not work for odenet
+                    # visualize(true_y, pred_y, func, ii)
                 else:
                     pred_y = shooting(true_y0.unsqueeze(dim=0), t)
                     loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
