@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import custom_lr_scheduler
+
 from functools import partial
 
 parser = argparse.ArgumentParser('ODE demo')
@@ -16,7 +18,7 @@ parser.add_argument('--data_size', type=int, default=1000)
 parser.add_argument('--batch_time', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=20)
 parser.add_argument('--niters', type=int, default=2000)
-parser.add_argument('--test_freq', type=int, default=1)
+parser.add_argument('--test_freq', type=int, default=20)
 parser.add_argument('--viz', action='store_true')
 parser.add_argument('--gpu', type=int, default=0)
 parser.add_argument('--adjoint', action='store_true')
@@ -133,7 +135,8 @@ class ODEFunc(nn.Module):
     def forward(self, t, y):
         return self.net(y**3)
 
-class ShootingBlock2(nn.Module):
+
+class ShootingBlock(nn.Module):
     def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
         super(ShootingBlock, self).__init__()
 
@@ -141,69 +144,13 @@ class ShootingBlock2(nn.Module):
         self.d = batch_y0.shape[2]
 
         if Mbar is None:
-            self.Mbar = 1./float(self.K)*torch.eye(self.d)
+            self.Mbar = torch.eye(self.d)
         else:
-            self.Mbar = 1./float(self.K)*Mbar
+            self.Mbar = Mbar
         if Mbar_b is None:
-            self.Mbar_b = 1./float(self.K)*torch.eye(self.d)
+            self.Mbar_b = torch.eye(self.d)
         else:
-            self.Mbar_b = 1./float(self.K)*Mbar_b
-
-        self.q_params = nn.Parameter(batch_y0)
-        self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
-
-
-    def forward(self, input, batch_t):
-        """
-
-        :param input: 3D tensor of minibatch x 1 x feature dimension holding initial conditions
-        :param batch_t: 1D tensor holding time points for evaluation
-        :return: |batch_t| x minibatch x 1 x feature dimension
-        """
-        def odefunc(t,z):
-            x, q_params, p_params = z[0],z[1],z[2]
-            # solve Equation 3 for theta
-            theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(q_params.squeeze()))
-            theta = torch.matmul(self.Mbar, theta)
-
-            # solve Equation 4 for bias
-            bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
-            bias = torch.matmul(self.Mbar_b, bias)
-
-            temp_q = nn.functional.relu(q_params.squeeze(dim=1).transpose(0, 1))
-            temp_x = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
-            dot_x = torch.matmul(theta, temp_x) + bias
-            dot_q = torch.matmul(theta, temp_q) + bias
-            dot_x = dot_x.unsqueeze(dim=1).transpose(0, 2)
-            dot_q = dot_q.unsqueeze(dim=1).transpose(0, 2)
-            rhs = []
-            for i in range(0, self.K):
-                Drelu = torch.diag((q_params[i, 0, :] >= 0).type(torch.FloatTensor))
-                prod = torch.matmul(Drelu, theta.transpose(0, 1))
-                rhs.append(torch.matmul(-prod, p_params[i, :, :].transpose(0, 1)))
-            rhs = torch.cat(rhs, 1)
-            rhs = rhs.unsqueeze(dim=1).transpose(0, 2)
-            return (dot_x,dot_q,rhs)
-
-        output,dummy1,dummy2 = odeint(odefunc, (input,self.q_params,self.p_params), batch_t)
-        return output
-
-
-class ShootingBlock(nn.Module):
-    def __init__(self, batch_y0, Kernel_theta=None, Kernel_b=None):
-        super(ShootingBlock, self).__init__()
-
-        self.K = batch_y0.shape[0]
-        self.d = batch_y0.shape[2]
-
-        if Kernel_theta is None:
-            self.Kernel_theta = float(self.K) * torch.eye(self.d)
-        else:
-            self.Kernel_theta = float(self.K) * Kernel_theta
-        if Kernel_b is None:
-            self.Kernel_b = float(self.K) * torch.eye(self.d)
-        else:
-            self.Kernel_b = float(self.K) * Kernel_b
+            self.Mbar_b = Mbar_b
 
         self.x_params = nn.Parameter(batch_y0)
         self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
@@ -219,59 +166,44 @@ class ShootingBlock(nn.Module):
 
         # solve Equation 3 for theta
         theta = torch.matmul(-self.p_params.squeeze().transpose(0, 1), nn.functional.relu(self.x_params.squeeze()))
-        theta = torch.matmul(torch.inverse(self.Kernel_theta), theta)
+        theta = torch.matmul(torch.inverse(self.Mbar), theta)
 
         # solve Equation 4 for bias
         bias = torch.matmul(-self.p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
-        bias = torch.matmul(torch.inverse(self.Kernel_b), bias)
+        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
 
         # right hand side of Equation 1
         def odefunc_x(t, x, theta, bias):
-            shapex = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
-            prod = torch.matmul(theta, shapex)
+            relux = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
+            prod = torch.matmul(theta, relux)
             rhs = prod + bias
             return rhs.unsqueeze(dim=1).transpose(0, 2)
 
         # right hand side of Equation 2
         def odefunc_p(t, p, x, theta):
-            # Drelu = torch.eye(d)
-            # prod = torch.matmul(Drelu,theta.transpose(0,1))
-            # rhs = torch.matmul(prod, p.squeeze().transpose(0,1))
-            rhs = []
-            for i in range(0, self.K):
-                Drelu = torch.diag((x[i, 0, :] >= 0).type(torch.FloatTensor))
-                prod = torch.matmul(Drelu, theta.transpose(0, 1))
-                rhs.append(torch.matmul(-prod, p[i, :, :].transpose(0, 1)))
-            rhs = torch.cat(rhs, 1)
+            a = (x>=0).type(torch.FloatTensor).squeeze(dim=1)
+            b = torch.eye(a.size(1))
+            c = a.unsqueeze(2).expand(*a.size(), a.size(1))
+            Drelu = c * b
+            repeat_theta = torch.cat(self.K*[theta.transpose(0, 1).unsqueeze(0)])
+            prod = torch.einsum('ijk,ikl->ijl', [Drelu, repeat_theta])
+            return torch.einsum('ijk,ikl->ijl', [-prod, p.transpose(1,2)]).transpose(1,2)
 
-            return rhs.unsqueeze(dim=1).transpose(0, 2)
+        def RHS(t, concat_input, theta, bias, K):
+            x = torch.index_select(concat_input,0,torch.arange(0,K))
+            p = torch.index_select(concat_input,0,torch.arange(K,2*K))
+            input = torch.index_select(concat_input,0,torch.arange(2*self.K,concat_input.shape[0]))
+            return torch.cat((odefunc_x(t, x, theta, bias), odefunc_p(t, p, x, theta), odefunc_x(t, input, theta, bias)),0)
 
-        # Equation 1 with INITIAL conditions x_params
-        func = partial(odefunc_x, theta=theta, bias=bias)
-        x_params = odeint(func, self.x_params, torch.tensor([0, 1]).float())
-        x_params = torch.squeeze(x_params[1,:,:,:], dim=0)
-
-        # Equation 2 with FINAL conditions p_params
-        func = partial(odefunc_p, x=x_params, theta=theta)
-        p_params = odeint(func, self.p_params, torch.tensor([0, 1]).float())
-        p_params = torch.squeeze(p_params[1,:,:,:], dim=0)
-
-        # Once again solve Equations 3 and 4
-        theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(x_params.squeeze()))
-        theta = torch.matmul(torch.inverse(self.Kernel_theta), theta)
-        bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
-        bias = torch.matmul(torch.inverse(self.Kernel_b), bias)
-
-        # Equation 1 for initial condition xsample
-        func = partial(odefunc_x, theta=theta, bias=bias)
-        output = odeint(func, input, batch_t)
-
-        return output
+        func = partial(RHS, theta=theta,bias=bias, K=self.K)
+        concat_input = torch.cat((self.x_params,self.p_params,input),0)
+        output = odeint(func,concat_input,batch_t)
+        return torch.index_select(output,1,torch.arange(2*self.K,concat_input.shape[0]))
 
 class RunningAverageMeter(object):
     """Computes and stores the average and current value"""
 
-    def __init__(self, momentum=0.9):
+    def __init__(self, momentum=0.99):
         self.momentum = momentum
         self.reset()
 
@@ -299,24 +231,22 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 40
-        #Mbar = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
-        Kernel_theta = torch.tensor([[1.0, 0.2], [0.2, 1.0]])
-        #Mbar_b = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
-        Kernel_b = torch.tensor([[1.0, 0.1], [0.1, 1.0]])
+        K = 25
+        Mbar = 2*torch.eye(2)
+        Mbar_b = 2*torch.eye(2)
+        #
 
-        batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock2(batch_y0, Kernel_theta, Kernel_b)
-
-        ### uncomment this line to get Susan's implementation
-        #shooting = ShootingBlock(batch_y0, Mbar, Mbar_b)
-
-        optimizer = optim.RMSprop(shooting.parameters(), lr=2e-4)
+        x_params, _, _ = get_batch(K)
+        shooting = ShootingBlock(x_params, Mbar, Mbar_b)
+        optimizer = optim.RMSprop(shooting.parameters(), lr=1e-3)
+        # there are also parameters that can be adjusted in the custom lr scheduler
+        scheduler = custom_lr_scheduler.CustomReduceLROnPlateau(optimizer, 'min', verbose=True)
 
     end = time.time()
 
     time_meter = RunningAverageMeter(0.97)
     loss_meter = RunningAverageMeter(0.97)
+
 
     for itr in range(1, args.niters + 1):
 
@@ -332,6 +262,13 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
+        # between epochs
+        if not is_odenet:
+            scheduler.step(loss.item())
+            if scheduler.has_convergence_been_reached():
+                print('INFO: Converence has been reached. Stopping iterations.')
+                break
+
         time_meter.update(time.time() - end)
         loss_meter.update(loss.item())
 
@@ -342,8 +279,8 @@ if __name__ == '__main__':
                     pred_y = odeint(func, true_y0, t)
                     loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
                     print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-                    # TODO: visualize does not work for odenet
-                    visualize(true_y, pred_y, func, ii)
+                    # TODO: default visualize does not work for odenet
+                    # visualize(true_y, pred_y, func, ii)
                 else:
                     pred_y = shooting(true_y0.unsqueeze(dim=0), t)
                     loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
