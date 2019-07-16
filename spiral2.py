@@ -2,7 +2,7 @@ import os
 import argparse
 import time
 import numpy as np
-
+import custom_optimizers
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -135,98 +135,52 @@ class ODEFunc(nn.Module):
         return self.net(y**3)
 
 
-class ShootingBlock(nn.Module):
-    def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
-        super(ShootingBlock, self).__init__()
-
-        self.K = batch_y0.shape[0]
-        self.d = batch_y0.shape[2]
-
-        if Mbar is None:
-            self.Mbar = 1./float(self.K)*torch.eye(self.d)
-        else:
-            self.Mbar = 1./float(self.K)*Mbar
-        if Mbar_b is None:
-            self.Mbar_b = 1./float(self.K)*torch.eye(self.d)
-        else:
-            self.Mbar_b = 1./float(self.K)*Mbar_b
-
-        self.q_params = nn.Parameter(batch_y0)
-        self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
-
-
-    def forward(self, input, batch_t):
-        """
-        :param input: 3D tensor of minibatch x 1 x feature dimension holding initial conditions
-        :param batch_t: 1D tensor holding time points for evaluation
-        :return: |batch_t| x minibatch x 1 x feature dimension
-        """
-        def odefunc1(t,z):
-            x, q_params, p_params = z[0],z[1],z[2]
-            # solve Equation 3 for theta
-            theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(q_params.squeeze()))
-            theta = torch.matmul(self.Mbar, theta)
-
-            # solve Equation 4 for bias
-            bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
-            bias = torch.matmul(self.Mbar_b, bias)
-
-            temp_q = nn.functional.relu(q_params.squeeze(dim=1).transpose(0, 1))
-            temp_x = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
-            dot_x = torch.matmul(theta, temp_x) + bias
-            dot_q = torch.matmul(theta, temp_q) + bias
-            dot_x = dot_x.unsqueeze(dim=1).transpose(0, 2)
-            dot_q = dot_q.unsqueeze(dim=1).transpose(0, 2)
-            rhs = []
-            for i in range(0, self.K):
-                Drelu = torch.diag((q_params[i, 0, :] >= 0).type(torch.FloatTensor))
-                prod = torch.matmul(Drelu, theta.transpose(0, 1))
-                rhs.append(torch.matmul(-prod, p_params[i, :, :].transpose(0, 1)))
-            rhs = torch.cat(rhs, 1)
-            rhs = rhs.unsqueeze(dim=1).transpose(0, 2)
-            return (dot_x,dot_q,rhs)
-        q_params = torch.zeros(self.q_params.size()) + self.q_params
-        p_params = torch.zeros(self.p_params.size()) + self.p_params
-        output,dummy1,dummy2 = odeint(odefunc1, (input,q_params,p_params), batch_t)
-        return output
 
 class ShootingBlock2(nn.Module):
-    def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
+    def __init__(self, batch_y0, Kbar=None, Kbar_b=None):
         super(ShootingBlock2, self).__init__()
 
-        self.K = batch_y0.shape[0]
+        self.k = batch_y0.shape[0]
         self.d = batch_y0.shape[2]
 
-        if Mbar is None:
-            self.Mbar = 1./float(self.K)*torch.eye(self.d)
+        if Kbar is None:
+            self.Kbar = 1. / float(self.k) * torch.eye(self.d)
         else:
-            self.Mbar = 1./float(self.K)*Mbar
+            self.Kbar = 1. / float(self.k) * Mbar
         if Mbar_b is None:
-            self.Mbar_b = 1./float(self.K)*torch.eye(self.d)
+            self.Kbar_b = 1. / float(self.k) * torch.eye(self.d)
         else:
-            self.Mbar_b = 1./float(self.K)*Mbar_b
+            self.Kbar_b = 1. / float(self.k) * Mbar_b
 
         self.q_params = nn.Parameter(batch_y0)
-        self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
+        self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d))
 
     def forward(self, t,input):
         """
-        :param input: containing????
+        :param input: containing q_params, p_params, x
         :param batch_t: 1D tensor holding time points for evaluation
         :return: |batch_t| x minibatch x 1 x feature dimension
         """
+        # q_params and p_params are K x 1 x feature dim tensors
+        # x is a |batch| x 1 x feature dim tensor
+        q_params, p_params,x = input[:self.k, ...], input[self.k:2 * self.k, ...], input[2 * self.k:, ...]
 
-        q_params, p_params,x = input[:self.K,...],input[self.K:2*self.K,...],input[2*self.K:,...]
+        # Update theta according to the (p,q) equations
+        # With Kbar = \bar M_\theta}^{-1}
+        #\theta = Kbar(-\sum_i p_i \sigma(x_i)^T
+        temp = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(q_params.squeeze()))
+        theta = torch.matmul(self.Kbar, temp)
 
-        # Update theta according to the (p,q)
-        theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(q_params.squeeze()))
-        theta = torch.matmul(self.Mbar, theta)
 
         # Update bias according to the (p,q)
-        bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
-        bias = torch.matmul(self.Mbar_b, bias)
+        # With Kbar_b = \bar M_b^{-1}
+        # b = Kbar_b(-\sum_i p_i)
+        temp = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.k, 1]))
+        bias = torch.matmul(self.Kbar_b, temp)
 
         # Compute the advection equation for q_params and x
+        #\dot x_i = \theta \sigma(x_i) + b
+        # \dot q_i = \theta \sigma(q_i) + b
         temp_q = nn.functional.relu(q_params.squeeze(dim=1).transpose(0, 1))
         temp_x = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
         dot_x = torch.matmul(theta, temp_x) + bias
@@ -234,9 +188,12 @@ class ShootingBlock2(nn.Module):
         dot_x = dot_x.unsqueeze(dim=1).transpose(0, 2)
         dot_q = dot_q.unsqueeze(dim=1).transpose(0, 2)
 
-        # compute the advection equation for p_params.
+        # compute the advection equation for p_params
+        # \dot p_i =  - [d\sigma(x_i)^T]\theta^T p_i
+        # but here, d\sigma(x_i)^T = d\sigma(x_i) is a diagonal matrix composed with the derivative of the relu.
+
         rhs = []
-        for i in range(0, self.K):
+        for i in range(0, self.k):
             Drelu = torch.diag((q_params[i, 0, :] >= 0).type(torch.FloatTensor))
             prod = torch.matmul(Drelu, theta.transpose(0, 1))
             rhs.append(torch.matmul(-prod, p_params[i, :, :].transpose(0, 1)))
@@ -279,15 +236,16 @@ if __name__ == '__main__':
         # parameters to play with for shooting
         K = 4
         #Mbar = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
-        Mbar = torch.tensor([[1.0, 0.], [0., 1.0]])
+        Mbar = 1 * torch.tensor([[1.0, 0.], [0., 1.0]])
         #Mbar_b = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
-        Mbar_b = torch.tensor([[1.0, 0.], [0., 1.0]])
+        Mbar_b = 1 * torch.tensor([[1.0, 0.], [0., 1.0]])
 
         batch_y0, batch_t, batch_y = get_batch(K)
         print(batch_t)
         shooting = ShootingBlock2(batch_y0, Mbar, Mbar_b)
-        optimizer = optim.RMSprop(shooting.parameters(), lr=1.e-2)
-        #optimizer = optim.Adam(shooting.parameters(), lr=1e-3)
+        #optimizer = optim.RMSprop(shooting.parameters(), lr=1.e-3)
+        optimizer = optim.Adam(shooting.parameters(), lr=3e-3)
+        #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
     end = time.time()
 
     time_meter = RunningAverageMeter(0.97)
@@ -306,8 +264,8 @@ if __name__ == '__main__':
             #print("size batch y0",batch_y0.size())
 
             #print(shooting.q_params.size())
-            q_params = (shooting.q_params)
-            p_params = (shooting.p_params)
+            q_params = (shooting.q_params).clone()
+            p_params = (shooting.p_params).clone()
             z_0 = torch.cat((batch_y0,q_params,p_params))
 
             #print("size input in shooting",z_0.size())
@@ -318,10 +276,15 @@ if __name__ == '__main__':
         #print("batch",batch_y.size())
         loss = torch.mean(torch.abs(pred_y - batch_y))
         loss.backward()
+        #print("size of tensor",loss.size())
+
+
+        y = q_params.grad
+
         optimizer.step()
         #print(shooting.p_params)
-        time_meter.update(time.time() - end)
-        loss_meter.update(loss.item())
+        #time_meter.update(time.time() - end)
+        #loss_meter.update(loss.item())
 
         if itr % args.test_freq == 0:
             with torch.no_grad():
@@ -337,6 +300,7 @@ if __name__ == '__main__':
                 else:
                     q_params = (shooting.q_params).clone()
                     p_params = (shooting.p_params).clone()
+                    #print("q_params",q_params.size())
                     z_0 = torch.cat((true_y0.unsqueeze(dim=0), q_params, p_params))
                     temp_pred_y = odeint(shooting, z_0, t)
                     pred_y = temp_pred_y[:, 2 * K:, ...]
