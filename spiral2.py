@@ -234,7 +234,7 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 10
+        K = 20
         #Mbar = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
         Mbar = 1 * torch.tensor([[1.0, 0.], [0., 1.0]])
         #Mbar_b = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
