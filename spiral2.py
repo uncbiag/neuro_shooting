@@ -234,7 +234,7 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 4
+        K = 10
         #Mbar = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
         Mbar = 1 * torch.tensor([[1.0, 0.], [0., 1.0]])
         #Mbar_b = torch.inverse(torch.tensor([[1.0,0.3],[0.3,1.0]]))
@@ -243,8 +243,8 @@ if __name__ == '__main__':
         batch_y0, batch_t, batch_y = get_batch(K)
         print(batch_t)
         shooting = ShootingBlock2(batch_y0, Mbar, Mbar_b)
-        #optimizer = optim.RMSprop(shooting.parameters(), lr=1.e-3)
-        optimizer = optim.Adam(shooting.parameters(), lr=3e-3)
+        optimizer = optim.RMSprop(shooting.parameters(), lr=1.e-3)
+        #optimizer = optim.Adam(shooting.parameters(), lr=1e-3)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
     end = time.time()
 
@@ -264,8 +264,8 @@ if __name__ == '__main__':
             #print("size batch y0",batch_y0.size())
 
             #print(shooting.q_params.size())
-            q_params = (shooting.q_params).clone()
-            p_params = (shooting.p_params).clone()
+            q_params = (shooting.q_params)
+            p_params = (shooting.p_params)
             z_0 = torch.cat((batch_y0,q_params,p_params))
 
             #print("size input in shooting",z_0.size())
@@ -298,8 +298,8 @@ if __name__ == '__main__':
                     # TODO: visualize does not work for odenet
                     visualize(true_y, pred_y, func, ii)
                 else:
-                    q_params = (shooting.q_params).clone()
-                    p_params = (shooting.p_params).clone()
+                    q_params = (shooting.q_params)
+                    p_params = (shooting.p_params)
                     #print("q_params",q_params.size())
                     z_0 = torch.cat((true_y0.unsqueeze(dim=0), q_params, p_params))
                     temp_pred_y = odeint(shooting, z_0, t)
