@@ -266,7 +266,7 @@ if __name__ == '__main__':
             #print(shooting.q_params.size())
             q_params = (shooting.q_params)
             p_params = (shooting.p_params)
-            z_0 = torch.cat((batch_y0,q_params,p_params))
+            z_0 = torch.cat((q_params,p_params,batch_y0))
 
             #print("size input in shooting",z_0.size())
             temp_pred_y = odeint(shooting,z_0 , batch_t)
@@ -301,7 +301,7 @@ if __name__ == '__main__':
                     q_params = (shooting.q_params)
                     p_params = (shooting.p_params)
                     #print("q_params",q_params.size())
-                    z_0 = torch.cat((true_y0.unsqueeze(dim=0), q_params, p_params))
+                    z_0 = torch.cat(( q_params, p_params,true_y0.unsqueeze(dim=0)))
                     temp_pred_y = odeint(shooting, z_0, t)
                     pred_y = temp_pred_y[:, 2 * K:, ...]
                     #print("actually",pred_y.size())
