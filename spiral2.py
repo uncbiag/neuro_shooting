@@ -34,12 +34,20 @@ device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 
 
 true_y0 = torch.tensor([[2., 0.]]).to(device)
 t = torch.linspace(0., 25., args.data_size).to(device)
-true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+#true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+#true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
+true_A = torch.tensor([[-0.2, 2.0], [-2.0, -0.1]]).to(device)
+
 
 odeint_method = 'dopri5'
 options = dict()
-rtol = 1e-6
-atol = 1e-7
+
+# default tolerance settings
+rtol=1e-6
+atol=1e-12
+
+#rtol = 1e-4
+#atol = 1e-5
 
 #odeint_method = 'rk4'
 #options  = {'step_size': 0.01}
@@ -47,8 +55,8 @@ atol = 1e-7
 class Lambda(nn.Module):
 
     def forward(self, t, y):
-        #return torch.mm(y**3, true_A)
-        return torch.mm(y, true_A)
+        return torch.mm(y**3, true_A)
+        #return torch.mm(y, true_A)
 
 
 with torch.no_grad():
@@ -126,7 +134,7 @@ if args.viz:
     #plt.show(block=False)
 
 
-def visualize(true_y, pred_y, odefunc, itr):
+def visualize(true_y, pred_y, odefunc, itr, is_odenet=False):
 
     if args.viz:
 
@@ -147,13 +155,6 @@ def visualize(true_y, pred_y, odefunc, itr):
         ax_traj.set_ylim(-2, 2)
         ax_traj.legend()
 
-        q = (odefunc.q_params)
-        p = (odefunc.p_params)
-
-        q_np = q.cpu().detach().squeeze(dim=1).numpy()
-        p_np = p.cpu().detach().squeeze(dim=1).numpy()
-
-
         ax_phase.cla()
         ax_phase.set_title('Phase Portrait')
         ax_phase.set_xlabel('x')
@@ -161,10 +162,15 @@ def visualize(true_y, pred_y, odefunc, itr):
         ax_phase.plot(true_y.numpy()[:, 0, 0], true_y.numpy()[:, 0, 1], 'g-')
         ax_phase.plot(pred_y.numpy()[:, 0, 0], pred_y.numpy()[:, 0, 1], 'b--')
 
-        ax_phase.scatter(q_np[:,0],q_np[:,1],marker='+')
-        ax_phase.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
+        if not is_odenet:
+            q = (odefunc.q_params)
+            p = (odefunc.p_params)
 
-        #ax_phase.scatter(p_np[:,0],p_np[:,1],marker='*')
+            q_np = q.cpu().detach().squeeze(dim=1).numpy()
+            p_np = p.cpu().detach().squeeze(dim=1).numpy()
+
+            ax_phase.scatter(q_np[:,0],q_np[:,1],marker='+')
+            ax_phase.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
 
         ax_phase.set_xlim(-2, 2)
         ax_phase.set_ylim(-2, 2)
@@ -180,11 +186,13 @@ def visualize(true_y, pred_y, odefunc, itr):
         current_y = torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2))
 
         # print("q_params",q_params.size())
-        z_0 = torch.cat((q, p, current_y.unsqueeze(dim=1)))
-        dydt_tmp = odefunc(0, z_0).cpu().detach().numpy()
-        dydt = dydt_tmp[2 * K:, 0,...]
 
-        #dydt = odefunc(0, ).cpu().detach().numpy()
+        if not is_odenet:
+            z_0 = torch.cat((q, p, current_y.unsqueeze(dim=1)))
+            dydt_tmp = odefunc(0, z_0).cpu().detach().numpy()
+            dydt = dydt_tmp[2 * K:, 0,...]
+        else:
+            dydt = odefunc(0, current_y).cpu().detach().numpy()
 
         mag = np.sqrt(dydt[:, 0]**2 + dydt[:, 1]**2).reshape(-1, 1)
         dydt = (dydt / mag)
@@ -192,8 +200,9 @@ def visualize(true_y, pred_y, odefunc, itr):
 
         ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
 
-        ax_vecfield.scatter(q_np[:, 0], q_np[:, 1], marker='+')
-        ax_vecfield.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
+        if not is_odenet:
+            ax_vecfield.scatter(q_np[:, 0], q_np[:, 1], marker='+')
+            ax_vecfield.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
 
         ax_vecfield.set_xlim(-2, 2)
         ax_vecfield.set_ylim(-2, 2)
@@ -417,19 +426,23 @@ if __name__ == '__main__':
 
     if is_odenet:
         func = ODEFunc()
-        optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
+#        optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
+        optimizer = optim.SGD(func.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
+
     else:
 
         # parameters to play with for shooting
-        K = 7
+        K = 15
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        print(batch_t)
         shooting = ShootingBlock(batch_y0)
         shooting = shooting.to(device)
-        optimizer = optim.RMSprop(shooting.parameters(), lr=2.5e-3)
+
+        #optimizer = optim.RMSprop(shooting.parameters(), lr=2.5e-3)
         #optimizer = optim.Adam(shooting.parameters(), lr=1e-3)
+        optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
+
     end = time.time()
 
     time_meter = RunningAverageMeter(0.97)
@@ -446,8 +459,6 @@ if __name__ == '__main__':
 
         if is_odenet:
             pred_y = odeint(func, batch_y0, batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-            print(batch_t.size())
-            print("t",t.size())
         else:
             q = (shooting.q_params)
             p = (shooting.p_params)
@@ -460,6 +471,9 @@ if __name__ == '__main__':
 
         # todo: figure out wht the norm penality does not work
         loss = torch.mean(torch.abs(pred_y - batch_y)) # + shooting.get_norm_penalty()
+
+        #loss = torch.mean((pred_y-batch_y)**2)
+
         loss.backward()
         #print(torch.sum(shooting.p_params.grad**2))
         #print("size of tensor",loss.size())
@@ -474,12 +488,14 @@ if __name__ == '__main__':
 
                 if is_odenet:
                     pred_y = odeint(func, true_y0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-                    print("true y", true_y.size())
-                    print("pred y", pred_y.size())
                     loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
+
                     print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-                    # TODO: visualize does not work for odenet
-                    visualize(true_y, pred_y, func, ii)
+
+                    if itr % 100 == 0:
+                        visualize(true_y, pred_y, func, ii, is_odenet=is_odenet)
+                        ii +=1
+
                 else:
                     q = (shooting.q_params)
                     p = (shooting.p_params)
@@ -489,11 +505,14 @@ if __name__ == '__main__':
                     pred_y = temp_pred_y[:, 2 * K:, ...]
                     #print("actually",pred_y.size())
                     #print("true y",true_y.size())
+
                     loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
+                    #loss = torch.mean((pred_y.squeeze(dim=1) - true_y)**2)
+
                     print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
                     if itr % 100 == 0:
-                        visualize(true_y, pred_y.squeeze(dim=1), shooting, ii)
+                        visualize(true_y, pred_y.squeeze(dim=1), shooting, ii, is_odenet=is_odenet)
                         ii += 1
 
         end = time.time()
