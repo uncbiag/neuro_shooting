@@ -64,6 +64,52 @@ def get_batch(batch_size=None):
     batch_y = torch.stack([true_y[s + i] for i in range(args.batch_time)], dim=0)  # (T, M, D)
     return batch_y0, batch_t, batch_y
 
+def visualize_batch(batch_t,batch_y):
+
+    # convention for batch_t: t x B x (row-vector)
+
+    if args.viz:
+        quiver_scale = 2.5  # to scale the magnitude of the quiver vectors for visualization
+
+        batch_size = batch_y.size()[1]
+
+        fig = plt.figure(figsize=(8, 4), facecolor='white')
+        ax_traj = fig.add_subplot(121, frameon=False)
+        ax_phase = fig.add_subplot(122, frameon=False)
+
+        ax_traj.cla()
+        ax_traj.set_title('Trajectories')
+        ax_traj.set_xlabel('t')
+        ax_traj.set_ylabel('x,y')
+
+        for b in range(batch_size):
+            c_values = batch_y[:,b,0,:]
+
+            ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
+
+
+        ax_traj.set_xlim(batch_t.min(), batch_t.max())
+        ax_traj.set_ylim(-2, 2)
+        ax_traj.legend()
+
+        ax_phase.cla()
+        ax_phase.set_title('Phase Portrait')
+        ax_phase.set_xlabel('x')
+        ax_phase.set_ylabel('y')
+
+        for b in range(batch_size):
+            c_values = batch_y[:,b,0,:]
+
+            ax_phase.plot(c_values.numpy()[:, 0], c_values.numpy()[:, 1], 'g-')
+
+        ax_phase.set_xlim(-2, 2)
+        ax_phase.set_ylim(-2, 2)
+
+        fig.tight_layout()
+
+        print('Plotting')
+        plt.show()
+
 
 def makedirs(dirname):
     if not os.path.exists(dirname):
@@ -216,8 +262,8 @@ class ShootingBlock(nn.Module):
         else:
             self.Kbar_b = 1./mult_b*Kbar_b
 
-        self.Kbar.to(device)
-        self.Kbar_b.to(device)
+        self.Kbar = self.Kbar.to(device)
+        self.Kbar_b = self.Kbar_b.to(device)
 
         self.inv_Kbar_b = self.Kbar_b.inverse()
         self.inv_Kbar = self.Kbar.inverse()
@@ -375,7 +421,7 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 10
+        K = 7
 
         batch_y0, batch_t, batch_y = get_batch(K)
         print(batch_t)
@@ -393,6 +439,10 @@ if __name__ == '__main__':
 
         optimizer.zero_grad()
         batch_y0, batch_t, batch_y = get_batch()
+
+        if itr % args.test_freq == 0:
+            if itr % 100 == 0:
+                visualize_batch(batch_t,batch_y)
 
         if is_odenet:
             pred_y = odeint(func, batch_y0, batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
