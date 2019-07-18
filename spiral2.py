@@ -216,6 +216,9 @@ class ShootingBlock(nn.Module):
         else:
             self.Kbar_b = 1./mult_b*Kbar_b
 
+        self.Kbar.to(device)
+        self.Kbar_b.to(device)
+
         self.inv_Kbar_b = self.Kbar_b.inverse()
         self.inv_Kbar = self.Kbar.inverse()
 
