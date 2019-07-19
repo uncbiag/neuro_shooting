@@ -16,6 +16,7 @@ parser.add_argument('--data_size', type=int, default=1000)
 parser.add_argument('--batch_time', type=int, default=10)
 parser.add_argument('--batch_size', type=int, default=100)
 parser.add_argument('--niters', type=int, default=10000)
+parser.add_argument('--batch_validation_size', type=int, default=100)
 
 parser.add_argument('--test_freq', type=int, default=20)
 
@@ -36,18 +37,20 @@ true_y0 = torch.tensor([[2., 0.]]).to(device)
 t = torch.linspace(0., 25., args.data_size).to(device)
 #true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
 #true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
-true_A = torch.tensor([[-0.2, 2.0], [-2.0, -0.1]]).to(device)
+#true_A = torch.tensor([[-0.05, 2.0], [-2.0, -0.05]]).to(device)
+true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
+
 
 
 odeint_method = 'dopri5'
 options = dict()
 
 # default tolerance settings
-rtol=1e-6
-atol=1e-12
+#rtol=1e-6
+#atol=1e-12
 
-#rtol = 1e-4
-#atol = 1e-5
+rtol = 1e-8
+atol = 1e-10
 
 #odeint_method = 'rk4'
 #options  = {'step_size': 0.01}
@@ -72,7 +75,7 @@ def get_batch(batch_size=None):
     batch_y = torch.stack([true_y[s + i] for i in range(args.batch_time)], dim=0)  # (T, M, D)
     return batch_y0, batch_t, batch_y
 
-def visualize_batch(batch_t,batch_y):
+def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
 
     # convention for batch_t: t x B x (row-vector)
 
@@ -81,9 +84,16 @@ def visualize_batch(batch_t,batch_y):
 
         batch_size = batch_y.size()[1]
 
-        fig = plt.figure(figsize=(8, 4), facecolor='white')
-        ax_traj = fig.add_subplot(121, frameon=False)
-        ax_phase = fig.add_subplot(122, frameon=False)
+        if (thetas is None) or (bias is None) or (real_thetas is None):
+            fig = plt.figure(figsize=(8, 4), facecolor='white')
+            ax_traj = fig.add_subplot(121, frameon=False)
+            ax_phase = fig.add_subplot(122, frameon=False)
+        else:
+            fig = plt.figure(figsize=(8, 8), facecolor='white')
+            ax_traj = fig.add_subplot(221, frameon=False)
+            ax_phase = fig.add_subplot(222, frameon=False)
+            ax_thetas = fig.add_subplot(223, frameon=False)
+            ax_bias = fig.add_subplot(224, frameon=False)
 
         ax_traj.cla()
         ax_traj.set_title('Trajectories')
@@ -94,7 +104,6 @@ def visualize_batch(batch_t,batch_y):
             c_values = batch_y[:,b,0,:]
 
             ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
-
 
         ax_traj.set_xlim(batch_t.min(), batch_t.max())
         ax_traj.set_ylim(-2, 2)
@@ -112,6 +121,21 @@ def visualize_batch(batch_t,batch_y):
 
         ax_phase.set_xlim(-2, 2)
         ax_phase.set_ylim(-2, 2)
+
+        if (thetas is not None) and (bias is not None) and (real_thetas is not None):
+            ax_thetas.cla()
+            ax_thetas.set_title('theta elements over time')
+            nr_t_el = thetas.shape[1]
+            colors = ['r','b','c','k']
+            for n in range(nr_t_el):
+                ax_thetas.plot(thetas[:,n],color=colors[n])
+                ax_thetas.plot(real_thetas[:,n],'--', color=colors[n])
+
+            ax_bias.cla()
+            ax_bias.set_title('bias elements over time')
+            nr_b_el = bias.shape[1]
+            for n in range(nr_b_el):
+                ax_bias.plot(bias[:,n])
 
         fig.tight_layout()
 
@@ -134,7 +158,7 @@ if args.viz:
     #plt.show(block=False)
 
 
-def visualize(true_y, pred_y, odefunc, itr, is_odenet=False):
+def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_batch=False):
 
     if args.viz:
 
@@ -149,9 +173,16 @@ def visualize(true_y, pred_y, odefunc, itr, is_odenet=False):
         ax_traj.set_title('Trajectories')
         ax_traj.set_xlabel('t')
         ax_traj.set_ylabel('x,y')
-        ax_traj.plot(t.numpy(), true_y.numpy()[:, 0, 0], t.numpy(), true_y.numpy()[:, 0, 1], 'g-')
-        ax_traj.plot(t.numpy(), pred_y.numpy()[:, 0, 0], '--', t.numpy(), pred_y.numpy()[:, 0, 1], 'b--')
-        ax_traj.set_xlim(t.min(), t.max())
+        if is_batch:
+            for n in range(true_y.size()[1]):
+                ax_traj.plot(sim_time.numpy(), true_y.numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1], 'g-')
+                ax_traj.plot(sim_time.numpy(), pred_y.numpy()[:, n, 0, 0], '--', sim_time.numpy(), pred_y.numpy()[:, n, 0, 1],
+                             'b--')
+        else:
+            ax_traj.plot(sim_time.numpy(), true_y.numpy()[:, 0, 0], sim_time.numpy(), true_y.numpy()[:, 0, 1], 'g-')
+            ax_traj.plot(sim_time.numpy(), pred_y.numpy()[:, 0, 0], '--', sim_time.numpy(), pred_y.numpy()[:, 0, 1], 'b--')
+
+        ax_traj.set_xlim(sim_time.min(), sim_time.max())
         ax_traj.set_ylim(-2, 2)
         ax_traj.legend()
 
@@ -159,8 +190,14 @@ def visualize(true_y, pred_y, odefunc, itr, is_odenet=False):
         ax_phase.set_title('Phase Portrait')
         ax_phase.set_xlabel('x')
         ax_phase.set_ylabel('y')
-        ax_phase.plot(true_y.numpy()[:, 0, 0], true_y.numpy()[:, 0, 1], 'g-')
-        ax_phase.plot(pred_y.numpy()[:, 0, 0], pred_y.numpy()[:, 0, 1], 'b--')
+
+        if is_batch:
+            for n in range(true_y.size()[1]):
+                ax_phase.plot(true_y.numpy()[:, n, 0, 0], true_y.numpy()[:, n, 0, 1], 'g-')
+                ax_phase.plot(pred_y.numpy()[:, n, 0, 0], pred_y.numpy()[:, n, 0, 1], 'b--')
+        else:
+            ax_phase.plot(true_y.numpy()[:, 0, 0], true_y.numpy()[:, 0, 1], 'g-')
+            ax_phase.plot(pred_y.numpy()[:, 0, 0], pred_y.numpy()[:, 0, 1], 'b--')
 
         if not is_odenet:
             q = (odefunc.q_params)
@@ -236,6 +273,46 @@ class ODEFunc(nn.Module):
         #return self.net(y**3)
         return self.net(y)
 
+class ODESimpleFunc(nn.Module):
+
+    def __init__(self):
+        super(ODESimpleFunc, self).__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(2, 2),
+            nn.Tanh(),
+        )
+
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0, std=0.1)
+                nn.init.constant_(m.bias, val=0)
+
+    def forward(self, t, y):
+        #return self.net(y**3)
+        return self.net(y)
+
+class ODESimpleFuncWithIssue(nn.Module):
+# order matters. If linear transform comes after the tanh it cannot move the nonlinearity to a point where it does not matter
+# (and hence will produce the 45 degree tanh angle phenonmenon)
+
+    def __init__(self):
+        super(ODESimpleFuncWithIssue, self).__init__()
+
+        self.net = nn.Sequential(
+            nn.Tanh(),
+            nn.Linear(2, 2),
+        )
+
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0, std=0.1)
+                nn.init.constant_(m.bias, val=0)
+
+    def forward(self, t, y):
+        #return self.net(y**3)
+        return self.net(y)
+
 def drelu(x):
     # derivative of relu
     res = (x>=0)
@@ -253,8 +330,10 @@ def didentity(x):
     return torch.ones_like(x)
 
 class ShootingBlock(nn.Module):
-    def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None):
+    def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingBlock, self).__init__()
+
+        nonlinearity = 'tanh'
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -277,18 +356,18 @@ class ShootingBlock(nn.Module):
         self.inv_Kbar_b = self.Kbar_b.inverse()
         self.inv_Kbar = self.Kbar.inverse()
 
-        self.rand_mag = 0.01
+        self.rand_mag_q = 0.1
+        self.rand_mag_p = 0.1
 
-        if batch_y0 is None:
+        if only_random_initialization:
             # do a fully random initialization
-            self.q_params = nn.Parameter(self.rand_mag * torch.rand_like(batch_y0))
-            self.p_params = nn.Parameter(self.rand_mag * torch.rand([self.k, 1, self.d]))
+            self.q_params = nn.Parameter(self.rand_mag_q * torch.randn_like(batch_y0))
+            self.p_params = nn.Parameter(self.rand_mag_p * torch.randn([self.k, 1, self.d]))
         else:
-            self.q_params = nn.Parameter(batch_y0 + self.rand_mag*torch.rand_like(batch_y0))
-            self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d) + self.rand_mag*torch.rand([self.k,1,self.d]))
+            self.q_params = nn.Parameter(batch_y0 + self.rand_mag_q * torch.randn_like(batch_y0))
+            self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d) + self.rand_mag_p * torch.randn([self.k, 1, self.d]))
 
-
-        supported_nonlinearities = ['identity', 'relu', 'tanh']
+        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid']
 
         if nonlinearity is None:
             use_nonlinearity = 'identity'
@@ -307,6 +386,9 @@ class ShootingBlock(nn.Module):
         elif use_nonlinearity=='identity':
             self.nl = identity
             self.dnl = didentity
+        elif use_nonlinearity=='sigmoid':
+            self.nl = torch.sigmoid
+            self.dnl = torch.sigmoid
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
 
@@ -321,7 +403,8 @@ class ShootingBlock(nn.Module):
         theta_penalty = torch.mm(theta.view(1,-1),torch.mm(self.inv_Kbar,theta.view(-1,1)))
         bias_penalty = torch.mm(bias.t(),torch.mm(self.inv_Kbar_b,bias))
 
-        penalty = theta_penalty + bias_penalty
+        # todo: better approach
+        penalty = 0.1*(theta_penalty + bias_penalty)
         return penalty
 
     def compute_theta(self,q,p):
@@ -329,7 +412,9 @@ class ShootingBlock(nn.Module):
         # With Kbar = \bar M_\theta}^{-1}
         # \theta = Kbar(-\sum_i p_i \sigma(x_i)^T
         # computing the negative sum of the outer product
-        temp = -torch.bmm(p, self.nl(q.transpose(1, 2))).sum(dim=0)
+
+        #temp = -torch.bmm(p, self.nl(q.transpose(1, 2))).sum(dim=0)
+        temp = -torch.bmm(p, self.nl(q.transpose(1, 2))).mean(dim=0)
 
         # now multiply it with the inverse of the regularizer (needs to be vectorized first and then back)
         theta = (torch.mm(self.Kbar, temp.view(-1,1))).view(temp.size())
@@ -342,7 +427,10 @@ class ShootingBlock(nn.Module):
         # b = Kbar_b(-\sum_i p_i)
         # temp = torch.matmul(-p.squeeze().transpose(0, 1), torch.ones([self.k, 1],device=device))
         # keep in mind that by convention the vectors are stored as row vectors here, hence the transpose
-        temp = -p.sum(dim=0)
+
+        #temp = -p.sum(dim=0)
+        temp = -p.mean(dim=0)
+
         bias = torch.mm(self.Kbar_b, temp)
 
         return bias
@@ -425,28 +513,40 @@ if __name__ == '__main__':
     is_odenet = args.network == 'odenet'
 
     if is_odenet:
-        func = ODEFunc()
-#        optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
-        optimizer = optim.SGD(func.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
+        #func = ODEFunc()
+        func = ODESimpleFuncWithIssue()
+        optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
+        #optimizer = optim.SGD(func.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
 
     else:
 
         # parameters to play with for shooting
-        K = 15
+        K = 5
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock(batch_y0)
+        shooting = ShootingBlock(batch_y0,only_random_initialization=True)
         shooting = shooting.to(device)
 
-        #optimizer = optim.RMSprop(shooting.parameters(), lr=2.5e-3)
-        #optimizer = optim.Adam(shooting.parameters(), lr=1e-3)
-        optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
+        optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
+        #optimizer = optim.Adam(shooting.parameters(), lr=1e-1)
+        #optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
 
     end = time.time()
 
     time_meter = RunningAverageMeter(0.97)
     loss_meter = RunningAverageMeter(0.97)
+
+    all_thetas = None
+    all_real_thetas = None
+    all_bs = None
+
+    validate_with_batch_data = True
+    validate_with_random_batch_each_time = False
+
+    if validate_with_batch_data:
+        if not validate_with_random_batch_each_time:
+            val_batch_y0, val_batch_t, val_batch_y = get_batch(batch_size=args.batch_validation_size)
 
     for itr in range(0, args.niters):
 
@@ -455,7 +555,28 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
             if itr % 100 == 0:
-                visualize_batch(batch_t,batch_y)
+
+                if not is_odenet:
+                    theta_np = (shooting.compute_theta(q=shooting.q_params.transpose(1,2),p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
+                    bias_np = (shooting.compute_bias(p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
+
+                    if all_thetas is None:
+                        all_thetas = theta_np
+                    else:
+                        all_thetas = np.append(all_thetas,theta_np,axis=0)
+
+                    c_true_A = true_A.view(1,-1).detach().cpu().numpy()
+                    if all_real_thetas is None:
+                        all_real_thetas = c_true_A
+                    else:
+                        all_real_thetas = np.append(all_real_thetas,c_true_A,axis=0)
+
+                    if all_bs is None:
+                        all_bs = bias_np
+                    else:
+                        all_bs = np.append(all_bs,bias_np,axis=0)
+
+                visualize_batch(batch_t,batch_y,thetas=all_thetas,real_thetas=all_real_thetas,bias=all_bs)
 
         if is_odenet:
             pred_y = odeint(func, batch_y0, batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
@@ -470,7 +591,8 @@ if __name__ == '__main__':
             pred_y = temp_pred_y[:, 2 * K:, ...]
 
         # todo: figure out wht the norm penality does not work
-        loss = torch.mean(torch.abs(pred_y - batch_y)) # + shooting.get_norm_penalty()
+        #loss = torch.mean(torch.abs(pred_y - batch_y)) + shooting.get_norm_penalty()
+        loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
 
         #loss = torch.mean((pred_y-batch_y)**2)
 
@@ -486,33 +608,70 @@ if __name__ == '__main__':
         if itr % args.test_freq == 0:
             with torch.no_grad():
 
-                if is_odenet:
-                    pred_y = odeint(func, true_y0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-                    loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
+                if validate_with_batch_data:
+                    if validate_with_random_batch_each_time:
+                        # draw new batch. This will be like a moving target for the evaluation
+                        val_batch_y0, val_batch_t, val_batch_y = get_batch()
 
-                    print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+                    if is_odenet:
+                        val_pred_y = odeint(func, val_batch_y0, val_batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
+                        # loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
+                        loss = torch.mean(torch.norm(val_pred_y - val_batch_y, dim=3))
 
-                    if itr % 100 == 0:
-                        visualize(true_y, pred_y, func, ii, is_odenet=is_odenet)
-                        ii +=1
+                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+
+                        if itr % 100 == 0:
+                            visualize(val_batch_y, val_pred_y, val_batch_t, func, ii, is_odenet=is_odenet, is_batch=True)
+                            ii += 1
+
+                    else:
+                        q = (shooting.q_params)
+                        p = (shooting.p_params)
+                        val_z_0 = torch.cat((q, p, val_batch_y0))
+
+                        temp_pred_y = odeint(shooting, val_z_0, val_batch_t, method=odeint_method, atol=atol, rtol=rtol,
+                                             options=options)
+
+                        # we are actually only interested in the prediction of the batch itself (not the parameterization)
+                        val_pred_y = temp_pred_y[:, 2 * K:, ...]
+                        loss = torch.mean(torch.norm(val_pred_y - val_batch_y, dim=3))
+
+                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+
+                        if itr % 100 == 0:
+                            visualize(val_batch_y, val_pred_y, val_batch_t, shooting, ii, is_odenet=is_odenet, is_batch=True)
+                            ii += 1
 
                 else:
-                    q = (shooting.q_params)
-                    p = (shooting.p_params)
-                    #print("q_params",q_params.size())
-                    z_0 = torch.cat(( q, p,true_y0.unsqueeze(dim=0)))
-                    temp_pred_y = odeint(shooting, z_0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-                    pred_y = temp_pred_y[:, 2 * K:, ...]
-                    #print("actually",pred_y.size())
-                    #print("true y",true_y.size())
 
-                    loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
-                    #loss = torch.mean((pred_y.squeeze(dim=1) - true_y)**2)
+                    if is_odenet:
+                        pred_y = odeint(func, true_y0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
+                        #loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
+                        loss = torch.mean(torch.norm(pred_y.squeeze(dim=1) - true_y, dim=2))
 
-                    print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-                    if itr % 100 == 0:
-                        visualize(true_y, pred_y.squeeze(dim=1), shooting, ii, is_odenet=is_odenet)
-                        ii += 1
+                        if itr % 100 == 0:
+                            visualize(true_y, pred_y, t, func, ii, is_odenet=is_odenet)
+                            ii +=1
+
+                    else:
+                        q = (shooting.q_params)
+                        p = (shooting.p_params)
+                        #print("q_params",q_params.size())
+                        z_0 = torch.cat(( q, p,true_y0.unsqueeze(dim=0)))
+                        temp_pred_y = odeint(shooting, z_0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
+                        pred_y = temp_pred_y[:, 2 * K:, ...]
+                        #print("actually",pred_y.size())
+                        #print("true y",true_y.size())
+
+                        #loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
+                        loss = torch.mean(torch.norm(pred_y.squeeze(dim=1) - true_y, dim=2))
+
+                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+
+                        if itr % 100 == 0:
+                            visualize(true_y, pred_y.squeeze(dim=1), t, shooting, ii, is_odenet=is_odenet)
+                            ii += 1
 
         end = time.time()
