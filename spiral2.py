@@ -29,7 +29,7 @@ parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with wh
 
 parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
-parser.add_argument('--nr_of_particles', type=int, default=5, help='Number of particles to parameterize the initial condition')
+parser.add_argument('--nr_of_particles', type=int, default=8, help='Number of particles to parameterize the initial condition')
 parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
 parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
 parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
@@ -320,6 +320,13 @@ class ODESimpleFuncWithIssue(nn.Module):
     def forward(self, t, y):
         return self.net(y)
 
+def softmax(x,epsilon = 1.0):
+  return x*(torch.ones_like(x))/(torch.exp(-x*epsilon) + torch.ones_like(x))
+
+
+def dsoftmax(x,epsilon = 1.0):
+  return epsilon*softmax(x,epsilon)*(torch.ones_like(x))/(torch.exp(epsilon*x) + torch.ones_like(x)) + (torch.ones_like(x))/(torch.exp(-x*epsilon) + torch.ones_like(x))
+
 def drelu(x):
     # derivative of relu
     res = (x>=0)
@@ -372,7 +379,7 @@ class ShootingBlock(nn.Module):
             self.q_params = nn.Parameter(batch_y0 + self.rand_mag_q * torch.randn_like(batch_y0))
             self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d) + self.rand_mag_p * torch.randn([self.k, 1, self.d]))
 
-        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid']
+        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid',"softmax"]
 
         if nonlinearity is None:
             use_nonlinearity = 'identity'
@@ -381,6 +388,7 @@ class ShootingBlock(nn.Module):
 
         if use_nonlinearity not in supported_nonlinearities:
             raise ValueError('Unsupported nonlinearity {}'.format(use_nonlinearity))
+
 
         if use_nonlinearity=='relu':
             self.nl = nn.functional.relu
@@ -394,6 +402,9 @@ class ShootingBlock(nn.Module):
         elif use_nonlinearity=='sigmoid':
             self.nl = torch.sigmoid
             self.dnl = torch.sigmoid
+        elif use_nonlinearity == 'softmax':
+            self.nl = softmax
+            self.dnl = dsoftmax
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
 
@@ -535,7 +546,7 @@ class ShootingBlock2(nn.Module):
             self.q_params = nn.Parameter(batch_y0 + self.rand_mag_q * torch.randn_like(batch_y0))
             self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d) + self.rand_mag_p * torch.randn([self.k, 1, self.d]))
 
-        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid']
+        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid',"softmax"]
 
         if nonlinearity is None:
             use_nonlinearity = 'identity'
@@ -557,6 +568,9 @@ class ShootingBlock2(nn.Module):
         elif use_nonlinearity=='sigmoid':
             self.nl = torch.sigmoid
             self.dnl = torch.sigmoid
+        elif use_nonlinearity == 'softmax':
+            self.nl = softmax
+            self.dnl = dsoftmax
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
 
@@ -689,7 +703,7 @@ class ShootingModel_1(nn.Module):
     def __init__(self, batch_y0=None, Kbar1=None, Kbar2=None, Kbar_b1=None,Kbar_b2=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingModel_1, self).__init__()
 
-        nonlinearity = 'identity'
+        nonlinearity = 'softmax'
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -738,12 +752,13 @@ class ShootingModel_1(nn.Module):
             self.q_params = nn.Parameter(batch_y0 + self.rand_mag_q * torch.randn_like(batch_y0))
             self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d) + self.rand_mag_p * torch.randn([self.k, 1, self.d]))
 
-        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid']
+        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid',"softmax"]
 
         if nonlinearity is None:
             use_nonlinearity = 'identity'
         else:
             use_nonlinearity = nonlinearity.lower()
+            print("linearity",nonlinearity)
 
         if use_nonlinearity not in supported_nonlinearities:
             raise ValueError('Unsupported nonlinearity {}'.format(use_nonlinearity))
@@ -760,9 +775,19 @@ class ShootingModel_1(nn.Module):
         elif use_nonlinearity=='sigmoid':
             self.nl = torch.sigmoid
             self.dnl = torch.sigmoid
+        elif use_nonlinearity == 'softmax':
+            self.nl = softmax
+            self.dnl = dsoftmax
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
         self.initialization_parameter()
+
+
+
+    def get_norm_penalty(self):
+
+        return 0
+
 
     def compute_bias_1(self,p):
         # Update bias according to the (p,q)
@@ -776,9 +801,9 @@ class ShootingModel_1(nn.Module):
         return bias_1
 
     def initialization_parameter(self):
-        self.theta_1_init = torch.ones(self.d, self.layer_dim)
-        self.theta_2_init = torch.ones(self.layer_dim, self.d)
-        self.bias_2_init = torch.ones(self.layer_dim, 1)
+        self.theta_1_init = torch.eye(self.d, self.layer_dim)
+        self.theta_2_init = torch.eye(self.layer_dim, self.d)
+        self.bias_2_init = torch.zeros(self.layer_dim, 1)
 
 
     def compute_theta(self,q,p):
@@ -825,14 +850,21 @@ class ShootingModel_1(nn.Module):
         return update_theta_1,update_theta_2,update_bias_2
 
 
-    def compute_parameters(self,p,q,theta_1,theta_2,bias_2,n_iterations = 10):
+    def compute_parameters(self,p,q,theta_1,theta_2,bias_2,n_iterations = 1,alpha = 0.):
         bias_1 = self.compute_bias_1(p)
         #print("bias1",torch.sum(bias_1**2))
         for i in range(n_iterations):
             #print("iteration: ",i)
-            theta_1,theta_2,bias_2 = self.compute_update_parameters(p,q,theta_1,theta_2,bias_2)
-        self.theta_1,self.theta_2,self.bias_1,self.bias_2 = theta_1,theta_2,bias_1,bias_2
-        return theta_1,theta_2,bias_1,bias_2
+            update_theta_1,update_theta_2,update_bias_2 = self.compute_update_parameters(p,q,theta_1,theta_2,bias_2)
+            update_bias_1 = self.compute_bias_1(p)
+            theta_1,theta_2,bias_1,bias_2 = alpha * theta_1 + (1. - alpha) * update_theta_1, alpha * theta_2 + (
+                        1. - alpha) * update_theta_2, alpha * bias_1 + (1. - alpha) * update_bias_1, alpha * bias_2 + (
+                        1. - alpha) * update_bias_2
+
+        self.theta_1,self.theta_2,self.bias_1,self.bias_2 = theta_1,self.theta_2_init,bias_1,bias_2
+        #return self.theta_1_init,alpha*theta_2 + (1.-alpha)*update_theta_2,alpha*bias_1 + (1.-alpha)*update_bias_1,alpha*bias_2 + (1.-alpha)*update_bias_2
+        #return 0.8*theta_1 + (1.-0.8)*update_theta_1,alpha*theta_2 + (1.-alpha)*update_theta_2,alpha*bias_1 + (1.-alpha)*update_bias_1,alpha*bias_2 + (1.-alpha)*update_bias_2
+        return alpha*theta_1 + (1.-alpha)*update_theta_1,self.theta_2_init,alpha*bias_1 + (1.-alpha)*update_bias_1,torch.zeros_like(bias_2)
 
     def advect_x(self,x,theta_1,theta_2,bias_1,bias_2):
         """
@@ -891,6 +923,10 @@ class ShootingModel_1(nn.Module):
             pass
         # compute theta
         theta_1,theta_2,bias_1,bias_2 = self.compute_parameters(p,q,theta_1,theta_2,bias_2)
+        #print("norm theta_1",torch.sum(theta_1**2))
+        #print("norm theta_2",torch.sum(theta_2**2))
+        #print("norm bias_1",torch.sum(bias_1**2))
+        #print("norm bias_2",torch.sum(bias_2**2))
 
         # let't first compute the right hand side of the evolution equation for q and the same for x
         dot_x = self.advect_x(x,theta_1,theta_2,bias_1,bias_2)
@@ -942,10 +978,10 @@ if __name__ == '__main__':
         K = args.nr_of_particles
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock2(batch_y0,only_random_initialization=True,nonlinearity=args.nonlinearity)
+        shooting = ShootingModel_1(batch_y0,only_random_initialization=True,nonlinearity=args.nonlinearity)
         shooting = shooting.to(device)
 
-        optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
+        optimizer = optim.RMSprop(shooting.parameters(), lr=1e-3)
         #optimizer = optim.Adam(shooting.parameters(), lr=1e-1)
         #optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
@@ -1078,7 +1114,10 @@ if __name__ == '__main__':
                 loss = loss + args.shooting_norm_penalty * shooting.get_norm_penalty()
 
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-
+                #print("bias_2", shooting.bias_2.data)
+                #rint("theta_2", shooting.theta_2.data)
+                #print("theta_1", shooting.theta_1.data)
+                #print("bias_1", shooting.bias_1.data)
                 if itr % 100 == 0:
                     visualize(val_y, val_pred_y, val_t, shooting, ii, is_odenet=is_odenet)
                     ii += 1
