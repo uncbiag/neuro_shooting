@@ -5,9 +5,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Function,Variable
-
-from functools import partial
 
 parser = argparse.ArgumentParser('ODE demo')
 parser.add_argument('--network', type=str, choices=['odenet', 'shooting'], default='shooting')
@@ -42,7 +39,10 @@ true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
 
 
 
-odeint_method = 'dopri5'
+#odeint_method = 'dopri5'
+
+odeint_method = 'rk4'
+
 options = dict()
 
 # default tolerance settings
@@ -392,6 +392,10 @@ class ShootingBlock(nn.Module):
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
 
+
+        # keeping track of variables
+        self._number_of_calls = 0
+
     def get_norm_penalty(self):
 
         p = self.p_params.transpose(1,2)
@@ -441,6 +445,13 @@ class ShootingBlock(nn.Module):
         :param batch_t: 1D tensor holding time points for evaluation
         :return: |batch_t| x minibatch x 1 x feature dimension
         """
+
+        self._number_of_calls += 1
+        if (self._number_of_calls%10000==0):
+            # just to test; this is a way we can keep track of state variables, for example to initialize iterative solvers
+            print('Number of calls: {}'.format(self._number_of_calls))
+
+
         # q and p are K x 1 x feature dim tensors
         # x is a |batch| x 1 x feature dim tensor
         qt,pt,xt = input[:self.k, ...], input[self.k:2 * self.k, ...], input[2 * self.k:, ...]
