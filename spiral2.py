@@ -5,26 +5,45 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Function,Variable
 import torch.autograd as autograd
+import random
 
-from functools import partial
+# Command line arguments
 
 parser = argparse.ArgumentParser('ODE demo')
-parser.add_argument('--network', type=str, choices=['odenet', 'shooting'], default='shooting')
-parser.add_argument('--method', type=str, choices=['dopri5', 'adams',"rk4"], default='rk4')
-parser.add_argument('--data_size', type=int, default=1000)
-parser.add_argument('--batch_time', type=int, default=100)
-parser.add_argument('--batch_size', type=int, default=10)
-parser.add_argument('--niters', type=int, default=10000)
-parser.add_argument('--batch_validation_size', type=int, default=100)
+parser.add_argument('--network', type=str, choices=['odenet', 'shooting'], default='shooting', help='Sets the network training appproach.')
+parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
+parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
+parser.add_argument('--data_size', type=int, default=250, help='Length of the simulated data that should be matched.')
+parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
+parser.add_argument('--batch_size', type=int, default=10, help='Number of training samples.')
+parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
+parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
+parser.add_argument('--seed', required=False, type=int, default=1234,
+                    help='Sets the random seed which affects data shuffling')
 
-parser.add_argument('--test_freq', type=int, default=20)
+parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
-parser.add_argument('--viz', action='store_true')
-parser.add_argument('--gpu', type=int, default=0)
-parser.add_argument('--adjoint', action='store_true')
+parser.add_argument('--test_freq', type=int, default=20, help='Frequency with which the validation measures are to be computed.')
+parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
+
+parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
+
+parser.add_argument('--nr_of_particles', type=int, default=5, help='Number of particles to parameterize the initial condition')
+parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
+parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
+parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
+
+
+parser.add_argument('--viz', action='store_true', help='Enable visualization.')
+parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
+parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
+
 args = parser.parse_args()
+
+print('Setting the random seed to {:}'.format(args.seed))
+random.seed(args.seed)
+torch.manual_seed(args.seed)
 
 if args.adjoint:
     from torchdiffeq import odeint_adjoint as odeint
@@ -42,9 +61,7 @@ t = torch.linspace(0., 25., args.data_size).to(device)
 true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
 
 
-
-#odeint_method = 'dopri5'
-#options = dict()
+options = dict()
 
 # default tolerance settings
 #rtol=1e-6
@@ -53,18 +70,18 @@ true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
 rtol = 1e-8
 atol = 1e-10
 
-odeint_method = 'rk4'
-options  = {'step_size': 0.2}
+options  = {'step_size': args.stepsize}
 
 class Lambda(nn.Module):
 
     def forward(self, t, y):
-        return torch.mm(y**3, true_A)
-        #return torch.mm(y, true_A)
-
+        if args.linear:
+            return torch.mm(y, true_A)
+        else:
+            return torch.mm(y**3, true_A)
 
 with torch.no_grad():
-    true_y = odeint(Lambda(), true_y0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
+    true_y = odeint(Lambda(), true_y0, t, method=args.method, atol=atol, rtol=rtol, options=options)
 
 
 def get_batch(batch_size=None):
@@ -81,7 +98,6 @@ def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
     # convention for batch_t: t x B x (row-vector)
 
     if args.viz:
-        quiver_scale = 2.5  # to scale the magnitude of the quiver vectors for visualization
 
         batch_size = batch_y.size()[1]
 
@@ -156,14 +172,8 @@ def makedirs(dirname):
 if args.viz:
     makedirs('png')
     import matplotlib.pyplot as plt
-    # fig = plt.figure(figsize=(12, 4), facecolor='white')
-    # ax_traj = fig.add_subplot(131, frameon=False)
-    # ax_phase = fig.add_subplot(132, frameon=False)
-    # ax_vecfield = fig.add_subplot(133, frameon=False)
-    #plt.show(block=False)
 
-
-def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_batch=False):
+def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False):
 
     if args.viz:
 
@@ -178,25 +188,13 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_batch=
         ax_traj.set_title('Trajectories')
         ax_traj.set_xlabel('t')
         ax_traj.set_ylabel('x,y')
-        if is_batch:
-            for n in range(true_y.size()[1]):
-                try:
-                    ax_traj.plot(sim_time.numpy(), true_y.numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1], 'g-')
-                    ax_traj.plot(sim_time.numpy(), pred_y.numpy()[:, n, 0, 0], '--', sim_time.numpy(), pred_y.numpy()[:, n, 0, 1],'b--')
-                except:
-                    ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
-                             'g-')
-                    ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
-                             pred_y.detach().numpy()[:, n, 0, 1],
-                             'b--')
-        else:
-            try:
-                ax_traj.plot(sim_time.numpy(), true_y.numpy()[:, 0, 0], sim_time.numpy(), true_y.numpy()[:, 0, 1], 'g-')
-                ax_traj.plot(sim_time.numpy(), pred_y.numpy()[:, 0, 0], '--', sim_time.numpy(), pred_y.numpy()[:, 0, 1], 'b--')
-            except:
-                ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, 0, 0], sim_time.numpy(), true_y.numpy()[:, 0, 1], 'g-')
-                ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, 0, 0], '--', sim_time.numpy(), pred_y.numpy()[:, 0, 1],
-                             'b--')
+
+        for n in range(true_y.size()[1]):
+            ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
+                     'g-')
+            ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
+                     pred_y.detach().numpy()[:, n, 0, 1],
+                     'b--')
 
         ax_traj.set_xlim(sim_time.min(), sim_time.max())
         ax_traj.set_ylim(-2, 2)
@@ -207,22 +205,9 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_batch=
         ax_phase.set_xlabel('x')
         ax_phase.set_ylabel('y')
 
-        if is_batch:
-            for n in range(true_y.size()[1]):
-                try:
-                    ax_phase.plot(true_y.numpy()[:, n, 0, 0], true_y.numpy()[:, n, 0, 1], 'g-')
-                    ax_phase.plot(pred_y.numpy()[:, n, 0, 0], pred_y.numpy()[:, n, 0, 1], 'b--')
-                except:
-                    ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
-                    ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
-
-        else:
-            try:
-                ax_phase.plot(true_y.numpy()[:, 0, 0], true_y.numpy()[:, 0, 1], 'g-')
-                ax_phase.plot(pred_y.numpy()[:, 0, 0], pred_y.numpy()[:, 0, 1], 'b--')
-            except:
-                ax_phase.plot(true_y.detach().numpy()[:, 0, 0], true_y.detach().numpy()[:, 0, 1], 'g-')
-                ax_phase.plot(pred_y.detach().numpy()[:, 0, 0], pred_y.detach().numpy()[:, 0, 1], 'b--')
+        for n in range(true_y.size()[1]):
+            ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
+            ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
 
         if not is_odenet:
             q = (odefunc.q_params)
@@ -295,7 +280,6 @@ class ODEFunc(nn.Module):
                 nn.init.constant_(m.bias, val=0)
 
     def forward(self, t, y):
-        #return self.net(y**3)
         return self.net(y)
 
 class ODESimpleFunc(nn.Module):
@@ -314,7 +298,6 @@ class ODESimpleFunc(nn.Module):
                 nn.init.constant_(m.bias, val=0)
 
     def forward(self, t, y):
-        #return self.net(y**3)
         return self.net(y)
 
 class ODESimpleFuncWithIssue(nn.Module):
@@ -335,7 +318,6 @@ class ODESimpleFuncWithIssue(nn.Module):
                 nn.init.constant_(m.bias, val=0)
 
     def forward(self, t, y):
-        #return self.net(y**3)
         return self.net(y)
 
 def drelu(x):
@@ -357,8 +339,6 @@ def didentity(x):
 class ShootingBlock(nn.Module):
     def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingBlock, self).__init__()
-
-        nonlinearity = 'identity'
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -417,6 +397,10 @@ class ShootingBlock(nn.Module):
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
 
+
+        # keeping track of variables
+        self._number_of_calls = 0
+
     def get_norm_penalty(self):
 
         p = self.p_params.transpose(1,2)
@@ -428,8 +412,7 @@ class ShootingBlock(nn.Module):
         theta_penalty = torch.mm(theta.view(1,-1),torch.mm(self.inv_Kbar,theta.view(-1,1)))
         bias_penalty = torch.mm(bias.t(),torch.mm(self.inv_Kbar_b,bias))
 
-        # todo: better approach
-        penalty = 0.1*(theta_penalty + bias_penalty)
+        penalty = theta_penalty + bias_penalty
         return penalty
 
     def compute_theta(self,q,p):
@@ -438,7 +421,6 @@ class ShootingBlock(nn.Module):
         # \theta = Kbar(-\sum_i p_i \sigma(x_i)^T
         # computing the negative sum of the outer product
 
-        #temp = -torch.bmm(p, self.nl(q.transpose(1, 2))).sum(dim=0)
         temp = -torch.bmm(p, self.nl(q.transpose(1, 2))).mean(dim=0)
 
         # now multiply it with the inverse of the regularizer (needs to be vectorized first and then back)
@@ -466,6 +448,13 @@ class ShootingBlock(nn.Module):
         :param batch_t: 1D tensor holding time points for evaluation
         :return: |batch_t| x minibatch x 1 x feature dimension
         """
+
+        self._number_of_calls += 1
+        if (self._number_of_calls%10000==0):
+            # just to test; this is a way we can keep track of state variables, for example to initialize iterative solvers
+            print('Number of calls: {}'.format(self._number_of_calls))
+
+
         # q and p are K x 1 x feature dim tensors
         # x is a |batch| x 1 x feature dim tensor
         qt,pt,xt = input[:self.k, ...], input[self.k:2 * self.k, ...], input[2 * self.k:, ...]
@@ -514,8 +503,6 @@ class ShootingBlock2(nn.Module):
     def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingBlock2, self).__init__()
 
-        nonlinearity = 'tanh'
-
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
 
@@ -584,8 +571,7 @@ class ShootingBlock2(nn.Module):
         theta_penalty = torch.mm(theta.view(1,-1),torch.mm(self.inv_Kbar,theta.view(-1,1)))
         bias_penalty = torch.mm(bias.t(),torch.mm(self.inv_Kbar_b,bias))
 
-        # todo: better approach
-        penalty = 0.1*(theta_penalty + bias_penalty)
+        penalty = theta_penalty + bias_penalty
         return penalty
 
     def compute_theta(self,q,p):
@@ -938,7 +924,7 @@ class RunningAverageMeter(object):
 
 
 if __name__ == '__main__':
-    import time
+
     t_0 = time.time()
     ii = 0
 
@@ -953,28 +939,22 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = 8
+        K = args.nr_of_particles
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingModel_1(batch_y0,only_random_initialization=True)
-        #shooting = ShootingBlock(batch_y0, only_random_initialization=True)
+        shooting = ShootingBlock2(batch_y0,only_random_initialization=True,nonlinearity=args.nonlinearity)
         shooting = shooting.to(device)
 
-        #optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
-        optimizer = optim.Adam(shooting.parameters(), lr=8e-3)
+        optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
+        #optimizer = optim.Adam(shooting.parameters(), lr=1e-1)
         #optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
-
-    end = time.time()
-
-    time_meter = RunningAverageMeter(0.97)
-    loss_meter = RunningAverageMeter(0.97)
 
     all_thetas = None
     all_real_thetas = None
     all_bs = None
 
-    validate_with_batch_data = True
+    validate_with_batch_data = not args.validate_with_long_range
     validate_with_random_batch_each_time = False
 
     if validate_with_batch_data:
@@ -1012,105 +992,96 @@ if __name__ == '__main__':
                 visualize_batch(batch_t,batch_y,thetas=all_thetas,real_thetas=all_real_thetas,bias=all_bs)
 
         if is_odenet:
-            pred_y = odeint(func, batch_y0, batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
+            pred_y = odeint(func, batch_y0, batch_t, method=args.method, atol=atol, rtol=rtol, options=options)
         else:
             q = (shooting.q_params)
             p = (shooting.p_params)
             z_0 = torch.cat((q,p,batch_y0))
 
-            temp_pred_y = odeint(shooting,z_0 , batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
+            temp_pred_y = odeint(shooting,z_0 , batch_t, method=args.method, atol=atol, rtol=rtol, options=options)
 
             # we are actually only interested in the prediction of the batch itself (not the parameterization)
             pred_y = temp_pred_y[:, 2 * K:, ...]
 
         # todo: figure out wht the norm penality does not work
-        #loss = torch.mean(torch.abs(pred_y - batch_y)) + shooting.get_norm_penalty()
-        loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
+        if args.sim_norm == 'l1':
+            loss = torch.mean(torch.abs(pred_y - batch_y))
+        elif args.sim_norm == 'l2':
+            loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
+        else:
+            raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-        #loss = torch.mean((pred_y-batch_y)**2)
+        if not is_odenet:
+            loss = loss + args.shooting_norm_penalty * shooting.get_norm_penalty()
 
         loss.backward(retain_graph = True)
         #print(torch.sum(shooting.p_params.grad**2))
         #print("size of tensor",loss.size())
 
         optimizer.step()
-        #print(shooting.p_params)
-        #time_meter.update(time.time() - end)
-        #loss_meter.update(loss.item())
 
         if itr % args.test_freq == 0:
-            if True :#torch.no_grad():
+            # we need to keep computing the gradient here as the forward model may require gradient computations
 
-                if validate_with_batch_data:
-                    if validate_with_random_batch_each_time:
-                        # draw new batch. This will be like a moving target for the evaluation
-                        val_batch_y0, val_batch_t, val_batch_y = get_batch()
+            if validate_with_batch_data:
+                if validate_with_random_batch_each_time:
+                    # draw new batch. This will be like a moving target for the evaluation
+                    val_batch_y0, val_batch_t, val_batch_y = get_batch()
+                val_y0 = val_batch_y0
+                val_t = val_batch_t
+                val_y = val_batch_y
+            else:
+                val_y0 = true_y0.unsqueeze(dim=0)
+                val_t = t
+                val_y = true_y.unsqueeze(dim=1)
 
-                    if is_odenet:
-                        val_pred_y = odeint(func, val_batch_y0, val_batch_t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-                        # loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
-                        loss = torch.mean(torch.norm(val_pred_y - val_batch_y, dim=3))
+            if is_odenet:
+                val_pred_y = odeint(func, val_y0, val_t, method=args.method, atol=atol, rtol=rtol, options=options)
 
-                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-
-                        if itr % 100 == 0:
-                            visualize(val_batch_y, val_pred_y, val_batch_t, func, ii, is_odenet=is_odenet, is_batch=True)
-                            ii += 1
-
-                    else:
-                        ### time clock
-                        t_1 = time.time()
-
-                        print("time",t_1 - t_0)
-                        t_0 = t_1
-
-                        q = (shooting.q_params)
-                        p = (shooting.p_params)
-                        val_z_0 = torch.cat((q, p, val_batch_y0))
-
-                        temp_pred_y = odeint(shooting, val_z_0, val_batch_t, method=odeint_method, atol=atol, rtol=rtol,
-                                             options=options)
-
-                        # we are actually only interested in the prediction of the batch itself (not the parameterization)
-                        val_pred_y = temp_pred_y[:, 2 * K:, ...]
-                        loss = torch.mean(torch.norm(val_pred_y - val_batch_y, dim=3))
-
-                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-
-                        if itr % 100 == 0:
-                            visualize(val_batch_y, val_pred_y, val_batch_t, shooting, ii, is_odenet=is_odenet, is_batch=True)
-                            ii += 1
-
+                if args.sim_norm=='l1':
+                    loss = torch.mean(torch.abs(val_pred_y - val_y))
+                elif args.sim_norm=='l2':
+                    loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
                 else:
+                    raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-                    if is_odenet:
-                        pred_y = odeint(func, true_y0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-                        #loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
-                        loss = torch.mean(torch.norm(pred_y.squeeze(dim=1) - true_y, dim=2))
+                print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+                if itr % args.viz_freq == 0:
+                    visualize(val_y, val_pred_y, val_t, func, ii, is_odenet=is_odenet)
+                    ii += 1
 
-                        if itr % 100 == 0:
-                            visualize(true_y, pred_y, t, func, ii, is_odenet=is_odenet)
-                            ii +=1
+            else:
+                ### time clock
+                t_1 = time.time()
 
-                    else:
-                        q = (shooting.q_params)
-                        p = (shooting.p_params)
-                        #print("q_params",q_params.size())
-                        z_0 = torch.cat(( q, p,true_y0.unsqueeze(dim=0)))
-                        temp_pred_y = odeint(shooting, z_0, t, method=odeint_method, atol=atol, rtol=rtol, options=options)
-                        pred_y = temp_pred_y[:, 2 * K:, ...]
-                        #print("actually",pred_y.size())
-                        #print("true y",true_y.size())
+                print("time",t_1 - t_0)
+                t_0 = t_1
 
-                        #loss = torch.mean(torch.abs(pred_y.squeeze(dim=1) - true_y))
-                        loss = torch.mean(torch.norm(pred_y.squeeze(dim=1) - true_y, dim=2))
+                q = (shooting.q_params)
+                p = (shooting.p_params)
+                val_z_0 = torch.cat((q, p, val_y0))
 
-                        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+                temp_pred_y = odeint(shooting, val_z_0, val_t, method=args.method, atol=atol, rtol=rtol,
+                                     options=options)
 
-                        if itr % 100 == 0:
-                            visualize(true_y, pred_y.squeeze(dim=1), t, shooting, ii, is_odenet=is_odenet)
-                            ii += 1
+                # we are actually only interested in the prediction of the batch itself (not the parameterization)
+                val_pred_y = temp_pred_y[:, 2 * K:, ...]
+
+                if args.sim_norm=='l1':
+                    loss = torch.mean(torch.abs(val_pred_y - val_y))
+                elif args.sim_norm=='l2':
+                    loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
+                else:
+                    raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+
+                loss = loss + args.shooting_norm_penalty * shooting.get_norm_penalty()
+
+                print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+
+                if itr % 100 == 0:
+                    visualize(val_y, val_pred_y, val_t, shooting, ii, is_odenet=is_odenet)
+                    ii += 1
+
 
         end = time.time()
