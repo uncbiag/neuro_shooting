@@ -8,7 +8,6 @@ import torch.optim as optim
 import torch.autograd as autograd
 import random
 
-
 # Command line arguments
 
 parser = argparse.ArgumentParser('ODE demo')
@@ -22,6 +21,9 @@ parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of
 parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
 parser.add_argument('--seed', required=False, type=int, default=1234,
                     help='Sets the random seed which affects data shuffling')
+
+parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
+
 parser.add_argument('--test_freq', type=int, default=20, help='Frequency with which the validation measures are to be computed.')
 parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 
@@ -30,6 +32,8 @@ parser.add_argument('--validate_with_long_range', action='store_true', help='If 
 parser.add_argument('--nr_of_particles', type=int, default=5, help='Number of particles to parameterize the initial condition')
 parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
 parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
+parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
+
 
 parser.add_argument('--viz', action='store_true', help='Enable visualization.')
 parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
@@ -71,9 +75,10 @@ options  = {'step_size': args.stepsize}
 class Lambda(nn.Module):
 
     def forward(self, t, y):
-        return torch.mm(y**3, true_A)
-        #return torch.mm(y, true_A)
-
+        if args.linear:
+            return torch.mm(y, true_A)
+        else:
+            return torch.mm(y**3, true_A)
 
 with torch.no_grad():
     true_y = odeint(Lambda(), true_y0, t, method=args.method, atol=atol, rtol=rtol, options=options)
@@ -331,8 +336,6 @@ class ShootingBlock(nn.Module):
     def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingBlock, self).__init__()
 
-        nonlinearity = 'tanh'
-
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
 
@@ -495,8 +498,6 @@ class ShootingBlock(nn.Module):
 class ShootingBlock2(nn.Module):
     def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingBlock2, self).__init__()
-
-        nonlinearity = 'tanh'
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -720,7 +721,7 @@ if __name__ == '__main__':
         K = args.nr_of_particles
 
         batch_y0, batch_t, batch_y = get_batch(K)
-        shooting = ShootingBlock2(batch_y0,only_random_initialization=True)
+        shooting = ShootingBlock2(batch_y0,only_random_initialization=True,nonlinearity=args.nonlinearity)
         shooting = shooting.to(device)
 
         optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
