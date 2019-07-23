@@ -698,7 +698,248 @@ class ShootingBlock2(nn.Module):
 
         return torch.cat((dot_qt,dot_pt,dot_xt))
 
+class ShootingModel_1(nn.Module):
+    def __init__(self, batch_y0=None, Kbar1=None, Kbar2=None, Kbar_b1=None,Kbar_b2=None, nonlinearity=None, only_random_initialization=False):
+        super(ShootingModel_1, self).__init__()
 
+        nonlinearity = 'softmax'
+
+        self.k = batch_y0.size()[0]
+        self.d = batch_y0.size()[2]
+
+        self.layer_dim = self.d
+
+        mult_theta = 1.0
+        mult_b = 1.0
+
+
+        if Kbar1 is None:
+            self.Kbar1 = 1./mult_theta*torch.eye(self.d*self.layer_dim)
+        else:
+            self.Kbar1 = 1./mult_theta*Kbar1
+        if Kbar2 is None:
+            self.Kbar2 = 1./mult_theta*torch.eye(self.d*self.layer_dim)
+        else:
+            self.Kbar2 = 1./mult_theta*Kbar2
+        if Kbar_b1 is None:
+            self.Kbar_b1 = 1./mult_b*torch.eye(self.d)
+        else:
+            self.Kbar_b1 = 1./mult_b*Kbar_b1
+        if Kbar_b2 is None:
+            self.Kbar_b2 = 1. / mult_b * torch.eye(self.layer_dim)
+        else:
+            self.Kbar_b2 = 1. / mult_b * Kbar_b2
+
+        self.Kbar1 = self.Kbar1.to(device)
+        self.Kbar_b1 = self.Kbar_b1.to(device)
+        self.Kbar2 = self.Kbar2.to(device)
+        self.Kbar_b2 = self.Kbar_b2.to(device)
+
+        self.inv_Kbar_b1 = self.Kbar_b1.inverse()
+        self.inv_Kbar1 = self.Kbar1.inverse()
+        self.inv_Kbar_b2 = self.Kbar_b2.inverse()
+        self.inv_Kbar2 = self.Kbar2.inverse()
+
+        self.rand_mag_q = 0.1
+        self.rand_mag_p = 0.1
+
+        if only_random_initialization:
+            # do a fully random initialization
+            self.q_params = nn.Parameter(self.rand_mag_q * torch.randn_like(batch_y0))
+            self.p_params = nn.Parameter(self.rand_mag_p * torch.randn([self.k, 1, self.d]))
+        else:
+            self.q_params = nn.Parameter(batch_y0 + self.rand_mag_q * torch.randn_like(batch_y0))
+            self.p_params = nn.Parameter(torch.zeros(self.k, 1, self.d) + self.rand_mag_p * torch.randn([self.k, 1, self.d]))
+
+        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid',"softmax"]
+
+        if nonlinearity is None:
+            use_nonlinearity = 'identity'
+        else:
+            use_nonlinearity = nonlinearity.lower()
+            print("linearity",nonlinearity)
+
+        if use_nonlinearity not in supported_nonlinearities:
+            raise ValueError('Unsupported nonlinearity {}'.format(use_nonlinearity))
+
+        if use_nonlinearity=='relu':
+            self.nl = nn.functional.relu
+            self.dnl = drelu
+        elif use_nonlinearity=='tanh':
+            self.nl = torch.tanh
+            self.dnl = dtanh
+        elif use_nonlinearity=='identity':
+            self.nl = identity
+            self.dnl = didentity
+        elif use_nonlinearity=='sigmoid':
+            self.nl = torch.sigmoid
+            self.dnl = torch.sigmoid
+        elif use_nonlinearity == 'softmax':
+            self.nl = softmax
+            self.dnl = dsoftmax
+        else:
+            raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
+        self.initialization_parameter()
+
+
+
+    def get_norm_penalty(self):
+
+        return 0
+
+
+    def compute_bias_1(self,p):
+        # Update bias according to the (p,q)
+        # With Kbar_b = \bar M_b^{-1}
+        # b = Kbar_b(-\sum_i p_i)
+        # temp = torch.matmul(-p.squeeze().transpose(0, 1), torch.ones([self.k, 1],device=device))
+        # keep in mind that by convention the vectors are stored as row vectors here, hence the transpose
+        #temp = -p.sum(dim=0)
+        temp = p.mean(dim=0)
+        bias_1 = torch.mm(self.Kbar_b1, temp)
+        return bias_1
+
+    def initialization_parameter(self):
+        self.theta_1_init = torch.eye(self.d, self.layer_dim)
+        self.theta_2_init = torch.eye(self.layer_dim, self.d)
+        self.bias_2_init = torch.zeros(self.layer_dim, 1)
+
+
+    def compute_theta(self,q,p):
+        try:
+            result = self.theta_2
+        except:
+            result = self.theta_2_init
+        return result
+
+    def compute_bias(self,p):
+        try:
+            result = self.bias_2
+        except:
+            result = self.bias_2_init
+        return result
+
+    def compute_update_parameters(self,p,q,theta_1,theta_2,bias_2):
+        z = torch.matmul(theta_2, q) + bias_2
+        sigma_p = self.dnl(z)
+        sigma = self.nl(z)
+
+        temp = torch.matmul(theta_1.t(), p)
+        temp_bias_2 = sigma_p * temp
+
+        update_bias_2 = torch.mean(temp_bias_2,dim = 0)
+        update_theta_2 = torch.bmm(temp_bias_2, q.transpose(1, 2)).mean(dim=0)
+
+
+        # now multiply it with the inverse of the regularizer (needs to be vectorized first and then back
+        update_bias_2 = (torch.mm(self.Kbar_b2, update_bias_2.view(-1,1))).view(update_bias_2.size())
+        #
+        update_theta_2 = (torch.mm(self.Kbar2, update_theta_2.view(-1, 1))).view(update_theta_2.size())
+
+        z = torch.matmul(update_theta_2, q) + update_bias_2
+        sigma = self.nl(z)
+        update_theta_1 = torch.bmm(p, sigma.transpose(1, 2)).mean(dim=0)
+        update_theta_1 = (torch.mm(self.Kbar1, update_theta_1.view(-1, 1))).view(update_theta_1.size())
+
+        #print("square difference theta2",torch.sum((update_theta_2)**2))
+        #print("square difference theat1", torch.sum(update_theta_1) ** 2)
+        #print("square difference bias2", torch.sum(update_bias_2) ** 2)
+
+
+        return update_theta_1,update_theta_2,update_bias_2
+
+
+    def compute_parameters(self,p,q,theta_1,theta_2,bias_2,n_iterations = 1,alpha = 0.):
+        bias_1 = self.compute_bias_1(p)
+        #print("bias1",torch.sum(bias_1**2))
+        for i in range(n_iterations):
+            #print("iteration: ",i)
+            update_theta_1,update_theta_2,update_bias_2 = self.compute_update_parameters(p,q,theta_1,theta_2,bias_2)
+            update_bias_1 = self.compute_bias_1(p)
+            theta_1,theta_2,bias_1,bias_2 = alpha * theta_1 + (1. - alpha) * update_theta_1, alpha * theta_2 + (
+                        1. - alpha) * update_theta_2, alpha * bias_1 + (1. - alpha) * update_bias_1, alpha * bias_2 + (
+                        1. - alpha) * update_bias_2
+
+        self.theta_1,self.theta_2,self.bias_1,self.bias_2 = theta_1,self.theta_2_init,bias_1,bias_2
+        #return self.theta_1_init,alpha*theta_2 + (1.-alpha)*update_theta_2,alpha*bias_1 + (1.-alpha)*update_bias_1,alpha*bias_2 + (1.-alpha)*update_bias_2
+        #return 0.8*theta_1 + (1.-0.8)*update_theta_1,alpha*theta_2 + (1.-alpha)*update_theta_2,alpha*bias_1 + (1.-alpha)*update_bias_1,alpha*bias_2 + (1.-alpha)*update_bias_2
+        return alpha*theta_1 + (1.-alpha)*update_theta_1,self.theta_2_init,alpha*bias_1 + (1.-alpha)*update_bias_1,torch.zeros_like(bias_2)
+
+    def advect_x(self,x,theta_1,theta_2,bias_1,bias_2):
+        """
+        Forward equation which  is applied on the data. In principle similar to advect_q
+        :param x:
+        :param theta:
+        :param bias:
+        :return: \dot x_i = \theta \sigma(x_i) + b
+        """
+        temp = torch.matmul(theta_2, x) + bias_2
+        temp_x = self.nl(temp)
+        return torch.matmul(theta_1, temp_x) + bias_1
+
+    def advect_q(self,q,theta_1,theta_2,bias_1,bias_2):
+        """
+        Forward equation which  is applied on the data. In principle similar to advect_q
+        :param x:
+        :param theta:
+        :param bias:
+        :return: \dot q_i = \theta \sigma(q_i) + b
+        """
+        temp = torch.matmul(theta_2, q) + bias_2
+        temp_q = self.nl(temp)
+        return torch.matmul(theta_1, temp_q) + bias_1
+
+    def advect_p(self,p,q,theta_1,theta_2,bias_2):
+
+        tTp = torch.matmul(theta_1.t(), p)
+        # now compute element-wise sigma-prime xi
+        sigma_p = self.dnl(torch.matmul(theta_2,q) + bias_2)
+        # and multiply the two
+        dot_p = -torch.matmul(theta_2.t(),sigma_p * tTp)
+
+        return dot_p
+
+    def forward(self, t,input):
+        """
+        :param input: containing q, p, x
+        :param batch_t: 1D tensor holding time points for evaluation
+        :return: |batch_t| x minibatch x 1 x feature dimension
+        """
+        # q and p are K x 1 x feature dim tensors
+        # x is a |batch| x 1 x feature dim tensor
+        qt,pt,xt = input[:self.k, ...], input[self.k:2 * self.k, ...], input[2 * self.k:, ...]
+
+        # let's first convert everything to column vectors (as this is closer to our notation)
+        q = qt.transpose(1,2)
+        p = pt.transpose(1,2)
+        x = xt.transpose(1,2)
+        try:
+            self.initialization_parameter()
+            theta_1 = self.theta_1_init
+            theta_2 = self.theta_2_init
+            bias_2=self.bias_2_init
+        except:
+            pass
+        # compute theta
+        theta_1,theta_2,bias_1,bias_2 = self.compute_parameters(p,q,theta_1,theta_2,bias_2)
+        #print("norm theta_1",torch.sum(theta_1**2))
+        #print("norm theta_2",torch.sum(theta_2**2))
+        #print("norm bias_1",torch.sum(bias_1**2))
+        #print("norm bias_2",torch.sum(bias_2**2))
+
+        # let't first compute the right hand side of the evolution equation for q and the same for x
+        dot_x = self.advect_x(x,theta_1,theta_2,bias_1,bias_2)
+        dot_q = self.advect_q(q,theta_1,theta_2,bias_1,bias_2)
+
+        dot_p =  self.advect_p(p,q,theta_1,theta_2,bias_2)
+
+        dot_qt = dot_q.transpose(1, 2)
+        dot_pt = dot_p.transpose(1, 2)
+        dot_xt = dot_x.transpose(1, 2)
+
+        return torch.cat((dot_qt,dot_pt,dot_xt))
+
+    
 class ShootingBlockMN(nn.Module):
     def __init__(self, batch_y0=None, Kbar=None, Kbar_b=None, nonlinearity=None, only_random_initialization=False):
         super(ShootingBlockMN, self).__init__()
