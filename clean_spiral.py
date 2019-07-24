@@ -442,21 +442,12 @@ class ShootingBlockBase(nn.Module):
 
         # let's first go through the state and the costate and see how big they are
 
-        incr = 0
-        begin_state = None
-        end_state = None
-
         # measure the size
         for k in state_assembly_plan:
-            current_shape = state_assembly_plan[k]
-            if begin_state is None:
-                begin_state = incr
-
-            incr += current_shape[0]
-            end_state = incr
+            nr_state = state_assembly_plan[k][0] # batch size
+            break
 
         nr = input.shape[0]
-        nr_state = end_state-begin_state
         nr_costate = nr_state
         nr_data = nr-(nr_state+nr_costate)
 
@@ -473,7 +464,7 @@ class ShootingBlockBase(nn.Module):
 
         return auto_assembly_plans
 
-    def _assemble_generic_dict(self,d):
+    def _assemble_generic_dict(self,d,dim=None):
         # d is a sorted dictionary
         # first test that this assumption is true
         if type(d)!=SortedDict:
@@ -484,7 +475,14 @@ class ShootingBlockBase(nn.Module):
         for k in d:
             d_list.append(d[k])
             assembly_plan[k] = d[k].shape
-        return torch.cat(tuple(d_list)), assembly_plan
+
+        if dim is None:
+            max_dim = len(d_list[0].shape)-1
+            ret = torch.cat(tuple(d_list),dim=max_dim)
+        else:
+            ret = torch.cat(tuple(d_list))
+
+        return ret, assembly_plan
 
     def assemble_tensor(self,state_dict,costate_dict,data_dict):
         # these are all ordered dictionaries, will assemble all into a big torch vector
@@ -527,30 +525,33 @@ class ShootingBlockBase(nn.Module):
         for ap in ['state','costate','data']:
 
             assembly_plan = assembly_plans[ap]
+            within_incr = 0
 
             for k in assembly_plan:
                 current_shape = assembly_plan[k]
 
                 if dim==0:
                     if ap=='state':
-                        state_dict[k] = input[incr:incr+current_shape[0],...]
+                        state_dict[k] = input[incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
                     elif ap=='costate':
-                        costate_dict[k] = input[incr:incr+current_shape[0],...]
+                        costate_dict[k] = input[incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
                     elif ap=='data':
-                        data_dict[k] = input[incr:incr+current_shape[0],...]
+                        data_dict[k] = input[incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
                     else:
                         raise ValueError('Unknown key {}'.format(ap))
                 else:
                     if ap=='state':
-                        state_dict[k] = input[:,incr:incr+current_shape[0],...]
+                        state_dict[k] = input[:,incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
                     elif ap=='costate':
-                        costate_dict[k] = input[:,incr:incr+current_shape[0],...]
+                        costate_dict[k] = input[:,incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
                     elif ap=='data':
-                        data_dict[k] = input[:,incr:incr+current_shape[0],...]
+                        data_dict[k] = input[:,incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
                     else:
                         raise ValueError('Unknown key {}'.format(ap))
 
-                incr += current_shape[0]
+                within_incr += current_shape[2]
+
+            incr += current_shape[0]
 
         return state_dict,costate_dict,data_dict
 
@@ -842,9 +843,9 @@ class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
         return self.compute_parameters_iteratively(state_dict=state_dict,costate_dict=costate_dict)
 
 
-class AutoShootingBlockModel(LinearInParameterAutogradShootingBlock):
+class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
-        super(LinearInParameterAutogradShootingBlock, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+        super(AutoShootingBlockModelSecondOrder, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
         state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
         self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
@@ -912,6 +913,137 @@ class AutoShootingBlockModel(LinearInParameterAutogradShootingBlock):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
+class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+        super(AutoShootingBlockModelUpDown, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+
+        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
+        self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
+
+    def create_initial_state_and_costate_parameters(self, batch_y0, only_random_initialization=True):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+        costate_dict = SortedDict()
+
+        rand_mag_q = 0.5
+        rand_mag_p = 0.5
+
+        self.k = batch_y0.size()[0]
+        self.d = batch_y0.size()[2]
+
+        if only_random_initialization:
+            # do a fully random initialization
+            state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d]))
+            state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d*2]))
+            costate_dict['p1'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
+            costate_dict['p2'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d*2]))
+        else:
+            raise ValueError('Not yet implemented')
+
+        return state_dict,costate_dict
+
+    def create_default_parameter_dict(self):
+        parameter_dict = SortedDict()
+
+        parameter_dict['theta1'] = torch.randn(2, 4, requires_grad=True).to(device)
+        parameter_dict['bias1'] = torch.randn(2, 1, requires_grad=True).to(device)
+
+        parameter_dict['theta2'] = torch.randn(4, 2, requires_grad=True).to(device)
+        parameter_dict['bias2'] = torch.randn(4, 1, requires_grad=True).to(device)
+
+        return parameter_dict
+
+    def rhs_advect_state(self, state_dict, parameter_dict):
+
+        rhs = SortedDict()
+
+        s = state_dict
+        p = parameter_dict
+
+        rhs['dot_q1'] = torch.matmul(p['theta1'], self.nl(s['q2'])) + p['bias1']
+        rhs['dot_q2'] = torch.matmul(p['theta2'], s['q1']) + p['bias2']
+
+        return rhs
+
+    def get_initial_condition(self, x):
+        # Initial condition from given data vector
+        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+
+        max_dim = len(x.shape)-1
+
+        data_dict['q2'] = torch.cat((torch.zeros_like(x),torch.zeros_like(x)),dim=max_dim)
+
+        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
+
+        return initial_conditions
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
+        return data_dict['q1']
+
+class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+        super(AutoShootingBlockModelSimple, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+
+        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
+        self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
+
+    def create_initial_state_and_costate_parameters(self, batch_y0, only_random_initialization=True):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+        costate_dict = SortedDict()
+
+        rand_mag_q = 0.5
+        rand_mag_p = 0.5
+
+        self.k = batch_y0.size()[0]
+        self.d = batch_y0.size()[2]
+
+        if only_random_initialization:
+            # do a fully random initialization
+            state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn_like(batch_y0))
+            costate_dict['p1'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
+        else:
+            state_dict['q1'] = nn.Parameter(batch_y0 + rand_mag_q * torch.randn_like(batch_y0))
+            costate_dict['p1'] = nn.Parameter(torch.zeros(self.k, 1, self.d) + rand_mag_p * torch.randn([self.k, 1, self.d]))
+
+        return state_dict,costate_dict
+
+    def create_default_parameter_dict(self):
+        parameter_dict = SortedDict()
+
+        parameter_dict['theta1'] = torch.randn(2, 2, requires_grad=True).to(device)
+        parameter_dict['bias1'] = torch.randn(2, 1, requires_grad=True).to(device)
+
+        return parameter_dict
+
+    def rhs_advect_state(self, state_dict, parameter_dict):
+
+        rhs = SortedDict()
+
+        s = state_dict
+        p = parameter_dict
+
+        rhs['dot_q1'] = torch.matmul(p['theta1'], self.nl(s['q1'])) + p['bias1']
+
+        return rhs
+
+    def get_initial_condition(self, x):
+        # Initial condition from given data vector
+        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+
+        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
+
+        return initial_conditions
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
+        return data_dict['q1']
+
 
 if __name__ == '__main__':
 
@@ -935,7 +1067,9 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        shooting = AutoShootingBlockModel(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
         shooting = shooting.to(device)
 
