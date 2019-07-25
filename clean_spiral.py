@@ -368,7 +368,7 @@ def didentity(x):
 
 
 class ShootingBlockBase(nn.Module):
-    def __init__(self, batch_y0=None, nonlinearity=None, transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, transpose_state_when_forward=False):
         super(ShootingBlockBase, self).__init__()
 
         self.nl, self.dnl = self._get_nonlinearity(nonlinearity=nonlinearity)
@@ -376,7 +376,7 @@ class ShootingBlockBase(nn.Module):
 
         self._state_parameter_dict = None
         self._costate_parameter_dict = None
-        self._parameter_dict = None
+        self._parameter_objects = None
 
         self.transpose_state_when_forward = transpose_state_when_forward
 
@@ -517,11 +517,11 @@ class ShootingBlockBase(nn.Module):
         return state_dict,costate_dict,data_dict
 
 
-    def compute_potential_energy(self,state_dict,costate_dict,parameter_dict):
+    def compute_potential_energy(self,state_dict,costate_dict,parameter_objects):
 
         # this is really only how one propagates through the system given the parameterization
 
-        rhs_state_dict = self.rhs_advect_state(state_dict=state_dict,parameter_dict=parameter_dict)
+        rhs_state_dict = self.rhs_advect_state(state_dict=state_dict,parameter_objects=parameter_objects)
 
         potential_energy = 0
 
@@ -530,32 +530,35 @@ class ShootingBlockBase(nn.Module):
 
         return potential_energy
 
-    def compute_kinetic_energy(self,parameter_dict,parameter_weight_dict=None):
+    def compute_kinetic_energy(self,parameter_objects):
         # as a default it just computes the square norms of all of them (overwrite this if it is not the desired behavior)
-        # a weight dictionary can be specified for the individual parameters (default is all uniform weight)
+        # a weight dictionary can be specified for the individual parameters as part of their
+        # overwritten classes (default is all uniform weight)
 
         kinetic_energy = 0
 
-        if parameter_weight_dict is not None:
-            for k,w in zip(parameter_dict,parameter_weight_dict):
-                cpar = parameter_dict[k]
-                weight = parameter_weight_dict[w]
-                cpar_penalty = (cpar ** 2).sum()*weight
-                kinetic_energy = kinetic_energy + cpar_penalty
-        else:
-            for k in parameter_dict:
-                cpar = parameter_dict[k]
-                cpar_penalty = (cpar ** 2).sum()
+        for o in parameter_objects:
+
+            current_pars = parameter_objects[o].get_parameter_dict()
+            current_weights = parameter_objects[o].get_parameter_weight_dict()
+
+            for k in current_pars:
+                cpar = current_pars[k]
+                if k not in current_weights:
+                    cpar_penalty = (cpar ** 2).sum()
+                else:
+                    cpar_penalty = current_weights[k]*(cpar**2).sum()
+
                 kinetic_energy = kinetic_energy + cpar_penalty
 
         kinetic_energy = 0.5*kinetic_energy
 
         return kinetic_energy
 
-    def compute_lagrangian(self, state_dict, costate_dict, parameter_dict):
+    def compute_lagrangian(self, state_dict, costate_dict, parameter_objects):
 
-        kinetic_energy = self.compute_kinetic_energy(parameter_dict=parameter_dict)
-        potential_energy = self.compute_potential_energy(state_dict=state_dict,costate_dict=costate_dict,parameter_dict=parameter_dict)
+        kinetic_energy = self.compute_kinetic_energy(parameter_objects=parameter_objects)
+        potential_energy = self.compute_potential_energy(state_dict=state_dict,costate_dict=costate_dict,parameter_objects=parameter_objects)
 
         lagrangian = kinetic_energy-potential_energy
 
@@ -574,7 +577,7 @@ class ShootingBlockBase(nn.Module):
         return initial_conditions
 
     @abstractmethod
-    def create_default_parameter_dict(self):
+    def create_default_parameter_objects(self):
         raise ValueError('Not implemented. Needs to return a SortedDict of parameters')
 
     def extract_dict_from_tuple_based_on_generic_dict(self,data_tuple,generic_dict,prefix=''):
@@ -586,6 +589,21 @@ class ShootingBlockBase(nn.Module):
 
         return extracted_dict
 
+    def extract_dict_from_tuple_based_on_parameter_objects(self,data_tuple,parameter_objects,prefix=''):
+        extracted_dict = SortedDict()
+        indx = 0
+
+        for o in parameter_objects:
+            extracted_dict[o] = SortedDict()
+            current_extracted_dict = extracted_dict[o]
+            current_pars = parameter_objects[o].get_parameter_dict()
+
+            for k in current_pars:
+                current_extracted_dict[prefix+k] = data_tuple[indx]
+                indx += 1
+
+        return extracted_dict
+
     def compute_tuple_from_generic_dict(self,generic_dict):
         # form a tuple of all the state variables (because this is what we take the derivative of)
         sv_list = []
@@ -594,47 +612,63 @@ class ShootingBlockBase(nn.Module):
 
         return tuple(sv_list)
 
+    def compute_tuple_from_parameter_objects(self,parameter_objects):
+        # form a tuple of all the variables (because this is what we take the derivative of)
+
+        sv_list = []
+        for o in parameter_objects:
+            current_pars = parameter_objects[o].get_parameter_dict()
+            for k in current_pars:
+                sv_list.append(current_pars[k])
+
+        return tuple(sv_list)
+
     @abstractmethod
-    def rhs_advect_state(self, state_dict, parameter_dict):
+    def rhs_advect_state(self, state_dict, parameter_objects):
         pass
 
-    def rhs_advect_data(self,data_dict,parameter_dict):
-        return self.rhs_advect_state(state_dict=data_dict,parameter_dict=parameter_dict)
+    def rhs_advect_data(self,data_dict,parameter_objects):
+        return self.rhs_advect_state(state_dict=data_dict,parameter_objects=parameter_objects)
 
     @abstractmethod
-    def rhs_advect_costate(self, state_dict, costate_dict, parameter_dict):
+    def rhs_advect_costate(self, state_dict, costate_dict, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
         # returns a dictionary of the RHS of the costate
         pass
 
-    def add_multiple_to_parameter_dict(self,pd_1,pd_2,multiplier=1.0):
+    def add_multiple_to_parameter_objects(self,parameter_objects,pd_from,multiplier=1.0):
 
-        res = SortedDict()
-        for k1,k2 in zip(pd_1,pd_2):
-            res[k1] = pd_1[k1]+multiplier*pd_2[k2]
+        for o in parameter_objects:
+            if o not in pd_from:
+                ValueError('Needs to contain the same objects. Could not find {}.'.format(o))
 
-        return res
+            current_pars = parameter_objects[o].get_parameter_dict()
+            current_from_pars = pd_from[o]
 
-    def negate_divide_and_store_as_parameter_dict(self,generic_dict,parameter_dict_for_keys,parameter_weight_dict=None):
+            for p,p_from in zip(current_pars,current_from_pars):
+                current_pars[p] = current_pars[p]+multiplier*current_from_pars[p_from]
 
-        parameter_dict = SortedDict()
 
-        if parameter_weight_dict is None:
+    def negate_divide_and_store_in_parameter_objects(self,parameter_objects,generic_dict):
 
-            for kg,kp in zip(generic_dict,parameter_dict_for_keys):
-                parameter_dict[kp] = -generic_dict[kg]
+        for o in parameter_objects:
+            if o not in generic_dict:
+                ValueError('Needs to contain the same objects. Could not find {}.'.format(o))
 
-        else:
+            current_pars = parameter_objects[o].get_parameter_dict()
+            current_pars_from = generic_dict[o]
+            current_weights = parameter_objects[o].get_parameter_weight_dict()
 
-            for kgp,kw in zip(zip(generic_dict,parameter_dict_for_keys),parameter_weight_dict):
-                parameter_dict[kgp[1]] = -parameter_weight_dict[kw]*generic_dict[kgp[0]]
-
-        return parameter_dict
+            for k,f in zip(current_pars,current_pars_from):
+                if k not in current_weights:
+                    current_pars[k] = -current_pars_from[f]
+                else:
+                    current_pars[k] = -current_weights[k]*current_pars_from[f]
 
     @abstractmethod
-    def compute_parameters(self,state_dict,costate_dict):
+    def compute_parameters(self,parameter_objects,state_dict,costate_dict):
         """
-        Computes parameters and returns a tuple of a SortedDict parameter dictionary and the current kinectic energy (i.e., penalizer on parameters)
+        Computes parameters and stores them in parameter_objects. Returns the current kinectic energy (i.e., penalizer on parameters)
         :param state_dict:
         :param costate_dict:
         :return:
@@ -643,13 +677,16 @@ class ShootingBlockBase(nn.Module):
 
     def compute_gradients(self,state_dict,costate_dict,data_dict):
 
-        parameter_dict, current_kinetic_energy = self.compute_parameters(state_dict=state_dict,costate_dict=costate_dict)
+        if self._parameter_objects is None:
+            self._parameter_objects = self.create_default_parameter_objects()
+
+        current_kinetic_energy = self.compute_parameters(parameter_objects=self._parameter_objects,state_dict=state_dict,costate_dict=costate_dict)
 
         self.current_norm_penalty = current_kinetic_energy
 
-        dot_state_dict = self.rhs_advect_state(state_dict=state_dict,parameter_dict=parameter_dict)
-        dot_data_dict = self.rhs_advect_data(data_dict=data_dict,parameter_dict=parameter_dict)
-        dot_costate_dict = self.rhs_advect_costate(state_dict=state_dict,costate_dict=costate_dict,parameter_dict=parameter_dict)
+        dot_state_dict = self.rhs_advect_state(state_dict=state_dict,parameter_objects=self._parameter_objects)
+        dot_data_dict = self.rhs_advect_data(data_dict=data_dict,parameter_objects=self._parameter_objects)
+        dot_costate_dict = self.rhs_advect_costate(state_dict=state_dict,costate_dict=costate_dict,parameter_objects=self._parameter_objects)
 
         return dot_state_dict,dot_costate_dict,dot_data_dict
 
@@ -704,14 +741,14 @@ class ShootingBlockBase(nn.Module):
         return output
 
 class AutogradShootingBlockBase(ShootingBlockBase):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(AutogradShootingBlockBase, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
-    def rhs_advect_costate(self, state_dict, costate_dict, parameter_dict):
+    def rhs_advect_costate(self, state_dict, costate_dict, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
 
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
-            self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_dict=parameter_dict)
+            self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_objects=parameter_objects)
 
         # form a tuple of all the state variables (because this is what we take the derivative of)
         state_tuple = self.compute_tuple_from_generic_dict(state_dict)
@@ -730,21 +767,16 @@ class AutogradShootingBlockBase(ShootingBlockBase):
 
 
 class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(LinearInParameterAutogradShootingBlock, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
-    def compute_parameters_directly(self, state_dict, costate_dict, parameter_weight_dict=None):
+    def compute_parameters_directly(self, parameter_objects, state_dict, costate_dict):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
 
-        if self._parameter_dict is None:
-            parameter_dict = self.create_default_parameter_dict()
-        else:
-            parameter_dict = self._parameter_dict
-
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
-            self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_dict=parameter_dict)
+            self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_objects=parameter_objects)
 
-        parameter_tuple = self.compute_tuple_from_generic_dict(parameter_dict)
+        parameter_tuple = self.compute_tuple_from_parameter_objects(parameter_objects)
 
         parameter_grad_tuple = autograd.grad(current_potential_energy,
                                              parameter_tuple,
@@ -754,39 +786,32 @@ class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
                                              retain_graph=True,
                                              allow_unused=True)
 
-        parameter_grad_dict = self.extract_dict_from_tuple_based_on_generic_dict(data_tuple=parameter_grad_tuple,
-                                                                                 generic_dict=parameter_dict,
+        parameter_grad_dict = self.extract_dict_from_tuple_based_on_parameter_objects(data_tuple=parameter_grad_tuple,
+                                                                                 parameter_objects=parameter_objects,
                                                                                  prefix='grad_')
 
-        parameter_dict = self.negate_divide_and_store_as_parameter_dict(parameter_grad_dict,
-                                                                        parameter_dict_for_keys=parameter_dict,
-                                                                        parameter_weight_dict=parameter_weight_dict)
+        self.negate_divide_and_store_in_parameter_objects(parameter_objects=parameter_objects,generic_dict=parameter_grad_dict)
 
-        return parameter_dict, current_kinetic_energy
+        return current_kinetic_energy
 
-    def compute_parameters(self,state_dict,costate_dict):
-        return self.compute_parameters_directly(state_dict=state_dict,costate_dict=costate_dict)
+    def compute_parameters(self,parameter_objects,state_dict,costate_dict):
+        return self.compute_parameters_directly(parameter_objects=parameter_objects,state_dict=state_dict,costate_dict=costate_dict)
 
 
 class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(NonlinearInParameterAutogradShootingBlock, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
-    def compute_parameters_iteratively(self, state_dict, costate_dict):
+    def compute_parameters_iteratively(self, parameter_objects, state_dict, costate_dict):
 
         learning_rate = 0.5
         nr_of_fixed_point_iterations = 5
 
-        if self._parameter_dict is None:
-            parameter_dict = self.create_default_parameter_dict()
-        else:
-            parameter_dict = self._parameter_dict
-
         for n in range(nr_of_fixed_point_iterations):
             current_lagrangian, current_kinectic_energy, current_potential_energy = \
-                self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_dict=parameter_dict)
+                self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_objects=parameter_objects)
 
-            parameter_tuple = self.compute_tuple_from_generic_dict(parameter_dict)
+            parameter_tuple = self.compute_tuple_from_parameter_objects(parameter_objects)
 
             parameter_grad_tuple = autograd.grad(current_lagrangian,
                                                  parameter_tuple,
@@ -796,21 +821,21 @@ class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
                                                  retain_graph=True,
                                                  allow_unused=True)
 
-            parameter_grad_dict = self.extract_dict_from_tuple_based_on_generic_dict(data_tuple=parameter_grad_tuple,
-                                                                                     generic_dict=parameter_dict,
+            parameter_grad_dict = self.extract_dict_from_tuple_based_on_parameter_objects(data_tuple=parameter_grad_tuple,
+                                                                                     parameter_objects=parameter_objects,
                                                                                      prefix='grad_')
 
-            parameter_dict = self.add_multiple_to_parameter_dict(parameter_dict, parameter_grad_dict,
-                                                                 multiplier=-learning_rate)
+            self.add_multiple_to_parameter_objects(parameter_objects=parameter_objects,
+                                                   pd_from=parameter_grad_dict, multiplier=-learning_rate)
 
-        return parameter_dict, current_kinectic_energy
+        return current_kinectic_energy
 
-    def compute_parameters(self,state_dict,costate_dict):
-        return self.compute_parameters_iteratively(state_dict=state_dict,costate_dict=costate_dict)
+    def compute_parameters(self,parameter_objects,state_dict,costate_dict):
+        return self.compute_parameters_iteratively(parameter_objects=parameter_objects,state_dict=state_dict,costate_dict=costate_dict)
 
 
 class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(AutoShootingBlockModelSecondOrder, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
         state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
@@ -841,27 +866,27 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
 
         return state_dict,costate_dict
 
-    def create_default_parameter_dict(self):
+    def create_default_parameter_objects(self):
 
-        linear1 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
-        linear2 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_2').to(device)
+        parameter_dict = SortedDict()
 
-        parameter_dict = oc.merge_parameter_dicts((linear1.get_parameter_dict(), linear2.get_parameter_dict()))
+        linear1 = oc.SNN_Linear(in_features=2, out_features=2).to(device)
+        linear2 = oc.SNN_Linear(in_features=2, out_features=2).to(device)
 
-        parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2, 1)
-        parameter_dict['bias_2'] = parameter_dict['bias_2'].view(2, 1)
+        parameter_dict['l1'] = linear1
+        parameter_dict['l2'] = linear2
 
         return parameter_dict
 
-    def rhs_advect_state(self, state_dict, parameter_dict):
+    def rhs_advect_state(self, state_dict, parameter_objects):
 
         rhs = SortedDict()
 
         s = state_dict
-        p = parameter_dict
+        p = parameter_objects
 
-        rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q2'])) + p['bias_1']
-        rhs['dot_q2'] = torch.matmul(p['weight_2'], s['q1']) + p['bias_2']
+        rhs['dot_q1'] = p['l1'](self.nl(s['q2']))
+        rhs['dot_q2'] = p['l2'](s['q1'])
 
         return rhs
 
@@ -881,7 +906,7 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
         return data_dict['q1']
 
 class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(AutoShootingBlockModelUpDown, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
         state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
@@ -909,7 +934,7 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
 
         return state_dict,costate_dict
 
-    def create_default_parameter_dict(self):
+    def create_default_parameter_objects(self):
 
         self.linear1 = oc.SNN_Linear(in_features=10,out_features=2,name_postfix='_1').to(device)
         self.linear2 = oc.SNN_Linear(in_features=2,out_features=10,name_postfix='_2').to(device)
@@ -959,7 +984,7 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
         return data_dict['q1']
 
 class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=True):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(AutoShootingBlockModelSimple, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
         state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
@@ -986,7 +1011,7 @@ class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
 
         return state_dict,costate_dict
 
-    def create_default_parameter_dict(self):
+    def create_default_parameter_objects(self):
 
         linear = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
 
@@ -1044,8 +1069,8 @@ if __name__ == '__main__':
         batch_y0, batch_t, batch_y = get_batch(K)
 
         #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity,transpose_state_when_forward=False)
+        shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity,transpose_state_when_forward=False)
 
         shooting = shooting.to(device)
 
