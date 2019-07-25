@@ -365,7 +365,6 @@ def didentity(x):
     return torch.ones_like(x)
 
 
-
 class ShootingBlockBase(nn.Module):
     def __init__(self, batch_y0=None, nonlinearity=None, transpose_state_when_forward=True):
         super(ShootingBlockBase, self).__init__()
@@ -426,45 +425,7 @@ class ShootingBlockBase(nn.Module):
         # creates these as a sorted dictionary and returns them as a tupe (state_dict,costate_dict) (engtries need to be in the same order!!)
         pass
 
-    def create_auto_assembly_plans(self,input):
-        # does this based on the given vectorized input and the parameters that exist
-        # assumes that the data_dict has the same structure as the state_dict
-        auto_assembly_plans = dict()
-
-        _, state_assembly_plan = self._assemble_generic_dict(self._state_parameter_dict)
-        _, costate_assembly_plan = self._assemble_generic_dict(self._costate_parameter_dict)
-
-        auto_assembly_plans['state'] = state_assembly_plan
-        auto_assembly_plans['costate'] = costate_assembly_plan
-
-        # the data vector is at the end and has the same structure as the state vector
-        # so let's try to constitute the corresponding assembly plan
-
-        # let's first go through the state and the costate and see how big they are
-
-        # measure the size
-        for k in state_assembly_plan:
-            nr_state = state_assembly_plan[k][0] # batch size
-            break
-
-        nr = input.shape[0]
-        nr_costate = nr_state
-        nr_data = nr-(nr_state+nr_costate)
-
-        factor = int(nr_data/nr_state)
-
-        data_assembly_plan = SortedDict()
-
-        for k in state_assembly_plan:
-            cp = list(state_assembly_plan[k])
-            cp[0] *= factor
-            data_assembly_plan[k] = torch.Size(cp)
-
-        auto_assembly_plans['data'] = data_assembly_plan
-
-        return auto_assembly_plans
-
-    def _assemble_generic_dict(self,d,dim=None):
+    def _assemble_generic_dict(self,d):
         # d is a sorted dictionary
         # first test that this assumption is true
         if type(d)!=SortedDict:
@@ -473,14 +434,10 @@ class ShootingBlockBase(nn.Module):
         d_list = []
         assembly_plan = SortedDict()
         for k in d:
-            d_list.append(d[k])
+            d_list.append(d[k].view(-1)) # entirely flatten is (shape is stored by assembly plan)
             assembly_plan[k] = d[k].shape
 
-        if dim is None:
-            max_dim = len(d_list[0].shape)-1
-            ret = torch.cat(tuple(d_list),dim=max_dim)
-        else:
-            ret = torch.cat(tuple(d_list))
+        ret = torch.cat(tuple(d_list))
 
         return ret, assembly_plan
 
@@ -512,10 +469,9 @@ class ShootingBlockBase(nn.Module):
 
         if assembly_plans is None:
             if self.auto_assembly_plans is None:
-                print('WARNING: created data assembly plan automatically, this could go wrong, if data dimension changed, call create_auto_assembly_plan again.')
-                self.auto_assembly_plans = self.create_auto_assembly_plans(input=input)
-
-            assembly_plans = self.auto_assembly_plans
+                raise ValueError('No assembly plan specified and none was previously stored automatically (for example by calling get_initial_conditions_from_data_dict).')
+            else:
+                assembly_plans = self.auto_assembly_plans
 
         state_dict = SortedDict()
         costate_dict = SortedDict()
@@ -525,35 +481,38 @@ class ShootingBlockBase(nn.Module):
         for ap in ['state','costate','data']:
 
             assembly_plan = assembly_plans[ap]
-            within_incr = 0
 
             for k in assembly_plan:
                 current_shape = assembly_plan[k]
+                len_shape = torch.prod(torch.tensor(current_shape)).item()
 
                 if dim==0:
+                    current_data = (input[incr:incr+len_shape]).view(current_shape)
                     if ap=='state':
-                        state_dict[k] = input[incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
+                        state_dict[k] = current_data
                     elif ap=='costate':
-                        costate_dict[k] = input[incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
+                        costate_dict[k] = current_data
                     elif ap=='data':
-                        data_dict[k] = input[incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
+                        data_dict[k] = current_data
                     else:
                         raise ValueError('Unknown key {}'.format(ap))
                 else:
+                    first_dim = input.shape[0]
+                    all_shape = torch.Size([first_dim] + list(current_shape))
+                    current_data = (input[:,incr:incr+len_shape]).view(all_shape)
                     if ap=='state':
-                        state_dict[k] = input[:,incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
+                        state_dict[k] = current_data
                     elif ap=='costate':
-                        costate_dict[k] = input[:,incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
+                        costate_dict[k] = current_data
                     elif ap=='data':
-                        data_dict[k] = input[:,incr:incr+current_shape[0],:,within_incr:within_incr+current_shape[2]]
+                        data_dict[k] = current_data
                     else:
                         raise ValueError('Unknown key {}'.format(ap))
 
-                within_incr += current_shape[2]
-
-            incr += current_shape[0]
+                incr += len_shape
 
         return state_dict,costate_dict,data_dict
+
 
     def compute_potential_energy(self,state_dict,costate_dict,parameter_dict):
 
@@ -608,9 +567,7 @@ class ShootingBlockBase(nn.Module):
     def get_initial_conditions_from_data_dict(self,data_dict):
         # initialize the second state of x with zero so far
         initial_conditions,assembly_plans = self.assemble_tensor(state_dict=self._state_parameter_dict, costate_dict=self._costate_parameter_dict, data_dict=data_dict)
-        if self.auto_assembly_plans is not None:
-            #print('INFO: updated the assembly plans')
-            self.auto_assembly_plans = assembly_plans
+        self.auto_assembly_plans = assembly_plans
         return initial_conditions
 
     @abstractmethod
@@ -934,9 +891,9 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
         if only_random_initialization:
             # do a fully random initialization
             state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d]))
-            state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d*2]))
+            state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d*5]))
             costate_dict['p1'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
-            costate_dict['p2'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d*2]))
+            costate_dict['p2'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d*5]))
         else:
             raise ValueError('Not yet implemented')
 
@@ -945,11 +902,11 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
     def create_default_parameter_dict(self):
         parameter_dict = SortedDict()
 
-        parameter_dict['theta1'] = torch.randn(2, 4, requires_grad=True).to(device)
+        parameter_dict['theta1'] = torch.randn(2, 10, requires_grad=True).to(device)
         parameter_dict['bias1'] = torch.randn(2, 1, requires_grad=True).to(device)
 
-        parameter_dict['theta2'] = torch.randn(4, 2, requires_grad=True).to(device)
-        parameter_dict['bias2'] = torch.randn(4, 1, requires_grad=True).to(device)
+        parameter_dict['theta2'] = torch.randn(10, 2, requires_grad=True).to(device)
+        parameter_dict['bias2'] = torch.randn(10, 1, requires_grad=True).to(device)
 
         return parameter_dict
 
@@ -973,7 +930,11 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
 
         max_dim = len(x.shape)-1
 
-        data_dict['q2'] = torch.cat((torch.zeros_like(x),torch.zeros_like(x)),dim=max_dim)
+        data_dict['q2'] = torch.cat((torch.zeros_like(x),
+                                     torch.zeros_like(x),
+                                     torch.zeros_like(x),
+                                     torch.zeros_like(x),
+                                     torch.zeros_like(x)), dim=max_dim)
 
         initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
 
@@ -1068,8 +1029,8 @@ if __name__ == '__main__':
         batch_y0, batch_t, batch_y = get_batch(K)
 
         #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
         shooting = shooting.to(device)
 
