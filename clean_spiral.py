@@ -376,6 +376,7 @@ class ShootingBlockBase(nn.Module):
 
         self._state_parameter_dict = None
         self._costate_parameter_dict = None
+        self._parameter_dict = None
 
         self.transpose_state_when_forward = transpose_state_when_forward
 
@@ -735,7 +736,10 @@ class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
     def compute_parameters_directly(self, state_dict, costate_dict, parameter_weight_dict=None):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
 
-        parameter_dict = self.create_default_parameter_dict()
+        if self._parameter_dict is None:
+            parameter_dict = self.create_default_parameter_dict()
+        else:
+            parameter_dict = self._parameter_dict
 
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
             self.compute_lagrangian(state_dict=state_dict, costate_dict=costate_dict, parameter_dict=parameter_dict)
@@ -773,7 +777,10 @@ class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
         learning_rate = 0.5
         nr_of_fixed_point_iterations = 5
 
-        parameter_dict = self.create_default_parameter_dict()
+        if self._parameter_dict is None:
+            parameter_dict = self.create_default_parameter_dict()
+        else:
+            parameter_dict = self._parameter_dict
 
         for n in range(nr_of_fixed_point_iterations):
             current_lagrangian, current_kinectic_energy, current_potential_energy = \
