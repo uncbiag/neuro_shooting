@@ -842,13 +842,14 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
         return state_dict,costate_dict
 
     def create_default_parameter_dict(self):
-        parameter_dict = SortedDict()
 
-        parameter_dict['theta1'] = torch.randn(2, 2, requires_grad=True).to(device)
-        parameter_dict['bias1'] = torch.randn(2, 1, requires_grad=True).to(device)
+        linear1 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
+        linear2 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_2').to(device)
 
-        parameter_dict['theta2'] = torch.randn(2, 2, requires_grad=True).to(device)
-        parameter_dict['bias2'] = torch.randn(2, 1, requires_grad=True).to(device)
+        parameter_dict = oc.merge_parameter_dicts((linear1.get_parameter_dict(), linear2.get_parameter_dict()))
+
+        parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2, 1)
+        parameter_dict['bias_2'] = parameter_dict['bias_2'].view(2, 1)
 
         return parameter_dict
 
@@ -859,8 +860,8 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
         s = state_dict
         p = parameter_dict
 
-        rhs['dot_q1'] = torch.matmul(p['theta1'], self.nl(s['q2'])) + p['bias1']
-        rhs['dot_q2'] = torch.matmul(p['theta2'], s['q1']) + p['bias2']
+        rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q2'])) + p['bias_1']
+        rhs['dot_q2'] = torch.matmul(p['weight_2'], s['q1']) + p['bias_2']
 
         return rhs
 
@@ -909,13 +910,14 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
         return state_dict,costate_dict
 
     def create_default_parameter_dict(self):
-        parameter_dict = SortedDict()
 
-        parameter_dict['theta1'] = torch.randn(2, 10, requires_grad=True).to(device)
-        parameter_dict['bias1'] = torch.randn(2, 1, requires_grad=True).to(device)
+        self.linear1 = oc.SNN_Linear(in_features=10,out_features=2,name_postfix='_1').to(device)
+        self.linear2 = oc.SNN_Linear(in_features=2,out_features=10,name_postfix='_2').to(device)
 
-        parameter_dict['theta2'] = torch.randn(10, 2, requires_grad=True).to(device)
-        parameter_dict['bias2'] = torch.randn(10, 1, requires_grad=True).to(device)
+        parameter_dict = oc.merge_parameter_dicts((self.linear1.get_parameter_dict(),self.linear2.get_parameter_dict()))
+
+        #parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2,1)
+        #parameter_dict['bias_2'] = parameter_dict['bias_2'].view(10,1)
 
         return parameter_dict
 
@@ -926,8 +928,11 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
         s = state_dict
         p = parameter_dict
 
-        rhs['dot_q1'] = torch.matmul(p['theta1'], self.nl(s['q2'])) + p['bias1']
-        rhs['dot_q2'] = torch.matmul(p['theta2'], s['q1']) + p['bias2']
+        #rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q2'])) + p['bias_1']
+        #rhs['dot_q2'] = torch.matmul(p['weight_2'], s['q1']) + p['bias_2']
+
+        rhs['dot_q1'] = self.linear1(input=self.nl(s['q2']),weight=p['weight_1'],bias=p['bias_1'])
+        rhs['dot_q2'] = self.linear2(input=s['q1'], weight=p['weight_2'], bias=p['bias_2'])
 
         return rhs
 
@@ -982,10 +987,11 @@ class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
         return state_dict,costate_dict
 
     def create_default_parameter_dict(self):
-        parameter_dict = SortedDict()
 
-        parameter_dict['theta1'] = torch.randn(2, 2, requires_grad=True).to(device)
-        parameter_dict['bias1'] = torch.randn(2, 1, requires_grad=True).to(device)
+        linear = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
+
+        parameter_dict = linear.get_parameter_dict()
+        parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2, 1)
 
         return parameter_dict
 
@@ -996,7 +1002,7 @@ class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
         s = state_dict
         p = parameter_dict
 
-        rhs['dot_q1'] = torch.matmul(p['theta1'], self.nl(s['q1'])) + p['bias1']
+        rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q1'])) + p['bias_1']
 
         return rhs
 
@@ -1039,12 +1045,12 @@ if __name__ == '__main__':
 
         #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
         #shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity,transpose_state_when_forward=False)
 
         shooting = shooting.to(device)
 
         #optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
-        optimizer = optim.Adam(shooting.parameters(), lr=2.5e-2)
+        optimizer = optim.Adam(shooting.parameters(), lr=2e-2)
         #optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
 
