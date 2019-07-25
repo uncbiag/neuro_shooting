@@ -4,7 +4,6 @@ import torch.nn.functional as F
 
 from torch.nn.modules.utils import _single, _pair, _triple
 
-from collections import OrderedDict
 from sortedcontainers import SortedDict
 
 # todo: implement convenience functions so we can move datastructures to the GPU if desired
@@ -25,6 +24,7 @@ class RemoveParameters(object):
             # # gets rid of the variables like self.bias or self.weight (so there is no confusion afterwards)
             # setattr(self,k,None)
             # delattr(self,k)
+
         self._parameters.clear()
         self._parameter_dict = new_parameter_dict
 
@@ -39,11 +39,36 @@ class RemoveParameters(object):
     def get_parameter_weight_dict(self):
         return self._parameter_weight_dict
 
+    def to(self, *args, **kwargs):
+
+        device, dtype, non_blocking = torch._C._nn._parse_to(*args, **kwargs)
+
+        if dtype is not None:
+            if not dtype.is_floating_point:
+                raise TypeError('nn.Module.to only accepts floating point '
+                                'dtypes, but got desired dtype={}'.format(dtype))
+
+        def convert(t):
+            return t.to(device, dtype if t.is_floating_point() else None, non_blocking)
+
+        for k in self._parameter_dict:
+            self._parameter_dict[k] = convert(self._parameter_dict[k])
+
+        for k in self._parameter_weight_dict:
+            self._parameter_weight_dict[k] = convert(self._parameter_weight_dict[k])
+
+        return self
+
 class SNN_Linear(nn.Linear,RemoveParameters):
     def __init__(self, in_features, out_features, bias=True):
         super(SNN_Linear, self).__init__(in_features=in_features, out_features=out_features, bias=bias)
         RemoveParameters.__init__(self)
         self._remove_parameters()
+
+    def to(self, *args, **kwargs):
+        nn.Linear.to(self,*args, **kwargs)
+        RemoveParameters.to(self,*args, **kwargs)
+        return self
 
     def forward(self, input):
         return F.linear(input, self._parameter_dict['weight'], self._parameter_dict['bias'])
@@ -59,6 +84,10 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
 
         self._remove_parameters()
 
+    def to(self, *args, **kwargs):
+        nn.Conv2d.to(self,*args, **kwargs)
+        RemoveParameters.to(self,*args, **kwargs)
+        return self
 
     def forward(self, input):
         if self.padding_mode == 'circular':
@@ -71,11 +100,3 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
                         self.padding, self.dilation, self.groups)
 
 
-# if __name__ == '__main__':
-#     # Example on how to use it
-#
-#     my_conv_1 = SNN_Conv2d(2,2,3)
-#     my_conv_2 = SNN_Conv2d(2,2,3)
-#
-#
-#     print(parameter_dict)

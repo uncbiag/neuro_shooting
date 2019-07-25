@@ -241,10 +241,7 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
         # print("q_params",q_params.size())
 
         if not is_odenet:
-            if is_higher_order_model:
-                z_0 = odefunc.get_initial_condition(x=current_y.unsqueeze(dim=1))
-            else:
-                z_0 = torch.cat((q, p, current_y.unsqueeze(dim=1)))
+            z_0 = odefunc.get_initial_condition(x=current_y.unsqueeze(dim=1))
 
             if is_higher_order_model:
 
@@ -256,8 +253,10 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
 
                 dydt = dydt[:,0,...]
             else:
-                dydt_tmp = odefunc(0, z_0).cpu().detach().numpy()
-                dydt = dydt_tmp[2 * K:, 0,...]
+                temp_pred_y = shooting(0,z_0)
+                dydt_tmp = shooting.disassemble(temp_pred_y, dim=0)
+                dydt = dydt_tmp[:,0,...].detach().numpy()
+
         else:
             dydt = odefunc(0, current_y).cpu().detach().numpy()
 
@@ -619,7 +618,7 @@ class ShootingBlockBase(nn.Module):
         for o in parameter_objects:
             current_pars = parameter_objects[o].get_parameter_dict()
             for k in current_pars:
-                sv_list.append(current_pars[k])
+                sv_list.append((current_pars[k]))
 
         return tuple(sv_list)
 
@@ -675,10 +674,21 @@ class ShootingBlockBase(nn.Module):
         """
         pass
 
+    def detach_and_require_gradients_for_parameter_objects(self,parameter_objects):
+
+        for o in parameter_objects:
+            current_pars = parameter_objects[o].get_parameter_dict()
+            for k in current_pars:
+                current_pars[k] = current_pars[k].detach().requires_grad_(True)
+
     def compute_gradients(self,state_dict,costate_dict,data_dict):
 
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
+        else:
+            # detaching here is important as otherwise the gradient is accumulated and we only want this to store
+            # the current parameters
+            self.detach_and_require_gradients_for_parameter_objects(self._parameter_objects)
 
         current_kinetic_energy = self.compute_parameters(parameter_objects=self._parameter_objects,state_dict=state_dict,costate_dict=costate_dict)
 
@@ -868,15 +878,15 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
 
     def create_default_parameter_objects(self):
 
-        parameter_dict = SortedDict()
+        parameter_objects = SortedDict()
 
         linear1 = oc.SNN_Linear(in_features=2, out_features=2).to(device)
         linear2 = oc.SNN_Linear(in_features=2, out_features=2).to(device)
 
-        parameter_dict['l1'] = linear1
-        parameter_dict['l2'] = linear2
+        parameter_objects['l1'] = linear1
+        parameter_objects['l2'] = linear2
 
-        return parameter_dict
+        return parameter_objects
 
     def rhs_advect_state(self, state_dict, parameter_objects):
 
@@ -936,28 +946,28 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
 
     def create_default_parameter_objects(self):
 
-        self.linear1 = oc.SNN_Linear(in_features=10,out_features=2,name_postfix='_1').to(device)
-        self.linear2 = oc.SNN_Linear(in_features=2,out_features=10,name_postfix='_2').to(device)
+        parameter_objects = SortedDict()
 
-        parameter_dict = oc.merge_parameter_dicts((self.linear1.get_parameter_dict(),self.linear2.get_parameter_dict()))
+        linear1 = oc.SNN_Linear(in_features=10,out_features=2).to(device)
+        linear2 = oc.SNN_Linear(in_features=2,out_features=10).to(device)
 
-        #parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2,1)
-        #parameter_dict['bias_2'] = parameter_dict['bias_2'].view(10,1)
+        parameter_objects['l1'] = linear1
+        parameter_objects['l2'] = linear2
 
-        return parameter_dict
+        return parameter_objects
 
-    def rhs_advect_state(self, state_dict, parameter_dict):
+    def rhs_advect_state(self, state_dict, parameter_objects):
 
         rhs = SortedDict()
 
         s = state_dict
-        p = parameter_dict
+        p = parameter_objects
 
         #rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q2'])) + p['bias_1']
         #rhs['dot_q2'] = torch.matmul(p['weight_2'], s['q1']) + p['bias_2']
 
-        rhs['dot_q1'] = self.linear1(input=self.nl(s['q2']),weight=p['weight_1'],bias=p['bias_1'])
-        rhs['dot_q2'] = self.linear2(input=s['q1'], weight=p['weight_2'], bias=p['bias_2'])
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
+        rhs['dot_q2'] = p['l2'](input=s['q1'])
 
         return rhs
 
@@ -1013,21 +1023,21 @@ class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
 
     def create_default_parameter_objects(self):
 
-        linear = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
+        parameter_objects = SortedDict()
 
-        parameter_dict = linear.get_parameter_dict()
-        parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2, 1)
+        linear = oc.SNN_Linear(in_features=2, out_features=2).to(device)
+        parameter_objects['l1'] = linear
 
-        return parameter_dict
+        return parameter_objects
 
-    def rhs_advect_state(self, state_dict, parameter_dict):
+    def rhs_advect_state(self, state_dict, parameter_objects):
 
         rhs = SortedDict()
 
         s = state_dict
-        p = parameter_dict
+        p = parameter_objects
 
-        rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q1'])) + p['bias_1']
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q1']))
 
         return rhs
 
@@ -1069,8 +1079,8 @@ if __name__ == '__main__':
         batch_y0, batch_t, batch_y = get_batch(K)
 
         #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity,transpose_state_when_forward=False)
+        #shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
         shooting = shooting.to(device)
 
@@ -1127,21 +1137,11 @@ if __name__ == '__main__':
             pred_y = odeint(func, batch_y0, batch_t, method=args.method, atol=atol, rtol=rtol, options=options)
         else:
 
-            if is_higher_order_model:
-                z_0 = shooting.get_initial_condition(x=batch_y0)
-            else:
-                q = (shooting.q_params)
-                p = (shooting.p_params)
-                z_0 = torch.cat((q,p,batch_y0))
-
+            z_0 = shooting.get_initial_condition(x=batch_y0)
             temp_pred_y = odeint(shooting,z_0 , batch_t, method=args.method, atol=atol, rtol=rtol, options=options)
 
             # we are actually only interested in the prediction of the batch itself (not the parameterization)
-            if is_higher_order_model:
-                pred_y = shooting.disassemble(temp_pred_y,dim=1)
-                #_,_,_,_,pred_y,_ = shooting.disassemble(temp_pred_y,dim=1)
-            else:
-                pred_y = temp_pred_y[:, 2 * K:, ...]
+            pred_y = shooting.disassemble(temp_pred_y,dim=1)
 
         # todo: figure out wht the norm penality does not work
         if args.sim_norm == 'l1':
@@ -1196,24 +1196,12 @@ if __name__ == '__main__':
                 print("time",t_1 - t_0)
                 t_0 = t_1
 
-                if is_higher_order_model:
-                    val_z_0 = shooting.get_initial_condition(x=val_y0)
-                else:
-                    q = (shooting.q_params)
-                    p = (shooting.p_params)
-                    val_z_0 = torch.cat((q, p, val_y0))
-
-                tst = shooting(val_t,val_z_0)
+                val_z_0 = shooting.get_initial_condition(x=val_y0)
                 temp_pred_y = odeint(shooting, val_z_0, val_t, method=args.method, atol=atol, rtol=rtol,
                                      options=options)
 
                 # we are actually only interested in the prediction of the batch itself (not the parameterization)
-                if is_higher_order_model:
-                   # _, _, _, _, val_pred_y, _ = shooting.disassemble(temp_pred_y,dim=1)
-                   val_pred_y = shooting.disassemble(temp_pred_y,dim=1)
-
-                else:
-                    val_pred_y = temp_pred_y[:, 2 * K:, ...]
+                val_pred_y = shooting.disassemble(temp_pred_y,dim=1)
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))
