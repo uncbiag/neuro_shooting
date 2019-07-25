@@ -843,13 +843,13 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
 
     def create_default_parameter_dict(self):
 
-        linear1 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
-        linear2 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_2').to(device)
+        self.linear1 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_1').to(device)
+        self.linear2 = oc.SNN_Linear(in_features=2, out_features=2, name_postfix='_2').to(device)
 
-        parameter_dict = oc.merge_parameter_dicts((linear1.get_parameter_dict(), linear2.get_parameter_dict()))
+        parameter_dict = oc.merge_parameter_dicts((self.linear1.get_parameter_dict(), self.linear2.get_parameter_dict()))
 
-        parameter_dict['bias_1'] = parameter_dict['bias_1'].view(2, 1)
-        parameter_dict['bias_2'] = parameter_dict['bias_2'].view(2, 1)
+        parameter_dict['bias_1'] = parameter_dict['bias_1']
+        parameter_dict['bias_2'] = parameter_dict['bias_2']
 
         return parameter_dict
 
@@ -860,8 +860,11 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
         s = state_dict
         p = parameter_dict
 
-        rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q2'])) + p['bias_1']
-        rhs['dot_q2'] = torch.matmul(p['weight_2'], s['q1']) + p['bias_2']
+        # rhs['dot_q1'] = torch.matmul(p['weight_1'], self.nl(s['q2'])) + p['bias_1']
+        # rhs['dot_q2'] = torch.matmul(p['weight_2'], s['q1']) + p['bias_2']
+
+        rhs['dot_q1'] = self.linear1(input=self.nl(s['q2']), weight=p['weight_1'],bias=p['bias_1'])
+        rhs['dot_q2'] = self.linear2(input=s['q1'],weight=p['weight_2'],bias=p['bias_2'])
 
         return rhs
 
@@ -1044,8 +1047,8 @@ if __name__ == '__main__':
         batch_y0, batch_t, batch_y = get_batch(K)
 
         #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity,transpose_state_when_forward=False)
+        shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity, transpose_state_when_forward=False)
+        #shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity,transpose_state_when_forward=False)
 
         shooting = shooting.to(device)
 
