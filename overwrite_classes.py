@@ -7,6 +7,8 @@ from torch.nn.modules.utils import _single, _pair, _triple
 from collections import OrderedDict
 from sortedcontainers import SortedDict
 
+# todo: implement convenience functions so we can move datastructures to the GPU if desired
+
 class RemoveParameters():
     def __init__(self):
         self._parameter_dict = None
