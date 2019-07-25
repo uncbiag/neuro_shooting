@@ -8,6 +8,8 @@ import torch.optim as optim
 import torch.autograd as autograd
 import random
 
+import overwrite_classes as oc
+
 from abc import ABCMeta, abstractmethod
 # may require conda install sortedcontainers
 from sortedcontainers import SortedDict
