@@ -367,31 +367,62 @@ def didentity(x):
 
 
 class ShootingBlockBase(nn.Module):
+    """
+    Base class for shooting based neural ODE approaches
+    """
     def __init__(self, batch_y0=None, nonlinearity=None, transpose_state_when_forward=False):
+        """
+        Constructor
+        :param batch_y0: example batch, can be used to construct initial conditions for patches
+        :param nonlinearity: desired nonlinearity to be used tanh, sigmoid, relu, ...
+        :param transpose_state_when_forward: if set to true states get transposed (1,2) at the beginng and end of processing
+        """
         super(ShootingBlockBase, self).__init__()
 
         self.nl, self.dnl = self._get_nonlinearity(nonlinearity=nonlinearity)
-        self.use_iterative_parameter_solution = True
+        """Nonlinearity and its derivative"""
 
         self._state_parameter_dict = None
+        """Dictionary holding the state variables"""
         self._costate_parameter_dict = None
+        """Dictionary holding the costates (i.e., adjoints/duals)"""
         self._parameter_objects = None
+        """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules"""
 
         self.transpose_state_when_forward = transpose_state_when_forward
 
         # this allows to define one at some point and it will then be used going forward until it is reset
         self.auto_assembly_plans = None
+        """Assembly plans, i.e., how to go from vectorized data to the named data structure"""
 
         # norm penalty
         self.current_norm_penalty = None
+        """Will hold the last computed norm penality"""
 
     def get_current_norm_penalty(self):
+        """
+        Returns the last computed norm penalty
+
+        :return: scalar, last computed norm penalty
+        """
         return self.current_norm_penalty
 
     def get_norm_penalty(self):
+        """
+        Currently mapped to get_current_norm_penalty, buy one could envision computing it here from scratch
+
+        :return:
+        """
         return self.get_current_norm_penalty()
 
     def _get_nonlinearity(self, nonlinearity):
+        """
+        Returns the desired nonlinearity and its derivative as a tuple
+
+        :param nonlinearity:
+        :return: tuple (nonlinearity,derivative of nonlinearity)
+        """
+
         supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid', 'softmax']
 
         if nonlinearity is None:
@@ -424,10 +455,23 @@ class ShootingBlockBase(nn.Module):
 
     @abstractmethod
     def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization):
-        # creates these as a sorted dictionary and returns them as a tupe (state_dict,costate_dict) (engtries need to be in the same order!!)
+        """
+        Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
+
+        :param batch_y0: sample batch as input, can be used to initialize
+        :param only_random_initialization: to indicate if purely random initialization is desired
+        :return:
+        """
         pass
 
     def _assemble_generic_dict(self,d):
+        """
+        Given a SortedDict returns its vectorized version and a plan (a dictionary of sizes) on how to reassemble it.
+
+        :param d: sorted dictionary to vectorize
+        :return: tuple: vectorized dictionary, assembly plan
+        """
+
         # d is a sorted dictionary
         # first test that this assumption is true
         if type(d)!=SortedDict:
@@ -444,6 +488,15 @@ class ShootingBlockBase(nn.Module):
         return ret, assembly_plan
 
     def assemble_tensor(self,state_dict,costate_dict,data_dict):
+        """
+        Vectorize all dictionaries togehter (state, costatem and data). Also returns all their assembly plans.
+
+        :param state_dict: SortedDict holding the state
+        :param costate_dict: SortedDict holding the costate
+        :param data_dict: SortedDict holding the state for the transported data
+        :return: vectorized dictonaries (as one vecctor) and their assembly plans
+        """
+
         # these are all ordered dictionaries, will assemble all into a big torch vector
         state_vector,state_assembly_plan = self._assemble_generic_dict(state_dict)
         costate_vector,costate_assembly_plan = self._assemble_generic_dict(costate_dict)
@@ -458,10 +511,27 @@ class ShootingBlockBase(nn.Module):
 
     @abstractmethod
     def disassemble(self, input):
+        """
+        Abstract emthod which needs to be implemented. Takes an input and shoud disassemble so that it can return
+        the desired part of the state (for example only the position). Implementation will likely make use of
+        disassmble_tensor to implement this.
+
+        :param input: input tensor
+        :return: desired part of the state vector
+        """
         #Is supposed to return the desired data state (possibly only one) from an input vector
         pass
 
     def disassemble_tensor(self, input, assembly_plans=None, dim=0):
+        """
+        Disassembles an input vector into state, data, and costate directories.
+
+        :param input: input tensor (vector)
+        :param assembly_plans: assembly_plans (does not need to be specified if previously computed -- will be cached)
+        :param dim: integrator may add a 0-th dimension to keep track of time. In this case use dim=1, otherwise dim=0 should be fine.
+        :return: tuple holding the state, costate, and data dictionaries
+        """
+        
         # will create sorted dictionaries for state, costate and data based on the assembly plans
 
         supported_dims = [0,1]
