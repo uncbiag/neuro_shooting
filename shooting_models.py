@@ -204,11 +204,11 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
                                                                  transpose_state_when_forward=transpose_state_when_forward,
                                                                  channel_number=channel_number)
 
-    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 6,particle_number = 10):
+    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 6,particle_number = 50):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
 
-        rand_mag_q = 0.5
+        rand_mag_q = 1.
 
         self.filter_size = filter_size
         self.particle_size = particle_size
@@ -266,7 +266,7 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
 
 class ShootingModule(nn.Module):
 
-    def __init__(self,shooting,method = 'rk4',rtol = 1e-8,atol = 1e-10,stepsize = 0.1):
+    def __init__(self,shooting,method = 'rk4',rtol = 1e-8,atol = 1e-10, step_size = None, max_num_steps=None):
         super(ShootingModule, self).__init__()
         self.shooting = shooting
         self.integration_time = torch.tensor([0, 1]).float()
@@ -274,6 +274,12 @@ class ShootingModule(nn.Module):
         self.atol = atol
         self.method = method
         self.add_module(name='shooting',module=self.shooting)
+
+        self.integrator_options = dict()
+        if step_size is not None:
+            self.integrator_options['step_size'] = step_size
+        if max_num_steps is not None:
+            self.integrator_options['max_num_steps'] = max_num_steps
 
     def _apply(self, fn):
         super(ShootingModule, self)._apply(fn)
@@ -289,7 +295,7 @@ class ShootingModule(nn.Module):
 
     def forward(self, x):
         self.initial_condition = self.shooting.get_initial_condition(x)
-        out = odeint(self.shooting, self.initial_condition, self.integration_time,method = self.method, rtol = self.rtol,atol = self.atol)
+        out = odeint(self.shooting, self.initial_condition, self.integration_time,method = self.method, rtol = self.rtol,atol = self.atol, options=self.integrator_options)
         out1 = self.shooting.disassemble(out, dim=1)
         return out1[1,...]
 

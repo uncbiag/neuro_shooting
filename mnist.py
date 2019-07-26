@@ -15,6 +15,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
 parser.add_argument('--tol', type=float, default=1e-3)
 parser.add_argument('--adjoint', type=eval, default=False, choices=[True, False])
+parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
+parser.add_argument('--step_size', type=float, default=None, help='Step size for the integrator (if not adaptive).')
+parser.add_argument('--max_num_steps', type=int, default=None, help='Maximum number of steps (for dopri5).')
 parser.add_argument('--downsampling-method', type=str, default='conv', choices=['conv', 'res'])
 parser.add_argument('--nepochs', type=int, default=160)
 parser.add_argument('--data_aug', type=eval, default=True, choices=[True, False])
@@ -309,7 +312,10 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingBlockModelSimpleConv2d(channel_number=64))]
+        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingBlockModelSimpleConv2d(channel_number=64),
+                                                         method=args.method,
+                                                         max_num_steps=args.max_num_steps,
+                                                         step_size=args.step_size)]
     else:
         feature_layers = [ResBlock(64, 64) for _ in range(6)]
 
