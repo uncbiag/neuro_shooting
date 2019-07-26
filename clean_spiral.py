@@ -370,11 +370,12 @@ class ShootingBlockBase(nn.Module):
     """
     Base class for shooting based neural ODE approaches
     """
-    def __init__(self, batch_y0=None, nonlinearity=None, transpose_state_when_forward=False):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False, transpose_state_when_forward=False):
         """
         Constructor
         :param batch_y0: example batch, can be used to construct initial conditions for patches
         :param nonlinearity: desired nonlinearity to be used tanh, sigmoid, relu, ...
+        :param only_random_initialization: just a flag passed on to the initialization of the state and costate
         :param transpose_state_when_forward: if set to true states get transposed (1,2) at the beginng and end of processing
         """
         super(ShootingBlockBase, self).__init__()
@@ -398,6 +399,10 @@ class ShootingBlockBase(nn.Module):
         # norm penalty
         self.current_norm_penalty = None
         """Will hold the last computed norm penality"""
+
+        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,
+                                                                                    only_random_initialization=only_random_initialization)
+        self.register_state_and_costate_parameters(state_dict=state_dict, costate_dict=costate_dict)
 
     def get_current_norm_penalty(self):
         """
@@ -454,7 +459,7 @@ class ShootingBlockBase(nn.Module):
         return nl,dnl
 
     @abstractmethod
-    def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization):
+    def create_initial_state_parameters(self,batch_y0,only_random_initialization):
         """
         Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
 
@@ -463,6 +468,42 @@ class ShootingBlockBase(nn.Module):
         :return:
         """
         pass
+
+    def create_initial_costate_parameters(self,batch_y0,only_random_initialization,state_dict=None):
+        """
+        Overwrite this method if you want to do something custom
+
+        :param batch_y0:
+        :param only_random_initialization:
+        :param state_dict: state dictionary which can be used to create the corresponding costate
+        :return:
+        """
+
+        if state_dict is None:
+            ValueError('This default method to create the initial costate requires to specify state_dict')
+
+        rand_mag_p = 0.5
+
+        costate_dict = SortedDict()
+        for k in state_dict:
+            costate_dict['p_' + str(k)] = nn.Parameter(rand_mag_p*torch.randn_like(state_dict[k]))
+
+        return costate_dict
+
+    def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization):
+        """
+        Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
+
+        :param batch_y0: sample batch as input, can be used to initialize
+        :param only_random_initialization: to indicate if purely random initialization is desired
+        :return:
+        """
+
+        state_dict = self.create_initial_state_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
+        costate_dict = self.create_initial_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,state_dict=state_dict)
+
+        return state_dict,costate_dict
+
 
     def _assemble_generic_dict(self,d):
         """
@@ -531,7 +572,7 @@ class ShootingBlockBase(nn.Module):
         :param dim: integrator may add a 0-th dimension to keep track of time. In this case use dim=1, otherwise dim=0 should be fine.
         :return: tuple holding the state, costate, and data dictionaries
         """
-        
+
         # will create sorted dictionaries for state, costate and data based on the assembly plans
 
         supported_dims = [0,1]
@@ -822,7 +863,9 @@ class ShootingBlockBase(nn.Module):
 
 class AutogradShootingBlockBase(ShootingBlockBase):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutogradShootingBlockBase, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+        super(AutogradShootingBlockBase, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                        only_random_initialization=only_random_initialization,
+                                                        transpose_state_when_forward=transpose_state_when_forward)
 
     def rhs_advect_costate(self, state_dict, costate_dict, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
@@ -848,7 +891,9 @@ class AutogradShootingBlockBase(ShootingBlockBase):
 
 class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(LinearInParameterAutogradShootingBlock, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+        super(LinearInParameterAutogradShootingBlock, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                                     only_random_initialization=only_random_initialization,
+                                                                     transpose_state_when_forward=transpose_state_when_forward)
 
     def compute_parameters_directly(self, parameter_objects, state_dict, costate_dict):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
@@ -880,7 +925,9 @@ class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
 
 class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(NonlinearInParameterAutogradShootingBlock, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+        super(NonlinearInParameterAutogradShootingBlock, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                                        only_random_initialization=only_random_initialization,
+                                                                        transpose_state_when_forward=transpose_state_when_forward)
 
     def compute_parameters_iteratively(self, parameter_objects, state_dict, costate_dict):
 
@@ -916,18 +963,15 @@ class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
 
 class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelSecondOrder, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+        super(AutoShootingBlockModelSecondOrder, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                                only_random_initialization=only_random_initialization,
+                                                                transpose_state_when_forward=transpose_state_when_forward)
 
-        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
-        self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
-
-    def create_initial_state_and_costate_parameters(self, batch_y0, only_random_initialization=True):
+    def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
-        costate_dict = SortedDict()
 
         rand_mag_q = 0.5
-        rand_mag_p = 0.5
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -936,15 +980,11 @@ class AutoShootingBlockModelSecondOrder(LinearInParameterAutogradShootingBlock):
             # do a fully random initialization
             state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn_like(batch_y0))
             state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn_like(batch_y0))
-            costate_dict['p1'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
-            costate_dict['p2'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
         else:
             state_dict['q1'] = nn.Parameter(batch_y0 + rand_mag_q * torch.randn_like(batch_y0))
             state_dict['q2'] = nn.Parameter(batch_y0 + rand_mag_q * torch.randn_like(batch_y0))
-            costate_dict['p1'] = nn.Parameter(torch.zeros(self.k, 1, self.d) + rand_mag_p * torch.randn([self.k, 1, self.d]))
-            costate_dict['p2'] = nn.Parameter(torch.zeros(self.k, 1, self.d) + rand_mag_p * torch.randn([self.k, 1, self.d]))
 
-        return state_dict,costate_dict
+        return state_dict
 
     def create_default_parameter_objects(self):
 
@@ -989,16 +1029,11 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(AutoShootingBlockModelUpDown, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
 
-        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
-        self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
-
-    def create_initial_state_and_costate_parameters(self, batch_y0, only_random_initialization=True):
+    def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
-        costate_dict = SortedDict()
 
         rand_mag_q = 0.5
-        rand_mag_p = 0.5
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -1007,12 +1042,10 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
             # do a fully random initialization
             state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d]))
             state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn([self.k, 1, self.d*5]))
-            costate_dict['p1'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
-            costate_dict['p2'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d*5]))
         else:
             raise ValueError('Not yet implemented')
 
-        return state_dict,costate_dict
+        return state_dict
 
     def create_default_parameter_objects(self):
 
@@ -1065,18 +1098,15 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
 
 class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelSimple, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+        super(AutoShootingBlockModelSimple, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                           only_random_initialization=only_random_initialization,
+                                                           transpose_state_when_forward=transpose_state_when_forward)
 
-        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
-        self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
-
-    def create_initial_state_and_costate_parameters(self, batch_y0, only_random_initialization=True):
+    def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
-        costate_dict = SortedDict()
 
         rand_mag_q = 0.5
-        rand_mag_p = 0.5
 
         self.k = batch_y0.size()[0]
         self.d = batch_y0.size()[2]
@@ -1084,12 +1114,10 @@ class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
         if only_random_initialization:
             # do a fully random initialization
             state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn_like(batch_y0))
-            costate_dict['p1'] = nn.Parameter(rand_mag_p * torch.randn([self.k, 1, self.d]))
         else:
             state_dict['q1'] = nn.Parameter(batch_y0 + rand_mag_q * torch.randn_like(batch_y0))
-            costate_dict['p1'] = nn.Parameter(torch.zeros(self.k, 1, self.d) + rand_mag_p * torch.randn([self.k, 1, self.d]))
 
-        return state_dict,costate_dict
+        return state_dict
 
     def create_default_parameter_objects(self):
 
@@ -1148,9 +1176,9 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        #shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
         #shooting = AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
         shooting = shooting.to(device)
 
