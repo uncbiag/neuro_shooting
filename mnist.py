@@ -8,8 +8,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from clean_spiral import *
-from functools import partial
+
+import shooting_models
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
@@ -28,8 +28,6 @@ parser.add_argument('--gpu', type=int, default=1)
 args = parser.parse_args()
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
-print(device)
-
 
 if args.adjoint:
     from torchdiffeq import odeint_adjoint as odeint
@@ -138,8 +136,6 @@ class ODEBlock(nn.Module):
     @nfe.setter
     def nfe(self, value):
         self.odefunc.nfe = value
-
-
 
 
 class Flatten(nn.Module):
@@ -313,7 +309,7 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [ShootingModule(AutoShootingBlockModelSimpleConv2d(64))]
+        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingBlockModelSimpleConv2d(channel_number=64))]
     else:
         feature_layers = [ResBlock(64, 64) for _ in range(6)]
 
@@ -376,16 +372,16 @@ if __name__ == '__main__':
         end = time.time()
 
         if itr % batches_per_epoch == 0:
-            #with torch.no_grad():
-                train_acc = accuracy(model, train_eval_loader)
-                val_acc = accuracy(model, test_loader)
-                if val_acc > best_acc:
-                    torch.save({'state_dict': model.state_dict(), 'args': args}, os.path.join(args.save, 'model.pth'))
-                    best_acc = val_acc
-                logger.info(
-                    "Epoch {:04d} | Time {:.3f} ({:.3f}) | NFE-F {:.1f} | NFE-B {:.1f} | "
-                    "Train Acc {:.4f} | Test Acc {:.4f}".format(
-                        itr // batches_per_epoch, batch_time_meter.val, batch_time_meter.avg, f_nfe_meter.avg,
-                        b_nfe_meter.avg, train_acc, val_acc
-                    )
+            # with torch.no_grad():
+            train_acc = accuracy(model, train_eval_loader)
+            val_acc = accuracy(model, test_loader)
+            if val_acc > best_acc:
+                torch.save({'state_dict': model.state_dict(), 'args': args}, os.path.join(args.save, 'model.pth'))
+                best_acc = val_acc
+            logger.info(
+                "Epoch {:04d} | Time {:.3f} ({:.3f}) | NFE-F {:.1f} | NFE-B {:.1f} | "
+                "Train Acc {:.4f} | Test Acc {:.4f}".format(
+                    itr // batches_per_epoch, batch_time_meter.val, batch_time_meter.avg, f_nfe_meter.avg,
+                    b_nfe_meter.avg, train_acc, val_acc
                 )
+            )
