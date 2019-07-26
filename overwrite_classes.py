@@ -39,6 +39,16 @@ class RemoveParameters(object):
     def get_parameter_weight_dict(self):
         return self._parameter_weight_dict
 
+    def _apply(self,fn):
+
+        for k in self._parameter_dict:
+            self._parameter_dict[k] = fn(self._parameter_dict[k])
+
+        for k in self._parameter_weight_dict:
+            self._parameter_weight_dict[k] = fn(self._parameter_weight_dict[k])
+
+        return self
+
     def to(self, *args, **kwargs):
 
         device, dtype, non_blocking = torch._C._nn._parse_to(*args, **kwargs)
@@ -65,6 +75,11 @@ class SNN_Linear(nn.Linear,RemoveParameters):
         RemoveParameters.__init__(self)
         self._remove_parameters()
 
+    def _apply(self, fn):
+        nn.Linear._apply(self,fn)
+        RemoveParameters._apply(self,fn)
+        return self
+
     def to(self, *args, **kwargs):
         nn.Linear.to(self,*args, **kwargs)
         RemoveParameters.to(self,*args, **kwargs)
@@ -84,6 +99,11 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
         RemoveParameters.__init__(self)
         self._remove_parameters()
 
+    def _apply(self, fn):
+        nn.Conv2d._apply(self,fn)
+        RemoveParameters._apply(self,fn)
+        return self
+
     def to(self, *args, **kwargs):
         nn.Conv2d.to(self,*args, **kwargs)
         RemoveParameters.to(self,*args, **kwargs)
@@ -96,6 +116,7 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
             return F.conv2d(F.pad(input, expanded_padding, mode='circular'),
                             self._parameter_dict['weight'], self._parameter_dict['bias'], self.stride,
                             _pair(0), self.dilation, self.groups)
+
         return F.conv2d(input, self._parameter_dict['weight'], self._parameter_dict['bias'], self.stride,
                         self.padding, self.dilation, self.groups)
 
