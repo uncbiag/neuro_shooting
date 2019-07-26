@@ -24,7 +24,7 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
-parser.add_argument('--gpu', type=int, default=1)
+parser.add_argument('--gpu', type=int, default=0)
 args = parser.parse_args()
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
@@ -284,8 +284,6 @@ if __name__ == '__main__':
     logger = get_logger(logpath=os.path.join(args.save, 'logs'), filepath=os.path.abspath(__file__))
     logger.info(args)
 
-    device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
-
     is_odenet = args.network == 'odenet'
     is_shootingnet = args.network == 'shooting'
 
@@ -309,11 +307,14 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingBlockModelSimpleConv2d(channel_number=64))]
+        shooting_layer = shooting_models.ShootingModule(shooting_models.AutoShootingBlockModelSimpleConv2d(channel_number=64))
+        shooting_layer.to(device) # todo: check why nn.Sequential does not seem to catch this conversion
+        feature_layers = [shooting_layer]
     else:
         feature_layers = [ResBlock(64, 64) for _ in range(6)]
 
     fc_layers = [norm(64), nn.ReLU(inplace=True), nn.AdaptiveAvgPool2d((1, 1)), Flatten(), nn.Linear(64, 10)]
+
 
     model = nn.Sequential(*downsampling_layers, *feature_layers, *fc_layers).to(device)
 

@@ -69,6 +69,17 @@ class ShootingBlockBase(nn.Module):
                                                                                     *args,**kwargs)
         self.register_state_and_costate_parameters(state_dict=state_dict, costate_dict=costate_dict)
 
+        if self._parameter_objects is None:
+            self._parameter_objects = self.create_default_parameter_objects()
+
+    def to(self, *args, **kwargs):
+        super(ShootingBlockBase,self).to(*args, **kwargs)
+        # make sure that all the filters that were created get moved
+        for k in self._parameter_objects:
+            print('Applying to, to {}'.format(k))
+            self._parameter_objects[k].to(*args, **kwargs)
+        return self
+
     def get_current_norm_penalty(self):
         """
         Returns the last computed norm penalty

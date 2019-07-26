@@ -274,6 +274,11 @@ class ShootingModule(nn.Module):
         self.atol = atol
         self.method = method
 
+    def to(self, *args, **kwargs):
+        super(ShootingModule,self).to(*args, **kwargs)
+        self.shooting.to(*args, **kwargs)
+        return self
+
     def forward(self, x):
         self.integration_time = self.integration_time.type_as(x)
         self.initial_condition = self.shooting.get_initial_condition(x)
