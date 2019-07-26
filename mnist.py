@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+import random
 
 import shooting_models
 
@@ -32,7 +33,15 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--gpu', type=int, default=1)
+
+parser.add_argument('--seed', required=False, type=int, default=1234,
+                    help='Sets the random seed which affects data shuffling')
+
 args = parser.parse_args()
+
+print('Setting the random seed to {:}'.format(args.seed))
+random.seed(args.seed)
+torch.manual_seed(args.seed)
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
