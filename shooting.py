@@ -34,7 +34,7 @@ class ShootingBlockBase(nn.Module):
     """
     Base class for shooting based neural ODE approaches
     """
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False, transpose_state_when_forward=False):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False, transpose_state_when_forward=False, *args, **kwargs):
         """
         Constructor
         :param batch_y0: example batch, can be used to construct initial conditions for patches
@@ -65,7 +65,8 @@ class ShootingBlockBase(nn.Module):
         """Will hold the last computed norm penality"""
 
         state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,
-                                                                                    only_random_initialization=only_random_initialization)
+                                                                                    only_random_initialization=only_random_initialization,
+                                                                                    *args,**kwargs)
         self.register_state_and_costate_parameters(state_dict=state_dict, costate_dict=costate_dict)
 
     def get_current_norm_penalty(self):
@@ -123,7 +124,7 @@ class ShootingBlockBase(nn.Module):
         return nl,dnl
 
     @abstractmethod
-    def create_initial_state_parameters(self,batch_y0,only_random_initialization):
+    def create_initial_state_parameters(self,batch_y0,only_random_initialization,*args,**kwargs):
         """
         Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
 
@@ -133,7 +134,7 @@ class ShootingBlockBase(nn.Module):
         """
         pass
 
-    def create_initial_costate_parameters(self,batch_y0,only_random_initialization,state_dict=None):
+    def create_initial_costate_parameters(self,batch_y0,only_random_initialization,state_dict=None,*args,**kwargs):
         """
         Overwrite this method if you want to do something custom
 
@@ -154,7 +155,7 @@ class ShootingBlockBase(nn.Module):
 
         return costate_dict
 
-    def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization):
+    def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization,*args,**kwargs):
         """
         Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
 
@@ -163,8 +164,8 @@ class ShootingBlockBase(nn.Module):
         :return:
         """
 
-        state_dict = self.create_initial_state_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization)
-        costate_dict = self.create_initial_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,state_dict=state_dict)
+        state_dict = self.create_initial_state_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,*args,**kwargs)
+        costate_dict = self.create_initial_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,state_dict=state_dict,*args,**kwargs)
 
         return state_dict,costate_dict
 
@@ -526,10 +527,11 @@ class ShootingBlockBase(nn.Module):
         return output
 
 class AutogradShootingBlockBase(ShootingBlockBase):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,*args,**kwargs):
         super(AutogradShootingBlockBase, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                         only_random_initialization=only_random_initialization,
-                                                        transpose_state_when_forward=transpose_state_when_forward)
+                                                        transpose_state_when_forward=transpose_state_when_forward,
+                                                        *args,**kwargs)
 
     def rhs_advect_costate(self, state_dict, costate_dict, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
@@ -554,10 +556,11 @@ class AutogradShootingBlockBase(ShootingBlockBase):
 
 
 class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,*args,**kwargs):
         super(LinearInParameterAutogradShootingBlock, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                                      only_random_initialization=only_random_initialization,
-                                                                     transpose_state_when_forward=transpose_state_when_forward)
+                                                                     transpose_state_when_forward=transpose_state_when_forward,
+                                                                     *args,**kwargs)
 
     def compute_parameters_directly(self, parameter_objects, state_dict, costate_dict):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
