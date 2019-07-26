@@ -81,7 +81,7 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
                                          kernel_size=kernel_size, stride=stride,
                                          padding=padding, dilation=dilation, groups=groups,
                                          bias=bias, padding_mode=padding_mode)
-
+        RemoveParameters.__init__(self)
         self._remove_parameters()
 
     def to(self, *args, **kwargs):
