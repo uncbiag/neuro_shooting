@@ -273,14 +273,21 @@ class ShootingModule(nn.Module):
         self.rtol = rtol
         self.atol = atol
         self.method = method
+        self.add_module(name='shooting',module=self.shooting)
+
+    def _apply(self, fn):
+        super(ShootingModule, self)._apply(fn)
+        self.shooting._apply(fn)
+        self.integration_time = fn(self.integration_time)
+        return self
 
     def to(self, *args, **kwargs):
         super(ShootingModule,self).to(*args, **kwargs)
         self.shooting.to(*args, **kwargs)
+        self.integration_time = self.integration_time.to(*args, **kwargs)
         return self
 
     def forward(self, x):
-        self.integration_time = self.integration_time.type_as(x)
         self.initial_condition = self.shooting.get_initial_condition(x)
         out = odeint(self.shooting, self.initial_condition, self.integration_time,method = self.method, rtol = self.rtol,atol = self.atol)
         out1 = self.shooting.disassemble(out, dim=1)

@@ -72,6 +72,14 @@ class ShootingBlockBase(nn.Module):
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
 
+    def _apply(self, fn):
+        super(ShootingBlockBase, self)._apply(fn)
+        # make sure that all the filters that were created get moved
+        for k in self._parameter_objects:
+            print('Applying _apply, to {}'.format(k))
+            self._parameter_objects[k]._apply(fn)
+        return self
+
     def to(self, *args, **kwargs):
         super(ShootingBlockBase,self).to(*args, **kwargs)
         # make sure that all the filters that were created get moved
