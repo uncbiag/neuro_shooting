@@ -36,7 +36,7 @@ parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'ta
 
 
 parser.add_argument('--viz', action='store_true', help='Enable visualization.')
-parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
+parser.add_argument('--gpu', type=int, default=1, help='Enable GPU computation on specified GPU.')
 parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
 
 args = parser.parse_args()
@@ -51,7 +51,7 @@ else:
     from torchdiffeq import odeint
 
 
-device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+#device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
 true_y0 = torch.tensor([[2., 0.]]).to(device)
 t = torch.linspace(0., 25., args.data_size).to(device)

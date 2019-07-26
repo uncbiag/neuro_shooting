@@ -8,11 +8,11 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-
+from clean_spiral import *
 from functools import partial
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='odenet')
+parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
 parser.add_argument('--tol', type=float, default=1e-3)
 parser.add_argument('--adjoint', type=eval, default=False, choices=[True, False])
 parser.add_argument('--downsampling-method', type=str, default='conv', choices=['conv', 'res'])
@@ -24,8 +24,12 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
-parser.add_argument('--gpu', type=int, default=0)
+parser.add_argument('--gpu', type=int, default=1)
 args = parser.parse_args()
+
+device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+print(device)
+
 
 if args.adjoint:
     from torchdiffeq import odeint_adjoint as odeint
@@ -135,84 +139,6 @@ class ODEBlock(nn.Module):
     def nfe(self, value):
         self.odefunc.nfe = value
 
-
-# TODO: copy and pasted from spiral.py. Need to customize for mnist
-class ShootingBlock(nn.Module):
-    def __init__(self, batch_y0, Mbar=None, Mbar_b=None):
-        super(ShootingBlock, self).__init__()
-
-        self.K = batch_y0.shape[0]
-        self.d = batch_y0.shape[2]
-
-        if Mbar is None:
-            self.Mbar = torch.eye(self.d)
-        else:
-            self.Mbar = Mbar
-        if Mbar_b is None:
-            self.Mbar_b = torch.eye(self.d)
-        else:
-            self.Mbar_b = Mbar_b
-
-        self.x_params = nn.Parameter(batch_y0)
-        self.p_params = nn.Parameter(torch.zeros(self.K,1,self.d))
-
-
-    def forward(self, input, batch_t):
-        """
-
-        :param input: 3D tensor of minibatch x 1 x feature dimension holding initial conditions
-        :param batch_t: 1D tensor holding time points for evaluation
-        :return: |batch_t| x minibatch x 1 x feature dimension
-        """
-
-        # solve Equation 3 for theta
-        theta = torch.matmul(-self.p_params.squeeze().transpose(0, 1), nn.functional.relu(self.x_params.squeeze()))
-        theta = torch.matmul(torch.inverse(self.Mbar), theta)
-
-        # solve Equation 4 for bias
-        bias = torch.matmul(-self.p_params.squeeze().transpose(0, 1), torch.ones([K, 1]))
-        bias = torch.matmul(torch.inverse(self.Mbar_b), bias)
-
-        # right hand side of Equation 1
-        def odefunc_x(t, x, theta, bias):
-            shapex = nn.functional.relu(x.squeeze(dim=1).transpose(0, 1))
-            prod = torch.matmul(theta, shapex)
-            rhs = prod + bias
-            return rhs.unsqueeze(dim=1).transpose(0, 2)
-
-        # right hand side of Equation 2
-        def odefunc_p(t, p, x, theta):
-            # Drelu = torch.eye(d)
-            # prod = torch.matmul(Drelu,theta.transpose(0,1))
-            # rhs = torch.matmul(prod, p.squeeze().transpose(0,1))
-            rhs = []
-            for i in range(0, self.K):
-                Drelu = torch.diag((x[i, 0, :] >= 0).type(torch.FloatTensor))
-                prod = torch.matmul(Drelu, theta.transpose(0, 1))
-                rhs.append(torch.matmul(prod, p[i, :, :].transpose(0, 1)))
-            rhs = torch.cat(rhs, 1)
-
-            return rhs.unsqueeze(dim=1).transpose(0, 2)
-
-        # Equation 1 with INITIAL conditions x_params
-        func = partial(odefunc_x, theta=theta, bias=bias)
-        x_params = odeint(func, self.x_params, torch.tensor([1]).float())
-        x_params = torch.squeeze(x_params, dim=0)
-
-        # Equation 2 with FINAL conditions p_params
-        func = partial(odefunc_p, x=x_params, theta=theta)
-        p_params = odeint(func, self.p_params, torch.tensor([-1]).float())
-        p_params = torch.squeeze(p_params, dim=0)
-
-        # Once again solve Equations 3 and 4
-        theta = torch.matmul(-p_params.squeeze().transpose(0, 1), nn.functional.relu(x_params.squeeze()))
-        bias = torch.matmul(-p_params.squeeze().transpose(0, 1), torch.ones([self.K, 1]))
-
-        # Equation 1 for initial condition xsample
-        func = partial(odefunc_x, theta=theta, bias=bias)
-        output = odeint(func, input, batch_t)
-
-        return output
 
 
 
@@ -387,10 +313,7 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        # TODO: don't hardcode K
-        K = 50
-        d = 64
-        feature_layers = [ShootingBlock(K,d)]
+        feature_layers = [ShootingModule(AutoShootingBlockModelSimpleConv2d(64))]
     else:
         feature_layers = [ResBlock(64, 64) for _ in range(6)]
 
@@ -453,7 +376,7 @@ if __name__ == '__main__':
         end = time.time()
 
         if itr % batches_per_epoch == 0:
-            with torch.no_grad():
+            #with torch.no_grad():
                 train_acc = accuracy(model, train_eval_loader)
                 val_acc = accuracy(model, test_loader)
                 if val_acc > best_acc:

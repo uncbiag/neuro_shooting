@@ -76,11 +76,11 @@ class SNN_Linear(nn.Linear,RemoveParameters):
 class SNN_Conv2d(nn.Conv2d,RemoveParameters):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,
-                 bias=True, padding_mode='zeros'):
+                 bias=True):
         super(SNN_Conv2d, self).__init__(in_channels=in_channels, out_channels=out_channels,
                                          kernel_size=kernel_size, stride=stride,
                                          padding=padding, dilation=dilation, groups=groups,
-                                         bias=bias, padding_mode=padding_mode)
+                                         bias=bias)
         RemoveParameters.__init__(self)
         self._remove_parameters()
 
@@ -90,12 +90,15 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
         return self
 
     def forward(self, input):
-        if self.padding_mode == 'circular':
-            expanded_padding = ((self.padding[1] + 1) // 2, self.padding[1] // 2,
-                                (self.padding[0] + 1) // 2, self.padding[0] // 2)
-            return F.conv2d(F.pad(input, expanded_padding, mode='circular'),
-                            self._parameter_dict['weight'], self._parameter_dict['bias'], self.stride,
-                            _pair(0), self.dilation, self.groups)
+        try:
+            if self.padding_mode == 'circular':
+                expanded_padding = ((self.padding[1] + 1) // 2, self.padding[1] // 2,
+                                    (self.padding[0] + 1) // 2, self.padding[0] // 2)
+                return F.conv2d(F.pad(input, expanded_padding, mode='circular'),
+                                self._parameter_dict['weight'], self._parameter_dict['bias'], self.stride,
+                                _pair(0), self.dilation, self.groups)
+        except:
+            pass
         return F.conv2d(input, self._parameter_dict['weight'], self._parameter_dict['bias'], self.stride,
                         self.padding, self.dilation, self.groups)
 

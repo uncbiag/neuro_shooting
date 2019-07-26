@@ -42,7 +42,7 @@ parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'ta
 
 
 parser.add_argument('--viz', action='store_true', help='Enable visualization.')
-parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
+parser.add_argument('--gpu', type=int, default=1, help='Enable GPU computation on specified GPU.')
 parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
 
 args = parser.parse_args()
@@ -1096,6 +1096,8 @@ class AutoShootingBlockModelUpDown(LinearInParameterAutogradShootingBlock):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
+
+
 class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(AutoShootingBlockModelSimple, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
@@ -1152,6 +1154,99 @@ class AutoShootingBlockModelSimple(LinearInParameterAutogradShootingBlock):
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
+
+
+
+class AutoShootingBlockModelSimpleConv2d(LinearInParameterAutogradShootingBlock):
+    def __init__(self, channel_number,batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False):
+        super(AutoShootingBlockModelSimpleConv2d, self).__init__(nonlinearity=nonlinearity,transpose_state_when_forward=transpose_state_when_forward)
+
+        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(channel_number,batch_y0=batch_y0,only_random_initialization=only_random_initialization)
+        self.register_state_and_costate_parameters(state_dict=state_dict,costate_dict=costate_dict)
+
+    def create_initial_state_and_costate_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 6,particle_number = 10):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+        costate_dict = SortedDict()
+
+        rand_mag_q = 0.5
+        rand_mag_p = 0.5
+
+        #self.k = batch_y0.size()[0]
+        #self.d = batch_y0.size()[2]
+        self.filter_size = filter_size
+        self.particle_size = particle_size
+        self.particle_number = particle_number
+        self.channel_number = channel_number
+
+        if only_random_initialization:
+            # do a fully random initialization
+            state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn([self.particle_number,self.channel_number,self.particle_size,self.particle_size]).to(device))
+            costate_dict['p1'] = nn.Parameter(rand_mag_q * torch.randn([self.particle_number,self.channel_number,self.particle_size,self.particle_size]).to(device))
+            state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn([self.particle_number,self.channel_number,self.particle_size,self.particle_size]).to(device))
+            costate_dict['p2'] = nn.Parameter(rand_mag_q * torch.randn([self.particle_number,self.channel_number,self.particle_size,self.particle_size]).to(device))
+
+        else:
+            raise ValueError('Not yet implemented')
+
+        return state_dict,costate_dict
+
+    def create_default_parameter_objects(self):
+
+        parameter_objects = SortedDict()
+
+        conv1 = oc.SNN_Conv2d(in_channels=self.channel_number,out_channels=self.channel_number,kernel_size=self.filter_size,padding = 1).to(device)
+        conv2 = oc.SNN_Conv2d(in_channels=self.channel_number,out_channels=self.channel_number,kernel_size=self.filter_size,padding = 1).to(device)
+
+        parameter_objects["conv1"] = conv1
+        parameter_objects["conv2"] = conv2
+
+        return parameter_objects
+
+    def rhs_advect_state(self, state_dict, parameter_objects):
+
+        rhs = SortedDict()
+
+        s = state_dict
+        p = parameter_objects
+
+        rhs['dot_q1'] = p["conv1"](self.nl(s['q2']))
+        rhs['dot_q2'] = p["conv2"](s['q1'])
+
+        return rhs
+
+    def get_initial_condition(self, x):
+        # Initial condition from given data vector
+        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+        data_dict['q2'] = torch.zeros_like(x)
+
+        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
+
+        return initial_conditions
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
+        return data_dict['q1']
+
+
+class ShootingModule(nn.Module):
+
+    def __init__(self,shooting,method = "rk4",rtol = 1e-8,atol = 1e-10,stepsize = 0.1):
+        super(ShootingModule, self).__init__()
+        self.shooting = shooting
+        self.integration_time = torch.tensor([0, 1]).float()
+        self.rtol = rtol
+        self.atol = atol
+        self.method = method
+
+    def forward(self, x):
+        self.integration_time = self.integration_time.type_as(x)
+        self.initial_condition = self.shooting.get_initial_condition(x)
+        out = odeint(self.shooting, self.initial_condition, self.integration_time,method = self.method, rtol = self.rtol,atol = self.atol)
+        out1 = self.shooting.disassemble(out, dim=1)
+        return out1[1,...]
 
 
 if __name__ == '__main__':
