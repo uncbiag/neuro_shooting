@@ -198,13 +198,21 @@ class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlo
 
 
 class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False, channel_number=64):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
+                 channel_number=64,
+                 filter_size=3,
+                 particle_size=6,
+                 particle_number=25):
+
         super(AutoShootingBlockModelSimpleConv2d, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                                  only_random_initialization=only_random_initialization,
                                                                  transpose_state_when_forward=transpose_state_when_forward,
-                                                                 channel_number=channel_number)
+                                                                 channel_number=channel_number,
+                                                                 filter_size=filter_size,
+                                                                 particle_size=particle_size,
+                                                                 particle_number=particle_number)
 
-    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 6,particle_number = 50):
+    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 6,particle_number = 25):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
 
