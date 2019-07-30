@@ -6,8 +6,8 @@ from sortedcontainers import SortedDict
 from torchdiffeq import odeint
 
 class AutoShootingBlockModelSecondOrder(shooting.LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelSecondOrder, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(AutoShootingBlockModelSecondOrder, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                                 only_random_initialization=only_random_initialization,
                                                                 transpose_state_when_forward=transpose_state_when_forward)
 
@@ -42,11 +42,11 @@ class AutoShootingBlockModelSecondOrder(shooting.LinearInParameterAutogradShooti
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict, parameter_objects):
+    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
-        s = state_dict
+        s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
         rhs['dot_q1'] = p['l1'](self.nl(s['q2']))
@@ -70,8 +70,8 @@ class AutoShootingBlockModelSecondOrder(shooting.LinearInParameterAutogradShooti
         return data_dict['q1']
 
 class AutoShootingBlockModelUpDown(shooting.LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelUpDown, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(AutoShootingBlockModelUpDown, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                            only_random_initialization=only_random_initialization,
                                                            transpose_state_when_forward=transpose_state_when_forward)
 
@@ -105,11 +105,11 @@ class AutoShootingBlockModelUpDown(shooting.LinearInParameterAutogradShootingBlo
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict, parameter_objects):
+    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
-        s = state_dict
+        s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
         rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
@@ -140,8 +140,8 @@ class AutoShootingBlockModelUpDown(shooting.LinearInParameterAutogradShootingBlo
         return data_dict['q1']
 
 class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelSimple, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(AutoShootingBlockModelSimple, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                            only_random_initialization=only_random_initialization,
                                                            transpose_state_when_forward=transpose_state_when_forward)
 
@@ -171,11 +171,11 @@ class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlo
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict, parameter_objects):
+    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
-        s = state_dict
+        s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
         rhs['dot_q1'] = p['l1'](input=self.nl(s['q1']))
@@ -198,7 +198,7 @@ class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlo
 
 
 class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
+    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
                  particle_size=9,
@@ -208,7 +208,8 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
         self.particle_number = particle_number
         self.channel_number = channel_number
 
-        super(AutoShootingBlockModelSimpleConv2d, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+        super(AutoShootingBlockModelSimpleConv2d, self).__init__(name=name,
+                                                                 batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                                  only_random_initialization=only_random_initialization,
                                                                  transpose_state_when_forward=transpose_state_when_forward,
                                                                  channel_number=channel_number,
@@ -249,11 +250,11 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict, parameter_objects):
+    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
-        s = state_dict
+        s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
         rhs['dot_q1'] = p['conv1'](self.nl(s['q2']))
@@ -277,19 +278,20 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
         return data_dict['q1']
 
 class AutoShootingBlockModelConv2dBatch(shooting.LinearInParameterAutogradShootingBlock):
-    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
+    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
                  particle_size=6,
                  particle_number=25):
 
-        super(AutoShootingBlockModelConv2dBatch, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                                 only_random_initialization=only_random_initialization,
-                                                                 transpose_state_when_forward=transpose_state_when_forward,
-                                                                 channel_number=channel_number,
-                                                                 filter_size=filter_size,
-                                                                 particle_size=particle_size,
-                                                                 particle_number=particle_number)
+        super(AutoShootingBlockModelConv2dBatch, self).__init__(name=name,
+                                                                batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                                only_random_initialization=only_random_initialization,
+                                                                transpose_state_when_forward=transpose_state_when_forward,
+                                                                channel_number=channel_number,
+                                                                filter_size=filter_size,
+                                                                particle_size=particle_size,
+                                                                particle_number=particle_number)
 
     def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 8,particle_number = 10):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -327,11 +329,11 @@ class AutoShootingBlockModelConv2dBatch(shooting.LinearInParameterAutogradShooti
 
 
 
-    def rhs_advect_state(self, state_dict, parameter_objects):
+    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
-        s = state_dict
+        s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
         rhs['dot_q1'] = p['conv1'](self.nl(s['q2']))

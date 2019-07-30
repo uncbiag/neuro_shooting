@@ -364,7 +364,7 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        shooting = shooting_models.AutoShootingBlockModelSimple(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = shooting_models.AutoShootingBlockModelSimple(name='simple', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
         #shooting = shooting_models.AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
         #shooting = shooting_models.AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
