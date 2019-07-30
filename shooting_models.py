@@ -166,7 +166,7 @@ class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlo
 
         parameter_objects = SortedDict()
 
-        linear = oc.SNN_Linear(in_features=2, out_features=2)
+        linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
         parameter_objects['l1'] = linear
 
         return parameter_objects
@@ -201,8 +201,12 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
     def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
-                 particle_size=6,
+                 particle_size=9,
                  particle_number=25):
+        self.filter_size = filter_size
+        self.particle_size = particle_size
+        self.particle_number = particle_number
+        self.channel_number = channel_number
 
         super(AutoShootingBlockModelSimpleConv2d, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
                                                                  only_random_initialization=only_random_initialization,
@@ -212,16 +216,17 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
                                                                  particle_size=particle_size,
                                                                  particle_number=particle_number)
 
-    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 6,particle_number = 25):
+
+    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 8,particle_number = 10):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
 
         rand_mag_q = 1.
 
-        self.filter_size = filter_size
-        self.particle_size = particle_size
-        self.particle_number = particle_number
-        self.channel_number = channel_number
+        #self.filter_size = filter_size
+        #self.particle_size = particle_size
+        #self.particle_number = particle_number
+        #self.channel_number = channel_number
 
         if only_random_initialization:
             # do a fully random initialization
@@ -271,6 +276,83 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
+class AutoShootingBlockModelConv2dBatch(shooting.LinearInParameterAutogradShootingBlock):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
+                 channel_number=64,
+                 filter_size=3,
+                 particle_size=6,
+                 particle_number=25):
+
+        super(AutoShootingBlockModelConv2dBatch, self).__init__(batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                                 only_random_initialization=only_random_initialization,
+                                                                 transpose_state_when_forward=transpose_state_when_forward,
+                                                                 channel_number=channel_number,
+                                                                 filter_size=filter_size,
+                                                                 particle_size=particle_size,
+                                                                 particle_number=particle_number)
+
+    def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 8,particle_number = 10):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+
+        rand_mag_q = 1.
+
+        self.filter_size = filter_size
+        self.particle_size = particle_size
+        self.particle_number = particle_number
+        self.channel_number = channel_number
+
+        if only_random_initialization:
+            # do a fully random initialization
+            state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn([self.particle_number,self.channel_number,self.particle_size,self.particle_size]))
+            state_dict['q2'] = nn.Parameter(rand_mag_q * torch.randn([self.particle_number,self.channel_number,self.particle_size,self.particle_size]))
+        else:
+            raise ValueError('Not yet implemented')
+
+        return state_dict
+
+    def create_default_parameter_objects(self):
+
+        parameter_objects = SortedDict()
+
+        conv1 = oc.SNN_Conv2d(in_channels=self.channel_number,out_channels=self.channel_number,kernel_size=self.filter_size,padding = 1)
+        conv2 = oc.SNN_Conv2d(in_channels=self.channel_number,out_channels=self.channel_number,kernel_size=self.filter_size,padding = 1)
+        #group_norm = oc.SNN_GroupNorm(self.channel_number,self.channel_number,affine = False)
+        group_norm = nn.GroupNorm(self.channel_number,self.channel_number,affine = False)
+        parameter_objects['conv1'] = conv1
+        parameter_objects['conv2'] = conv2
+        self.group_norm = group_norm
+
+        return parameter_objects
+
+
+
+    def rhs_advect_state(self, state_dict, parameter_objects):
+
+        rhs = SortedDict()
+
+        s = state_dict
+        p = parameter_objects
+
+        rhs['dot_q1'] = p['conv1'](self.nl(s['q2']))
+        rhs['dot_q2'] = p["conv2"](self.group_norm(s['q1']))
+
+        return rhs
+
+    def get_initial_condition(self, x):
+        # Initial condition from given data vector
+        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+        data_dict['q2'] = torch.zeros_like(x)
+
+        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
+
+        return initial_conditions
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
+        return data_dict['q1']
 
 class ShootingModule(nn.Module):
 

@@ -121,3 +121,31 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
                         self.padding, self.dilation, self.groups)
 
 
+class SNN_GroupNorm(nn.GroupNorm,RemoveParameters):
+    def __init__(self, num_groups, num_channels, affine = True,
+                 eps=1e-05):
+        super(SNN_GroupNorm, self).__init__(num_groups=num_groups, num_channels=num_channels,
+                                         affine=affine, eps=eps)
+        RemoveParameters.__init__(self)
+        if affine:
+            self._remove_parameters()
+        else:
+            self._parameter_dict  = SortedDict()
+
+    def _apply(self, fn):
+        nn.GroupNorm._apply(self,fn)
+        RemoveParameters._apply(self,fn)
+        return self
+
+    def to(self, *args, **kwargs):
+        nn.GroupNorm.to(self,*args, **kwargs)
+        RemoveParameters.to(self,*args, **kwargs)
+        return self
+
+
+    def forward(self, input):
+        return F.group_norm(
+            input, self.num_groups, self._parameter_dict['weight'], self._parameter_dict['bias'], self.eps)
+
+
+
