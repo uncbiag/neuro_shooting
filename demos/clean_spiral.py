@@ -364,7 +364,10 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        shooting = shooting_models.AutoShootingBlockModelSimple(name='simple', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = shooting_models.AutoShootingBlockModelSimple(name='simple', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+
+        shooting = shooting_models.ChainedShootingBlockExample(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+
         #shooting = shooting_models.AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
         #shooting = shooting_models.AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
@@ -483,6 +486,7 @@ if __name__ == '__main__':
                 t_0 = t_1
 
                 val_z_0 = shooting.get_initial_condition(x=val_y0)
+
                 temp_pred_y = odeint(shooting, val_z_0, val_t, method=args.method, atol=atol, rtol=rtol,
                                      options=options)
 

@@ -65,7 +65,7 @@ class ShootingBlockBase(nn.Module):
         self.concatenate_parameters = concatenate_parameters
 
         self._parameter_objects = None
-        """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules"""
+        """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules)"""
 
         self.transpose_state_when_forward = transpose_state_when_forward
 
@@ -86,6 +86,12 @@ class ShootingBlockBase(nn.Module):
             self._parameter_objects = self.create_default_parameter_objects()
 
     def _apply(self, fn):
+        """
+        Applies a function to all the parameters of the shooting block.
+
+        :param fn: function which will be applied.
+        :return: returns self
+        """
         super(ShootingBlockBase, self)._apply(fn)
         # make sure that all the filters that were created get moved
         for k in self._parameter_objects:
@@ -94,6 +100,14 @@ class ShootingBlockBase(nn.Module):
         return self
 
     def to(self, *args, **kwargs):
+        """
+        Convenience function to allow moving the block to a different device. Calls .to() on all parameters
+        of the shooting block.
+
+        :param args:
+        :param kwargs:
+        :return: returns self
+        """
         super(ShootingBlockBase,self).to(*args, **kwargs)
         # make sure that all the filters that were created get moved
         for k in self._parameter_objects:
@@ -119,9 +133,10 @@ class ShootingBlockBase(nn.Module):
 
     def _get_nonlinearity(self, nonlinearity):
         """
-        Returns the desired nonlinearity and its derivative as a tuple
+        Returns the desired nonlinearity and its derivative as a tuple. Currently supported nonlinearities are:
+        identity, relu, tanh, sigmoid, and softmax.
 
-        :param nonlinearity:
+        :param nonlinearity: as a string: 'identity', 'relu', 'tanh', 'sigmoid', 'softmax'
         :return: tuple (nonlinearity,derivative of nonlinearity)
         """
 
@@ -158,37 +173,59 @@ class ShootingBlockBase(nn.Module):
     @abstractmethod
     def create_initial_state_parameters(self,batch_y0,only_random_initialization,*args,**kwargs):
         """
-        Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
+        Abstract method. Needs to be defined and needs to create and return a SortedDict containing the state variables.
 
         :param batch_y0: sample batch as input, can be used to initialize
         :param only_random_initialization: to indicate if purely random initialization is desired
-        :return:
+        :return: SortedDict containing the state variables (e.g., SortedDict({'q1': torch.zeros(20,10,5)})
         """
         pass
 
     def set_initial_pass_through_state_parameters(self,state_dict_of_dicts):
-        # if the parameters are not optimized over, this function can be used to set the initial conditions
-        # are combined with parameters specified 
+        """
+        If the parameters are not optimized over, this function can be used to set the initial conditions for the state variables.
+        It is possible to pass through states and to create new ones (in this case they will be combined).
+
+        :param state_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the states.
+        :return: n/a
+        """
         self._pass_through_state_parameter_dict_of_dicts = state_dict_of_dicts
 
     def set_initial_pass_through_costate_parameters(self,costate_dict_of_dicts):
-        # if the parameters are not optimized over, this function can be used to set the initial conditions
+        """
+        If the parameters are not optimized over, this function can be used to set the initial conditions for the costate variables.
+        It is possible to pass through co-states and to create new ones (in this case they will be combined).
+
+        :param costate_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the costates.
+        :return: n/a
+        """
         self._pass_through_costate_parameter_dict_of_dicts = costate_dict_of_dicts
 
     def set_initial_pass_through_state_and_costate_parameters(self,state_dict_of_dicts,costate_dict_of_dicts):
+        """
+        Convenience function that allows setting the pass-through states and costates at the same time.
+        Same as calling set_initial_pass_through_state_parameters and set_initial_pass_through_costate_parameters separately.
+
+        :param state_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the states.
+        :param costate_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the costates.
+        :return: n/a
+        """
         # if the parameters are not optimized over, this function can be used to set the initial conditions
         self.set_initial_pass_through_state_parameters(state_dict_of_dicts=state_dict_of_dicts)
         self.set_initial_pass_through_costate_parameters(costate_dict_of_dicts=costate_dict_of_dicts)
 
 
-    def create_initial_costate_parameters(self,batch_y0,only_random_initialization,state_dict=None,*args,**kwargs):
+    def create_initial_costate_parameters(self,batch_y0=None,only_random_initialization=True,state_dict=None,*args,**kwargs):
         """
-        Overwrite this method if you want to do something custom
+        By default this function automatically creates the costates for the given states (and does not need to be called
+        manually). Costates are names with the prefix \'p\_\', i.e., if a state was called \'q\' the corresponding costate
+        will be called \'p\_q\'. Overwrite this method if you want to do something custom for the costates, though this
+        should only rarely be necessary.
 
-        :param batch_y0:
-        :param only_random_initialization:
+        :param batch_y0: data batch passed in (but not currently used) that allows to create state-specific costates.
+        :param only_random_initialization: to indicate if the costates should be randomized (also currently not used; will be random by default).
         :param state_dict: state dictionary which can be used to create the corresponding costate
-        :return:
+        :return: returns a SortedDict containing the costate.
         """
 
         if state_dict is None:
@@ -204,11 +241,11 @@ class ShootingBlockBase(nn.Module):
 
     def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization,*args,**kwargs):
         """
-        Abstract method. Needs to be defined and needs to create and return a SortedDict as a tuple (state_dict,costate_dict)
+        Creates the intial state and costate parameters. Should typically *not* be necessary to call this manually.
 
         :param batch_y0: sample batch as input, can be used to initialize
         :param only_random_initialization: to indicate if purely random initialization is desired
-        :return:
+        :return: tuple of SortedDicts holding the state dictionary and the cotate dictionary
         """
 
         state_dict = self.create_initial_state_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,*args,**kwargs)
@@ -220,6 +257,7 @@ class ShootingBlockBase(nn.Module):
     def _assemble_generic_dict(self,d):
         """
         Given a SortedDict returns its vectorized version and a plan (a dictionary of sizes) on how to reassemble it.
+        Given an empty directory it will return None, None
 
         :param d: sorted dictionary to vectorize
         :return: tuple: vectorized dictionary, assembly plan
@@ -236,27 +274,42 @@ class ShootingBlockBase(nn.Module):
             d_list.append(d[k].view(-1)) # entirely flatten is (shape is stored by assembly plan)
             assembly_plan[k] = d[k].shape
 
-        ret = torch.cat(tuple(d_list))
+        if len(d_list)>0:
+            ret = torch.cat(tuple(d_list))
+        else:
+            # was an empty directory
+            ret = None
+            assembly_plan = None
 
         return ret, assembly_plan
 
     def _assemble_generic_dict_of_dicts(self,d):
+        """
+        Similar to _assemble_generic_dict, but works for SortedDict's which contain other SortedDicts (as needed for the
+        state and the costate).
+
+        :param d: Input dictionary containing a SortedDict (which itself contains SortedDict entries).
+        :return: returns a tuple of a vectorized dictionary and the associated assembly plan
+        """
+
         assembly_plans = dict()
         ret = None
         for dk in d:
-            current_ret,assembly_plans[dk] = self._assemble_generic_dict(d[dk])
-            if ret is None:
-                ret = current_ret
-            else:
-                ret = torch.cat((ret,current_ret))
+            current_ret,current_plan = self._assemble_generic_dict(d[dk])
+            if current_ret is not None:
+                assembly_plans[dk] = current_plan
+                if ret is None:
+                    ret = current_ret
+                else:
+                    ret = torch.cat((ret,current_ret))
         return ret, assembly_plans
 
     def assemble_tensor(self,state_dict_of_dicts,costate_dict_of_dicts,data_dict):
         """
-        Vectorize all dictionaries togehter (state, costatem and data). Also returns all their assembly plans.
+        Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
 
-        :param state_dict: SortedDict holding the state
-        :param costate_dict: SortedDict holding the costate
+        :param state_dict: SortedDict holding the SortedDict's of the states
+        :param costate_dict: SortedDict holding the SortedDict's of the costate
         :param data_dict: SortedDict holding the state for the transported data
         :return: vectorized dictonaries (as one vecctor) and their assembly plans
         """
@@ -276,18 +329,29 @@ class ShootingBlockBase(nn.Module):
     @abstractmethod
     def disassemble(self, input):
         """
-        Abstract emthod which needs to be implemented. Takes an input and shoud disassemble so that it can return
+        Abstract emthod which needs to be implemented. Takes an input vector and shoud disassemble so that it can return
         the desired part of the state (for example only the position). Implementation will likely make use of
         disassmble_tensor to implement this.
 
         :param input: input tensor
         :return: desired part of the state vector
         """
+
         #Is supposed to return the desired data state (possibly only one) from an input vector
         pass
 
 
     def _disassemble_dict(self, input, assembly_plan, dim, incr):
+        """
+        Disassembles an input vector into its corresponding dictionary structure, given an assembly plan, a dimension,
+        and an increment (as to where to start in the input vector).
+
+        :param input: Input vector
+        :param assembly_plan: Assembly plan to disassemble the vector into the dictionary (as created by assemble_tensor).
+        :param dim: dimension (should typically be set to 0, set it to 1 in case there are for example multiple time-points stored in the zero dimension.
+        :param incr: offset (specifying where to start in the vector)
+        :return: tuple of the disassembled dictionary (as a SortedDict) and the increment (incr) indicating a new starting location (for the next call to _dissassemble)
+        """
 
         ret_dict = SortedDict()
 
@@ -310,6 +374,15 @@ class ShootingBlockBase(nn.Module):
 
 
     def _disassemble_dict_of_dicts(self, input, assembly_plans, dim, incr):
+        """
+        Similar to _disassemble_dict, but applies to a dictionary of dictionaries that is supposed to be disassembled.
+
+        :param input: Input vector
+        :param assembly_plans: Assembly plan to disassemble the vector into the dictionary of dictionaries (as created by assemble_tensor).
+        :param dim: dimension (should typically be set to 0, set it to 1 in case there are for example multiple time-points stored in the zero dimension.
+        :param incr: offset (specifying where to start in the vector)
+        :return: tuple of the disassembled dictionary of dictionaries (as a SortedDict) and the increment (incr) indicating a new starting location (for the next call to _dissassemble)
+        """
 
         ret_dict_of_dicts = SortedDict()
 
@@ -364,6 +437,15 @@ class ShootingBlockBase(nn.Module):
 
 
     def compute_potential_energy(self,state_dict_of_dicts,costate_dict_of_dicts,parameter_objects):
+        """
+        Computes the potential energy for the Lagrangian. I.e., it pairs the costates with the right hand sides of the
+        state evolution equations. This method is typically not called manually. Everything should happen automatically here.
+
+        :param state_dict_of_dicts: SortedDict of SortedDicts holding the states
+        :param costate_dict_of_dicts: SortedDict of SortedDicts holding the costates
+        :param parameter_objects: parameters to compute the current right hand sides, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer).
+        :return: returns the potential energy (as a pytorch variable)
+        """
 
         # this is really only how one propagates through the system given the parameterization
 
@@ -380,6 +462,18 @@ class ShootingBlockBase(nn.Module):
         return potential_energy
 
     def compute_kinetic_energy(self,parameter_objects):
+        """
+        Computes the kinetic energy. This is the kinetic energy given the parameters. Will only be relevant if the system is
+        nonlinear in its parameters (when a fixed point solution needs to be computed). Otherwise will bot be used. By default just
+        computes the sum of squares of the parameters which can be weighted via a scalar (given by the instance of the class
+        defining the transformation).
+
+        :todo: Add more general weightings to the classes (i.e., more than just scalars)
+
+        :param parameter_objects: dictionary holding all the parameters, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer)
+        :return: returns the kinetc energy as a pyTorch variable
+        """
+
         # as a default it just computes the square norms of all of them (overwrite this if it is not the desired behavior)
         # a weight dictionary can be specified for the individual parameters as part of their
         # overwritten classes (default is all uniform weight)
@@ -405,6 +499,22 @@ class ShootingBlockBase(nn.Module):
         return kinetic_energy
 
     def compute_lagrangian(self, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+        """
+        Computes the lagrangian. Note that this is the Lagrangian in the sense of optimal control, i.e.,
+
+        L = T - U,
+
+        where T is the kinetic energy (here some norm on the parameters governing the state propagation/advection) and
+        U is the potential energy (which amounts to the costates paired with the right hand sides of the state advection equations),
+        i,e. <p,dot_x>
+
+        Returns a triple of scalars. The value of the Lagrangian as well as of the kinetic and the potential energies.
+
+        :param state_dict_of_dicts: SortedDict of SortedDict's containing the states
+        :param costate_dict_of_dicts: SortedDict of SortedDict's containing the costates
+        :param parameter_objects: SortedDict with all the parameters for the advection equation, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer)
+        :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
+        """
 
         kinetic_energy = self.compute_kinetic_energy(parameter_objects=parameter_objects)
         potential_energy = self.compute_potential_energy(state_dict_of_dicts=state_dict_of_dicts,
@@ -417,12 +527,30 @@ class ShootingBlockBase(nn.Module):
 
     @abstractmethod
     def get_initial_condition(self,x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+        """
+        Abstract method to obtain the intial condition (as a vector) from a given data vector. It is likely easiest to
+        implement by first building a data dictionary and then calling get_initial_conditions_from_data_dict(self,data_dict).
+
+        :param x: data vector (tensor)
+        :return: initial conditions as a vector (which can then be fed into a general integrator)
+        """
+
         pass
 
 
     def _merge_state_or_costate_dict_with_generic_dict_of_dicts(self,generic_dict,generic_dict_of_dicts):
+        """
+        To keep the interface reasonably easy it is often desired to add a state or costate dictionary
+        to a dictionary of dictionaries (which already contains various state or costate dictionaries) to obtain
+        a combined dictionary of dictionaries. As the entries of the dictonary of dictionaries are named (based on
+        what block created them) the dictionary is added based on the name of the current block. It can only be
+        addded if the name has not been used before. Hence it is essential to use unique names when using multiple
+        blocks in a system that are being chained together.
+
+        :param generic_dict: a Sorted Dict
+        :param generic_dict_of_dicts: a SortedDict of SortedDicts's
+        :return: merges both and returns a SortedDict of SortedDict's with the combined entries
+        """
 
         if generic_dict_of_dicts is not None:
             if self._block_name in generic_dict_of_dicts:
@@ -434,6 +562,7 @@ class ShootingBlockBase(nn.Module):
             ret_dict_of_dicts[self._block_name] = generic_dict
 
         if generic_dict_of_dicts is not None:
+            # todo: maybe there is an easier way to copy these dictionary entries instead of always looping over the entries (copy? deepcopy?)
             # first create the same key structure as in the generic_dict_of_dicts (we are not copying as we do not want to change the keys of generic_dict_of_dicts)
             for dk in generic_dict_of_dicts:
                 ret_dict_of_dicts[dk] = SortedDict()
@@ -445,6 +574,13 @@ class ShootingBlockBase(nn.Module):
         return ret_dict_of_dicts
 
     def get_initial_conditions_from_data_dict(self,data_dict):
+        """
+        Given a data dictionary, this method creates a vector which contains the initial condition consisting of state, costate, and the data.
+        As a side effect it also stores (caches) the created assembly plan so that it does not need to be specified when calling disassemble_tensor.
+
+        :param data_dict: data dictionary
+        :return: vector of initial conditions
+        """
 
         state_dicts = self._merge_state_or_costate_dict_with_generic_dict_of_dicts(generic_dict=self._state_parameter_dict,
                                                                                    generic_dict_of_dicts=self._pass_through_state_parameter_dict_of_dicts)
@@ -459,9 +595,26 @@ class ShootingBlockBase(nn.Module):
 
     @abstractmethod
     def create_default_parameter_objects(self):
-        raise ValueError('Not implemented. Needs to return a SortedDict of parameters')
+        """
+        Abstract method which should return a SortedDict which contains instances of the objects which are used to compute
+        the state equations. These objects in turn contain the parameters. For example, overwritten convolutional or linear layer.
+
+        :return: returns a SortedDict of parameter objects
+        """
+        raise ValueError('Not implemented. Needs to return a SortedDict of parameter objects')
 
     def extract_dict_from_tuple_based_on_generic_dict(self,data_tuple,generic_dict,prefix=''):
+        """
+        Autodiff's autograd requires specifying variables to differentiate with respect to as tuples. Hence, this is a convenience
+        function which takes such a tuple and generates a dictionary from it based on the dictionary structure defined via
+        generic_dict (it's values are not used). If desired a prefix for the generated dictionary keys can be specified.
+
+        :param data_tuple: tuple of variables
+        :param generic_dict: SortedDict providing the desired dictionary structure (ideally the one used to create the tuple in the first place)
+        :param prefix: text prefix for the generated keys
+        :return: returns a SortedDict containing the data from the tuple
+        """
+
         extracted_dict = SortedDict()
         indx = 0
         for k in generic_dict:
@@ -471,6 +624,16 @@ class ShootingBlockBase(nn.Module):
         return extracted_dict
 
     def extract_dict_of_dicts_from_tuple_based_on_generic_dict_of_dicts(self,data_tuple,generic_dict_of_dicts,prefix=''):
+        """
+        Similar to extract_dict_from_tuple_based_on_generic_dict, but creates dict_of_dicts from the tuple. I.e., the tuple
+        must have been created from a SortedDict containing SortedDict's.
+
+        :param data_tuple: tuple of variables
+        :param generic_dict_of_dicts: SortedDict of SortedDict's providing the desired dictionary structure (ideally the one used to create the tuple in the first place)
+        :param prefix: text prefix for the generated keys
+        :return: returns a SortedDict containing the data from the tuple
+        """
+
         extracted_dicts = SortedDict()
         indx = 0
         for k in generic_dict_of_dicts:
@@ -483,6 +646,16 @@ class ShootingBlockBase(nn.Module):
         return extracted_dicts
 
     def extract_dict_from_tuple_based_on_parameter_objects(self,data_tuple,parameter_objects,prefix=''):
+        """
+        Similar to extract_dict_from_tuple_based_on_generic_dict, but is based on the SortedDict of parameter objects
+        (which contain all the parameters required to evolve the states; e.g., convolutional filter coefficients.)
+
+        :param data_tuple: tuple of variables
+        :param parameter_objects: SortedDict of parameter objects
+        :param prefix: text prefix for the generated keys
+        :return: returns a SortedDict containing the data from the tuple
+        """
+
         extracted_dict = SortedDict()
         indx = 0
 
@@ -498,6 +671,13 @@ class ShootingBlockBase(nn.Module):
         return extracted_dict
 
     def compute_tuple_from_generic_dict_of_dicts(self,generic_dict_of_dicts):
+        """
+        Given a SortedDict of SortedDict's (e.g., for the states or the costates) this method returns a tuple of its entries.
+
+        :param generic_dict_of_dicts: SortedDict of SortedDict's (for example holding the states or the costates)
+        :return: Returns a tuple of the dictionary entries
+        """
+
         # form a tuple of all the state variables (because this is what we take the derivative of)
         sv_list = []
         for k in generic_dict_of_dicts:
@@ -508,6 +688,12 @@ class ShootingBlockBase(nn.Module):
         return tuple(sv_list)
 
     def compute_tuple_from_generic_dict(self,generic_dict):
+        """
+
+        :param generic_dict:
+        :return:
+        """
+
         # form a tuple of all the state variables (because this is what we take the derivative of)
         sv_list = []
         for k in generic_dict:

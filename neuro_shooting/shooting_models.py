@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-import shooting
-import overwrite_classes as oc
+import neuro_shooting.shooting as shooting
+import neuro_shooting.overwrite_classes as oc
 from sortedcontainers import SortedDict
 from torchdiffeq import odeint
 
@@ -159,6 +159,123 @@ class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlo
             state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn_like(batch_y0))
         else:
             state_dict['q1'] = nn.Parameter(batch_y0 + rand_mag_q * torch.randn_like(batch_y0))
+
+        return state_dict
+
+    def create_default_parameter_objects(self):
+
+        parameter_objects = SortedDict()
+
+        linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
+        parameter_objects['l1'] = linear
+
+        return parameter_objects
+
+    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+
+        rhs = SortedDict()
+
+        s = state_dict_or_dict_of_dicts
+        p = parameter_objects
+
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q1']))
+
+        return rhs
+
+    def get_initial_condition(self, x):
+        # Initial condition from given data vector
+        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+
+        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
+
+        return initial_conditions
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
+        return data_dict['q1']
+
+
+class ChainedShootingBlockExample(nn.Module):
+    def __init__(self,batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(ChainedShootingBlockExample, self).__init__()
+
+        self.block1 = ChainableAutoShootingBlockModelSimple(name='simple1', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=nonlinearity)
+        self.block2 = ChainableAutoShootingBlockModelSimple(name='simple2', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=nonlinearity, pass_through=True)
+
+        #self.integration_time = torch.tensor([0, 1]).float()
+
+        self.method = 'rk4'
+
+        self.rtol = 1e-8
+        self.atol = 1e-10
+        self.step_size = 0.25
+
+        self.add_module(name='block1', module=self.block1)
+        self.add_module(name='block2', module=self.block2)
+
+        self.integrator_options = dict()
+        self.integrator_options['step_size'] = self.step_size
+
+    def get_initial_condition(self, x):
+        return self.block1.get_initial_condition(x)
+
+    def assemble_tensor(self,state_dict_of_dicts,costate_dict_of_dicts,data_dict):
+        return self.block1.assemble_tensor(state_dict_of_dicts==state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict=data_dict)
+
+    def disassemble(self, input, dim=0):
+        return self.block2.disassemble(input=input, dim=dim)
+
+    def get_norm_penalty(self):
+        return self.block1.get_norm_penalty()
+
+    def forward(self, t, x):
+
+        out1 = odeint(self.block1, x, t, method=self.method, rtol=self.rtol,
+                     atol=self.atol, options=self.integrator_options)
+
+        out1_final = out1[-1,...]
+
+        state_dict_of_dicts, costate_dict_of_dicts, data_dict = self.block1.disassemble_tensor(out1_final)
+
+        self.block2.set_initial_pass_through_state_and_costate_parameters(state_dict_of_dicts=state_dict_of_dicts,
+                                                                          costate_dict_of_dicts=costate_dict_of_dicts)
+
+        block2_init = self.block2.get_initial_conditions_from_data_dict(data_dict=data_dict)
+
+        out2 = odeint(self.block2, block2_init, t, method=self.method, rtol=self.rtol,
+                      atol=self.atol, options=self.integrator_options)
+
+        #return out2[-1, ...]
+        return out2
+
+
+class ChainableAutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlock):
+    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False, pass_through=False):
+        self.pass_through = pass_through
+
+        super(ChainableAutoShootingBlockModelSimple, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
+                                                           only_random_initialization=only_random_initialization,
+                                                           transpose_state_when_forward=transpose_state_when_forward)
+
+
+    def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+
+        self.k = batch_y0.size()[0]
+        self.d = batch_y0.size()[2]
+
+        if not self.pass_through:
+
+            rand_mag_q = 0.5
+
+            if only_random_initialization:
+                # do a fully random initialization
+                state_dict['q1'] = nn.Parameter(rand_mag_q * torch.randn_like(batch_y0))
+            else:
+                state_dict['q1'] = nn.Parameter(batch_y0 + rand_mag_q * torch.randn_like(batch_y0))
 
         return state_dict
 
