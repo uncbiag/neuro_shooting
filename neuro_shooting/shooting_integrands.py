@@ -6,29 +6,7 @@ from abc import ABCMeta, abstractmethod
 # may require conda install sortedcontainers
 from sortedcontainers import SortedDict
 
-def softmax(x,epsilon = 1.0):
-  return x*(torch.ones_like(x))/(torch.exp(-x*epsilon) + torch.ones_like(x))
-
-
-def dsoftmax(x,epsilon = 1.0):
-  return epsilon*softmax(x,epsilon)*(torch.ones_like(x))/(torch.exp(epsilon*x) + torch.ones_like(x)) + (torch.ones_like(x))/(torch.exp(-x*epsilon) + torch.ones_like(x))
-
-def drelu(x):
-    # derivative of relu
-    res = (x>=0)
-    res = res.type(x.type())
-    return res
-
-def dtanh(x):
-    # derivative of tanh
-    return 1.0-torch.tanh(x)**2
-
-def identity(x):
-    return x
-
-def didentity(x):
-    return torch.ones_like(x)
-
+import neuro_shooting.activation_functions_and_derivatives as ad
 
 class ShootingIntegrandBase(nn.Module):
     """
@@ -152,19 +130,19 @@ class ShootingIntegrandBase(nn.Module):
 
         if use_nonlinearity == 'relu':
             nl = nn.functional.relu
-            dnl = drelu
+            dnl = ad.drelu
         elif use_nonlinearity == 'tanh':
             nl = torch.tanh
-            dnl = dtanh
+            dnl = ad.dtanh
         elif use_nonlinearity == 'identity':
-            nl = identity
-            dnl = didentity
+            nl = ad.identity
+            dnl = ad.didentity
         elif use_nonlinearity == 'sigmoid':
             nl = torch.sigmoid
             dnl = torch.sigmoid
         elif use_nonlinearity == 'softmax':
-            nl = softmax
-            dnl = dsoftmax
+            nl = ad.softmax
+            dnl = ad.dsoftmax
         else:
             raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
 
@@ -1018,3 +996,5 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
 
     def compute_parameters(self,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
         return self.compute_parameters_iteratively(parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
+
+

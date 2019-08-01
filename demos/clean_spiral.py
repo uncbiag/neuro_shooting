@@ -8,6 +8,7 @@ import torch.optim as optim
 import random
 
 import neuro_shooting.shooting_models as shooting_models
+import neuro_shooting.generic_integrator as generic_integrator
 
 # Command line arguments
 
@@ -46,10 +47,19 @@ print('Setting the random seed to {:}'.format(args.seed))
 random.seed(args.seed)
 torch.manual_seed(args.seed)
 
-if args.adjoint:
-    from torchdiffeq import odeint_adjoint as odeint
-else:
-    from torchdiffeq import odeint
+integrator_options = dict()
+
+# default tolerance settings
+#rtol=1e-6
+#atol=1e-12
+
+rtol = 1e-8
+atol = 1e-10
+
+integrator_options  = {'step_size': args.stepsize}
+
+integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
+                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
@@ -62,16 +72,7 @@ t = torch.linspace(0., 25., args.data_size).to(device)
 true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
 
 
-options = dict()
 
-# default tolerance settings
-#rtol=1e-6
-#atol=1e-12
-
-rtol = 1e-8
-atol = 1e-10
-
-options  = {'step_size': args.stepsize}
 
 class Lambda(nn.Module):
 
@@ -82,7 +83,7 @@ class Lambda(nn.Module):
             return torch.mm(y**3, true_A)
 
 with torch.no_grad():
-    true_y = odeint(Lambda(), true_y0, t, method=args.method, atol=atol, rtol=rtol, options=options)
+    true_y = integrator.integrate(func=Lambda(), x0=true_y0, t=t)
 
 
 def get_batch(batch_size=None):
@@ -241,7 +242,7 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
             if is_higher_order_model:
 
                 viz_time = t[:5] # just 5 timesteps ahead
-                temp_pred_y = odeint(shooting, z_0, viz_time, method=args.method, atol=atol, rtol=rtol, options=options)
+                temp_pred_y = integrator.integrate(func=shooting, x0=z_0, t=viz_time)
                 dydt_pred_y = shooting.disassemble(temp_pred_y, dim=1)
 
                 dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
@@ -418,11 +419,11 @@ if __name__ == '__main__':
                     pass
 
         if is_odenet:
-            pred_y = odeint(func, batch_y0, batch_t, method=args.method, atol=atol, rtol=rtol, options=options)
+            pred_y = integrator.integrate(func=func, x0=batch_y0, t=batch_t)
         else:
 
             z_0 = shooting.get_initial_condition(x=batch_y0)
-            temp_pred_y = odeint(shooting,z_0 , batch_t, method=args.method, atol=atol, rtol=rtol, options=options)
+            temp_pred_y = integrator.integrate(func=shooting,x0=z_0 , t=batch_t)
 
             # we are actually only interested in the prediction of the batch itself (not the parameterization)
             pred_y = shooting.disassemble(temp_pred_y,dim=1)
@@ -458,7 +459,7 @@ if __name__ == '__main__':
                 val_y = true_y.unsqueeze(dim=1)
 
             if is_odenet:
-                val_pred_y = odeint(func, val_y0, val_t, method=args.method, atol=atol, rtol=rtol, options=options)
+                val_pred_y = integrator.integrate(func=func, x0=val_y0, t=val_t)
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))
@@ -482,8 +483,7 @@ if __name__ == '__main__':
 
                 val_z_0 = shooting.get_initial_condition(x=val_y0)
 
-                temp_pred_y = odeint(shooting, val_z_0, val_t, method=args.method, atol=atol, rtol=rtol,
-                                     options=options)
+                temp_pred_y = integrator.integrate(func=shooting, x0=val_z_0, t=val_t)
 
                 # we are actually only interested in the prediction of the batch itself (not the parameterization)
                 val_pred_y = shooting.disassemble(temp_pred_y,dim=1)

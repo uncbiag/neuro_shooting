@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import neuro_shooting.shooting as shooting
+import neuro_shooting.shooting_integrands as shooting
 import neuro_shooting.overwrite_classes as oc
 from sortedcontainers import SortedDict
 from torchdiffeq import odeint
@@ -201,8 +201,8 @@ class ChainedShootingBlockExample(nn.Module):
     def __init__(self,batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
         super(ChainedShootingBlockExample, self).__init__()
 
-        self.block1 = ChainableAutoShootingBlockModelSimple(name='simple1', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=nonlinearity)
-        self.block2 = ChainableAutoShootingBlockModelSimple(name='simple2', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=nonlinearity, pass_through=True)
+        self.block1 = ChainableAutoShootingIntegrandModelSimple(name='simple1', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=nonlinearity)
+        self.block2 = ChainableAutoShootingIntegrandModelSimple(name='simple2', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=nonlinearity, pass_through=True)
 
         #self.integration_time = torch.tensor([0, 1]).float()
 
@@ -251,13 +251,13 @@ class ChainedShootingBlockExample(nn.Module):
         return out2
 
 
-class ChainableAutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingIntegrand):
+class ChainableAutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False, pass_through=False):
         self.pass_through = pass_through
 
-        super(ChainableAutoShootingBlockModelSimple, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                           only_random_initialization=only_random_initialization,
-                                                           transpose_state_when_forward=transpose_state_when_forward)
+        super(ChainableAutoShootingIntegrandModelSimple, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                                        only_random_initialization=only_random_initialization,
+                                                                        transpose_state_when_forward=transpose_state_when_forward)
 
 
     def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
