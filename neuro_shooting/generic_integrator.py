@@ -1,10 +1,20 @@
 import torch
 import torch.nn as nn
 
-import torchdiffeq
 
-from torchdiffeq import odeint_adjoint as odeintadjoint
-from torchdiffeq import odeint
+try:
+    from torchdiffeq import odeint_adjoint as odeintadjoint
+    from torchdiffeq import odeint
+    odeint_available = True
+except:
+    odeint_available = False
+
+try:
+    from .external.anode.adjoint import odesolver_adjoint as odesolver
+    anode_available = True
+except:
+    anode_available = False
+
 
 class GenericIntegrator(object):
     def __init__(self,integrator_library = None, integrator_name = None, use_adjoint_integration=False, integrator_options=None, **kwargs):
@@ -50,12 +60,33 @@ class GenericIntegrator(object):
 
     def _integrate_odeint(self,func,x0,t):
         if self.use_adjoint_integration:
-            return odeintadjoint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
+            res = odeintadjoint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
+            return res
         else:
-            return odeint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
+            res = odeint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
+            return res
 
     def _integrate_anode(self,func,x0,t):
-        raise ValueError('ANODE support not yet implemented.')
+        # todo: provide more options for stepsize-control here
+
+        if self.integrator_options is None:
+            options = dict()
+        else:
+            options = self.integrator_options
+
+        if len(t)>2 or ((t[-1]-t[0])!=1.0):
+            raise ValueError('Warning: ANODE always integrates to unit time and does not provide any intermediate values. Expect trouble when calling it this way. Aborting.')
+
+        Nt = 10
+        options.update({'Nt': int(Nt)})
+        options.update({'method': (self.integrator_name).upper()})
+
+        res = odesolver(func=func,z0=x0,options=options)
+        # to conform with odeint, the first dimension should be time, here it only produces one time-point
+        res_reshaped = res.unsqueeze(dim=0)
+
+        return res_reshaped
+
 
     def integrate(self,func,x0,t):
         if self.integrator_library=='odeint':

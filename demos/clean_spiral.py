@@ -61,7 +61,6 @@ integrator_options  = {'step_size': args.stepsize}
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                   use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
-
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
 true_y0 = torch.tensor([[2., 0.]]).to(device)
