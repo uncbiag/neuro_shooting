@@ -62,14 +62,14 @@ Sometimes it is desirable to install *neuro_shooting* for development purposes. 
 
    git clone https://github.com/ANONYMOUS_GITHUB_ACCOUNT/neuro_shooting.git
 
-The repository's main folder contains a setup.py file (see `python setup file <https://github.com/kennethreitz/setup.py>`_) for the setup file *mermaid's* is based on and a general explanation of its use. For development purposes then simply execute
+The repository's main folder contains a setup.py file (see `python setup file <https://github.com/kennethreitz/setup.py>`_) for the setup file *neuro_shooting's* is based on and a general explanation of its use. For development purposes then simply execute
 
 .. code::
 
    cd neuro_shooting
    python setup.py develop
 
-This will install all library links and all missing packages and will allow mermaid imports with the exception of the `torchdiffeq` package which can be installed via
+This will install all library links and all missing packages and will allow neuro_shooting imports with the exception of the `torchdiffeq` package which can be installed via
 
 .. code::
 

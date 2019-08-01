@@ -13,7 +13,7 @@ For development purposes then simply execute
    cd neuro_shooting
    python setup.py develop
 
-This will install all library links and all missing packages and will allow mermaid imports with the exception of the `torchdiffeq` package which can be installed via
+This will install all library links and all missing packages and will allow neuro_shooting imports with the exception of the `torchdiffeq` package which can be installed via
 
    pip install git+https://github.com/rtqichen/torchdiffeq
    
