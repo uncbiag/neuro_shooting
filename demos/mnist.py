@@ -10,7 +10,7 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 import random
 
-import shooting_models
+import neuro_shooting.shooting_models as shooting_models
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
@@ -325,9 +325,9 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingBlockModelSimpleConv2d(channel_number=64,
-                                                                                                            particle_size=args.particle_size,
-                                                                                                            particle_number=args.particle_number),
+        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingIntegrandModelSimpleConv2D(channel_number=64,
+                                                                                                                particle_size=args.particle_size,
+                                                                                                                particle_number=args.particle_number),
                                                          method=args.method,
                                                          max_num_steps=args.max_num_steps,
                                                          step_size=args.step_size)]

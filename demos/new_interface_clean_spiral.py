@@ -7,9 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 
-import overwrite_classes as oc
-
-import shooting_models
+import neuro.shooting_models as shooting_models
 
 # Command line arguments
 

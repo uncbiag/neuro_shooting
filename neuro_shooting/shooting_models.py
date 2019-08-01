@@ -5,11 +5,11 @@ import neuro_shooting.overwrite_classes as oc
 from sortedcontainers import SortedDict
 from torchdiffeq import odeint
 
-class AutoShootingBlockModelSecondOrder(shooting.LinearInParameterAutogradShootingBlock):
+class AutoShootingIntegrandModelSecondOrder(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelSecondOrder, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                                only_random_initialization=only_random_initialization,
-                                                                transpose_state_when_forward=transpose_state_when_forward)
+        super(AutoShootingIntegrandModelSecondOrder, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                                    only_random_initialization=only_random_initialization,
+                                                                    transpose_state_when_forward=transpose_state_when_forward)
 
     def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -69,11 +69,11 @@ class AutoShootingBlockModelSecondOrder(shooting.LinearInParameterAutogradShooti
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
-class AutoShootingBlockModelUpDown(shooting.LinearInParameterAutogradShootingBlock):
+class AutoShootingIntegrandModelUpDown(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelUpDown, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                           only_random_initialization=only_random_initialization,
-                                                           transpose_state_when_forward=transpose_state_when_forward)
+        super(AutoShootingIntegrandModelUpDown, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                               only_random_initialization=only_random_initialization,
+                                                               transpose_state_when_forward=transpose_state_when_forward)
 
     def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -139,11 +139,11 @@ class AutoShootingBlockModelUpDown(shooting.LinearInParameterAutogradShootingBlo
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
-class AutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlock):
+class AutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingBlockModelSimple, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                           only_random_initialization=only_random_initialization,
-                                                           transpose_state_when_forward=transpose_state_when_forward)
+        super(AutoShootingIntegrandModelSimple, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                               only_random_initialization=only_random_initialization,
+                                                               transpose_state_when_forward=transpose_state_when_forward)
 
     def create_initial_state_parameters(self, batch_y0, only_random_initialization=True):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -251,7 +251,7 @@ class ChainedShootingBlockExample(nn.Module):
         return out2
 
 
-class ChainableAutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingBlock):
+class ChainableAutoShootingBlockModelSimple(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False, pass_through=False):
         self.pass_through = pass_through
 
@@ -314,7 +314,7 @@ class ChainableAutoShootingBlockModelSimple(shooting.LinearInParameterAutogradSh
         return data_dict['q1']
 
 
-class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShootingBlock):
+class AutoShootingIntegrandModelSimpleConv2D(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
@@ -325,14 +325,14 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
         self.particle_number = particle_number
         self.channel_number = channel_number
 
-        super(AutoShootingBlockModelSimpleConv2d, self).__init__(name=name,
-                                                                 batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                                 only_random_initialization=only_random_initialization,
-                                                                 transpose_state_when_forward=transpose_state_when_forward,
-                                                                 channel_number=channel_number,
-                                                                 filter_size=filter_size,
-                                                                 particle_size=particle_size,
-                                                                 particle_number=particle_number)
+        super(AutoShootingIntegrandModelSimpleConv2D, self).__init__(name=name,
+                                                                     batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                                     only_random_initialization=only_random_initialization,
+                                                                     transpose_state_when_forward=transpose_state_when_forward,
+                                                                     channel_number=channel_number,
+                                                                     filter_size=filter_size,
+                                                                     particle_size=particle_size,
+                                                                     particle_number=particle_number)
 
 
     def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 8,particle_number = 10):
@@ -394,21 +394,21 @@ class AutoShootingBlockModelSimpleConv2d(shooting.LinearInParameterAutogradShoot
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
-class AutoShootingBlockModelConv2dBatch(shooting.LinearInParameterAutogradShootingBlock):
+class AutoShootingIntegrandModelConv2DBatch(shooting.LinearInParameterAutogradShootingIntegrand):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
                  particle_size=6,
                  particle_number=25):
 
-        super(AutoShootingBlockModelConv2dBatch, self).__init__(name=name,
-                                                                batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                                only_random_initialization=only_random_initialization,
-                                                                transpose_state_when_forward=transpose_state_when_forward,
-                                                                channel_number=channel_number,
-                                                                filter_size=filter_size,
-                                                                particle_size=particle_size,
-                                                                particle_number=particle_number)
+        super(AutoShootingIntegrandModelConv2DBatch, self).__init__(name=name,
+                                                                    batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                                    only_random_initialization=only_random_initialization,
+                                                                    transpose_state_when_forward=transpose_state_when_forward,
+                                                                    channel_number=channel_number,
+                                                                    filter_size=filter_size,
+                                                                    particle_size=particle_size,
+                                                                    particle_number=particle_number)
 
     def create_initial_state_parameters(self,channel_number, batch_y0, only_random_initialization=True,filter_size = 3,particle_size = 8,particle_number = 10):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)

@@ -30,7 +30,7 @@ def didentity(x):
     return torch.ones_like(x)
 
 
-class ShootingBlockBase(nn.Module):
+class ShootingIntegrandBase(nn.Module):
     """
     Base class for shooting based neural ODE approaches
     """
@@ -44,7 +44,7 @@ class ShootingBlockBase(nn.Module):
         :param only_random_initialization: just a flag passed on to the initialization of the state and costate
         :param transpose_state_when_forward: if set to true states get transposed (1,2) at the beginng and end of processing
         """
-        super(ShootingBlockBase, self).__init__()
+        super(ShootingIntegrandBase, self).__init__()
 
         self._block_name = name
         """Name of the shooting block"""
@@ -92,7 +92,7 @@ class ShootingBlockBase(nn.Module):
         :param fn: function which will be applied.
         :return: returns self
         """
-        super(ShootingBlockBase, self)._apply(fn)
+        super(ShootingIntegrandBase, self)._apply(fn)
         # make sure that all the filters that were created get moved
         for k in self._parameter_objects:
             print('Applying _apply, to {}'.format(k))
@@ -108,7 +108,7 @@ class ShootingBlockBase(nn.Module):
         :param kwargs:
         :return: returns self
         """
-        super(ShootingBlockBase,self).to(*args, **kwargs)
+        super(ShootingIntegrandBase, self).to(*args, **kwargs)
         # make sure that all the filters that were created get moved
         for k in self._parameter_objects:
             print('Applying to, to {}'.format(k))
@@ -911,14 +911,14 @@ class ShootingBlockBase(nn.Module):
 
         return output
 
-class AutogradShootingBlockBase(ShootingBlockBase):
+class AutogradShootingIntegrandBase(ShootingIntegrandBase):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,
                  concatenate_parameters=True,*args,**kwargs):
-        super(AutogradShootingBlockBase, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                        only_random_initialization=only_random_initialization,
-                                                        transpose_state_when_forward=transpose_state_when_forward,
-                                                        concatenate_parameters=concatenate_parameters,
-                                                        *args,**kwargs)
+        super(AutogradShootingIntegrandBase, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                            only_random_initialization=only_random_initialization,
+                                                            transpose_state_when_forward=transpose_state_when_forward,
+                                                            concatenate_parameters=concatenate_parameters,
+                                                            *args, **kwargs)
 
     def rhs_advect_costate(self, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
@@ -942,14 +942,14 @@ class AutogradShootingBlockBase(ShootingBlockBase):
         return dot_costate_dict_of_dicts
 
 
-class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
+class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,
                  concatenate_parameters=True,*args,**kwargs):
-        super(LinearInParameterAutogradShootingBlock, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                                     only_random_initialization=only_random_initialization,
-                                                                     transpose_state_when_forward=transpose_state_when_forward,
-                                                                     concatenate_parameters=concatenate_parameters,
-                                                                     *args,**kwargs)
+        super(LinearInParameterAutogradShootingIntegrand, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                                         only_random_initialization=only_random_initialization,
+                                                                         transpose_state_when_forward=transpose_state_when_forward,
+                                                                         concatenate_parameters=concatenate_parameters,
+                                                                         *args, **kwargs)
 
     def compute_parameters_directly(self, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
@@ -979,14 +979,14 @@ class LinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
         return self.compute_parameters_directly(parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
 
-class NonlinearInParameterAutogradShootingBlock(AutogradShootingBlockBase):
+class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
     def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,
                  concatenate_parameters=True,*args,**kwargs):
-        super(NonlinearInParameterAutogradShootingBlock, self).__init__(name=name, batch_y0=batch_y0,nonlinearity=nonlinearity,
-                                                                        only_random_initialization=only_random_initialization,
-                                                                        transpose_state_when_forward=transpose_state_when_forward,
-                                                                        concatenate_parameters=concatenate_parameters,
-                                                                        *args, **kwargs)
+        super(NonlinearInParameterAutogradShootingIntegrand, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+                                                                            only_random_initialization=only_random_initialization,
+                                                                            transpose_state_when_forward=transpose_state_when_forward,
+                                                                            concatenate_parameters=concatenate_parameters,
+                                                                            *args, **kwargs)
 
     def compute_parameters_iteratively(self, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
 
