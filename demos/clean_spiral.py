@@ -7,9 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 
-import overwrite_classes as oc
-
-import shooting_models
+import neuro_shooting.shooting_models as shooting_models
 
 # Command line arguments
 
@@ -364,12 +362,9 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        #shooting = shooting_models.AutoShootingBlockModelSimple(name='simple', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-
-        shooting = shooting_models.ChainedShootingBlockExample(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-
-        #shooting = shooting_models.AutoShootingBlockModelSecondOrder(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = shooting_models.AutoShootingBlockModelUpDown(batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting = shooting_models.AutoShootingBlockModelSimple(name='simple', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = shooting_models.AutoShootingBlockModelSecondOrder(name='second_order', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting = shooting_models.AutoShootingBlockModelUpDown(name='up_down', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
         shooting = shooting.to(device)
 

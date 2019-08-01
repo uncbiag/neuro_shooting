@@ -742,15 +742,17 @@ class ShootingBlockBase(nn.Module):
     def _deconcatenate_based_on_generic_dict_of_dicts(self,concatenated_dict,generic_dict_of_dicts):
         # deconcatenate along dimension 1
         ret = SortedDict()
-        indx = 0
+        indx = dict()
         for dk in generic_dict_of_dicts:
             ret[dk] = SortedDict()
             c_ret = ret[dk]
             c_generic_dict = generic_dict_of_dicts[dk]
             for kc,k in zip(concatenated_dict,c_generic_dict):
+                if k not in indx:
+                    indx[k]=0
                 t_shape = c_generic_dict[k].size()
-                c_ret[kc] = concatenated_dict[kc][:,indx:indx+t_shape[1],...]
-                indx += t_shape[1]
+                c_ret[kc] = concatenated_dict[kc][:,indx[k]:indx[k]+t_shape[1],...]
+                indx[k] += t_shape[1]
         return ret
 
     def rhs_advect_state_dict_of_dicts(self,state_dict_of_dicts,parameter_objects):
