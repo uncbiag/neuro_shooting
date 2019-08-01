@@ -66,7 +66,7 @@ class GenericIntegrator(object):
             res = odeint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
             return res
 
-    def _integrate_anode(self,func,x0,t):
+    def _integrate_anode(self,func,x0,t=None):
         # todo: provide more options for stepsize-control here
 
         if self.integrator_options is None:
@@ -74,8 +74,15 @@ class GenericIntegrator(object):
         else:
             options = self.integrator_options
 
-        if len(t)>2 or ((t[-1]-t[0])!=1.0):
-            raise ValueError('Warning: ANODE always integrates to unit time and does not provide any intermediate values. Expect trouble when calling it this way. Aborting.')
+        # check that this is called correctly
+        if t is not None:
+            if len(t)==1:
+                if t!=1.0:
+                    raise ValueError('Warning: ANODE always integates to one. Aborting.')
+            elif len(t)>2 or ((t[-1]-t[0])!=1.0):
+                raise ValueError('Warning: ANODE always integrates to unit time and does not provide any intermediate values. Expect trouble when calling it this way. Aborting.')
+
+        # everything okay, so we can proceed
 
         Nt = 10
         options.update({'Nt': int(Nt)})

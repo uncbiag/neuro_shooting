@@ -28,9 +28,12 @@ neuro_shooting: Shooting Neural Networks
    :maxdepth: 2
    :caption: Package reference
 
-   shooting
+   shooting_blocks
+   shooting_integrands
    shooting_models
    overwrite_classes
+   generic_integrator
+   activation_functions_and_derivatives
 
 Indices and tables
 ==================
