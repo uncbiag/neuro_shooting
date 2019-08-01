@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 
-import neuro.shooting_models as shooting_models
+import neuro_shooting.shooting_models as shooting_models
 
 # Command line arguments
 

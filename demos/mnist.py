@@ -325,7 +325,7 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingIntegrandModelSimpleConv2D(channel_number=64,
+        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingIntegrandModelSimpleConv2D(name = "test",channel_number=64,
                                                                                                                 particle_size=args.particle_size,
                                                                                                                 particle_number=args.particle_number),
                                                          method=args.method,
