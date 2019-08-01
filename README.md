@@ -9,7 +9,7 @@ Sometimes it is desirable to install *neuro_shooting* for development purposes. 
    git clone https://github.com/ANONYMOUS_GITHUB_ACCOUNT/neuro_shooting.git
 ```
 
-The repository's main folder contains a setup.py file (see [python setup file](https://github.com/kennethreitz/setup.py "python setup file"). For development purposes then simply execute
+The repository's main folder contains a setup.py file (see [python setup file](https://github.com/kennethreitz/setup.py "python setup file")). For development purposes then simply execute
 
 ```
    cd neuro_shooting
