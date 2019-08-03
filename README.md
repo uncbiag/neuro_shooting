@@ -37,3 +37,18 @@ make html
 ```
 
 Then simply open index.html which will be in the build/html directory (of the docs subdirectory).
+
+It is now also possible to add hooks to shooting blocks. Most easily results are displayed via tensorboard. Once tensorboard output exists you can simply start a tensorboard server by typing
+
+```
+tensorboard --logdir=runs
+```
+
+(assuming the tensorboard output is in the directory `runs`.
+You can look at the results by opening
+
+```
+http://localhost:6006
+```
+
+in your webbrowser.

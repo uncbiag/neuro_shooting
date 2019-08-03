@@ -19,7 +19,7 @@ def linear_transform_hook(module, t, state_dicts, costate_dicts, data_dict,
     else:
         batch = 0
 
-    if epoch%100==0: # only every 10th
+    if epoch%10==0: # only every 10th epoch for example
 
         pars = parameter_objects['l1'].get_parameter_dict()
 
