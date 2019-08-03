@@ -29,6 +29,7 @@ REQUIRED = [
     "termcolor",
     "torch",
     "torchvision",
+    "tb-nightly",
     "matplotlib",
     "scipy",
     "sphinx",

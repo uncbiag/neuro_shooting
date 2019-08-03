@@ -5,6 +5,8 @@ import torch.autograd as autograd
 from abc import ABCMeta, abstractmethod
 # may require conda install sortedcontainers
 from sortedcontainers import SortedDict
+from collections import OrderedDict, namedtuple
+import torch.utils.hooks as hooks
 
 import neuro_shooting.activation_functions_and_derivatives as ad
 
@@ -41,9 +43,16 @@ class ShootingIntegrandBase(nn.Module):
         """Costate parameters that are passed in externally, but are not parameters to be optimized over"""
 
         self.concatenate_parameters = concatenate_parameters
+        """If set to True all state and costate dictionaries will be merged into one; only possible when dimension is consistent"""
 
         self._parameter_objects = None
         """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules)"""
+
+        self._lagrangian_gradient_hooks = OrderedDict()
+        """Hooks called at any integration step"""
+
+        self._custom_hook_data = None
+        """Custom data that is passed to a hook (set via set_custom_hook_data)"""
 
         self.transpose_state_when_forward = transpose_state_when_forward
 
@@ -62,6 +71,43 @@ class ShootingIntegrandBase(nn.Module):
 
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
+
+    def set_custom_hook_data(self,data):
+        """
+        Custom data that is passed to the shooting integrand hooks. In this way a hook can modify its behavior. For
+        example, the current batch and epoch could be passed to the hook and the hook could react to it.
+
+        :param data: data to be passed to the hooks (should be a dictionary, but can otherwise be arbitrary as long as the hooks know about the format)
+        :return: n/a
+        """
+
+        if type(data)!=dict:
+            print('WARNING: Expected a dictionary for custom hook data, but got {} instead. Proceeding, but there may be trouble ahead.'.format(type(data)))
+
+        self._custom_hook_data = data
+
+    def register_lagrangian_gradient_hook(self, hook):
+        r"""Registers an integration hook on the module.
+
+        The hook will be called every time at the end of the gradient computation in :func:`compute_gradients`.
+        It should have the following signature::
+
+            hook(module, t, state_dicts, costate_dicts, data_dict,
+            dot_state_dicts, dot_costate_dicts, dot_data_dict, parameter_objects, custom_hook_data) -> None
+
+        The hook should not modify any of its inputs.
+        custom_hook_data can be set by the user, via self.set_custom_hook_data. Use case would for example
+        to pass a batch and an epoch value so that the hook only is doing something in specific cases
+        (for example to only log with tensorboard for the first batch for a given epoch)
+
+        Returns:
+            :class:`torch.utils.hooks.RemovableHandle`:
+                a handle that can be used to remove the added hook by calling
+                ``handle.remove()``
+        """
+        handle = hooks.RemovableHandle(self._forward_hooks)
+        self._lagrangian_gradient_hooks[handle.id] = hook
+        return handle
 
     def _apply(self, fn):
         """
@@ -414,11 +460,12 @@ class ShootingIntegrandBase(nn.Module):
         return state_dicts,costate_dicts,data_dict
 
 
-    def compute_potential_energy(self,state_dict_of_dicts,costate_dict_of_dicts,parameter_objects):
+    def compute_potential_energy(self,t,state_dict_of_dicts,costate_dict_of_dicts,parameter_objects):
         """
         Computes the potential energy for the Lagrangian. I.e., it pairs the costates with the right hand sides of the
         state evolution equations. This method is typically not called manually. Everything should happen automatically here.
 
+        :param t: current time-point
         :param state_dict_of_dicts: SortedDict of SortedDicts holding the states
         :param costate_dict_of_dicts: SortedDict of SortedDicts holding the costates
         :param parameter_objects: parameters to compute the current right hand sides, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer).
@@ -427,7 +474,7 @@ class ShootingIntegrandBase(nn.Module):
 
         # this is really only how one propagates through the system given the parameterization
 
-        rhs_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(state_dict_of_dicts=state_dict_of_dicts,parameter_objects=parameter_objects)
+        rhs_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=parameter_objects)
 
         potential_energy = 0
 
@@ -439,7 +486,7 @@ class ShootingIntegrandBase(nn.Module):
 
         return potential_energy
 
-    def compute_kinetic_energy(self,parameter_objects):
+    def compute_kinetic_energy(self,t,parameter_objects):
         """
         Computes the kinetic energy. This is the kinetic energy given the parameters. Will only be relevant if the system is
         nonlinear in its parameters (when a fixed point solution needs to be computed). Otherwise will bot be used. By default just
@@ -448,6 +495,7 @@ class ShootingIntegrandBase(nn.Module):
 
         :todo: Add more general weightings to the classes (i.e., more than just scalars)
 
+        :param t: current timepoint
         :param parameter_objects: dictionary holding all the parameters, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer)
         :return: returns the kinetc energy as a pyTorch variable
         """
@@ -476,7 +524,7 @@ class ShootingIntegrandBase(nn.Module):
 
         return kinetic_energy
 
-    def compute_lagrangian(self, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+    def compute_lagrangian(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         """
         Computes the lagrangian. Note that this is the Lagrangian in the sense of optimal control, i.e.,
 
@@ -488,14 +536,15 @@ class ShootingIntegrandBase(nn.Module):
 
         Returns a triple of scalars. The value of the Lagrangian as well as of the kinetic and the potential energies.
 
+        :param t: current timepoint
         :param state_dict_of_dicts: SortedDict of SortedDict's containing the states
         :param costate_dict_of_dicts: SortedDict of SortedDict's containing the costates
         :param parameter_objects: SortedDict with all the parameters for the advection equation, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer)
         :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
         """
 
-        kinetic_energy = self.compute_kinetic_energy(parameter_objects=parameter_objects)
-        potential_energy = self.compute_potential_energy(state_dict_of_dicts=state_dict_of_dicts,
+        kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects)
+        potential_energy = self.compute_potential_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                          costate_dict_of_dicts=costate_dict_of_dicts,
                                                          parameter_objects=parameter_objects)
 
@@ -733,31 +782,31 @@ class ShootingIntegrandBase(nn.Module):
                 indx[k] += t_shape[1]
         return ret
 
-    def rhs_advect_state_dict_of_dicts(self,state_dict_of_dicts,parameter_objects):
+    def rhs_advect_state_dict_of_dicts(self,t,state_dict_of_dicts,parameter_objects):
         if self.concatenate_parameters:
             state_dicts_concatenated = self._concatenate_dict_of_dicts(generic_dict_of_dicts=state_dict_of_dicts)
-            rhs_state_dict = self.rhs_advect_state(state_dict_or_dict_of_dicts=state_dicts_concatenated, parameter_objects=parameter_objects)
+            rhs_state_dict = self.rhs_advect_state(t=t,state_dict_or_dict_of_dicts=state_dicts_concatenated, parameter_objects=parameter_objects)
             rhs_state_dict_of_dicts = self._deconcatenate_based_on_generic_dict_of_dicts(rhs_state_dict,generic_dict_of_dicts=state_dict_of_dicts)
             #rhs_state_dict_of_dicts = SortedDict({self._block_name:rhs_state_dict})
             return rhs_state_dict_of_dicts
         else:
-            return self.rhs_advect_state(state_dict_or_dict_of_dicts=state_dict_of_dicts,
+            return self.rhs_advect_state(t=t,state_dict_or_dict_of_dicts=state_dict_of_dicts,
                                          parameter_objects=parameter_objects)
 
     @abstractmethod
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
         pass
 
-    def rhs_advect_data(self,data_dict,parameter_objects):
+    def rhs_advect_data(self,t,data_dict,parameter_objects):
         # wrap it
         c_data_state_dicts = SortedDict({'data':data_dict})
-        ret_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(state_dict_of_dicts=c_data_state_dicts,parameter_objects=parameter_objects)
+        ret_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=c_data_state_dicts,parameter_objects=parameter_objects)
         # unwrap it
         ret = ret_dict_of_dicts['data']
         return ret
 
     @abstractmethod
-    def rhs_advect_costate(self, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+    def rhs_advect_costate(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
         # returns a dictionary of the RHS of the costate
         pass
@@ -792,7 +841,7 @@ class ShootingIntegrandBase(nn.Module):
                     current_pars[k] = -current_weights[k]*current_pars_from[f]
 
     @abstractmethod
-    def compute_parameters(self,parameter_objects,state_dict,costate_dict):
+    def compute_parameters(self,t,parameter_objects,state_dict,costate_dict):
         """
         Computes parameters and stores them in parameter_objects. Returns the current kinectic energy (i.e., penalizer on parameters)
         :param state_dict:
@@ -808,7 +857,7 @@ class ShootingIntegrandBase(nn.Module):
             for k in current_pars:
                 current_pars[k] = current_pars[k].detach().requires_grad_(True)
 
-    def compute_gradients(self,state_dict_of_dicts,costate_dict_of_dicts,data_dict):
+    def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_dict):
 
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
@@ -817,13 +866,19 @@ class ShootingIntegrandBase(nn.Module):
             # the current parameters
             self.detach_and_require_gradients_for_parameter_objects(self._parameter_objects)
 
-        current_kinetic_energy = self.compute_parameters(parameter_objects=self._parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
+        current_kinetic_energy = self.compute_parameters(t=t,parameter_objects=self._parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
         self.current_norm_penalty = current_kinetic_energy
 
-        dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(state_dict_of_dicts=state_dict_of_dicts,parameter_objects=self._parameter_objects)
-        dot_data_dict = self.rhs_advect_data(data_dict=data_dict,parameter_objects=self._parameter_objects)
-        dot_costate_dict_of_dicts = self.rhs_advect_costate(state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,parameter_objects=self._parameter_objects)
+        dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=self._parameter_objects)
+        dot_data_dict = self.rhs_advect_data(t=t,data_dict=data_dict,parameter_objects=self._parameter_objects)
+        dot_costate_dict_of_dicts = self.rhs_advect_costate(t=t,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,parameter_objects=self._parameter_objects)
+
+        # run the hooks so we can get parameters, states, etc.; for example, to create tensorboard output
+        for hook in self._lagrangian_gradient_hooks.values():
+            hook(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_dict,
+                 dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict,
+                 self._parameter_objects, self._custom_hook_data)
 
         return dot_state_dict_of_dicts,dot_costate_dict_of_dicts,dot_data_dict
 
@@ -865,6 +920,8 @@ class ShootingIntegrandBase(nn.Module):
             for k in self._costate_parameter_dict:
                 self.register_parameter(k,self._costate_parameter_dict[k])
 
+    # todo: add possibility for time-dependency to everything here (currently it is just ignored)
+
     def forward(self, t, input):
 
         state_dict_of_dicts,costate_dict_of_dicts,data_dict = self.disassemble_tensor(input)
@@ -876,7 +933,7 @@ class ShootingIntegrandBase(nn.Module):
 
         # computing the gradients
         dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict = \
-            self.compute_gradients(state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict=data_dict)
+            self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict=data_dict)
 
         if self.transpose_state_when_forward:
             # as we transposed the vectors before we need to transpose on the way back
@@ -898,11 +955,11 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
                                                             concatenate_parameters=concatenate_parameters,
                                                             *args, **kwargs)
 
-    def rhs_advect_costate(self, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+    def rhs_advect_costate(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
 
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
-            self.compute_lagrangian(state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
+            self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
 
         # form a tuple of all the state variables (because this is what we take the derivative of)
         state_tuple = self.compute_tuple_from_generic_dict_of_dicts(state_dict_of_dicts)
@@ -929,11 +986,11 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
                                                                          concatenate_parameters=concatenate_parameters,
                                                                          *args, **kwargs)
 
-    def compute_parameters_directly(self, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
+    def compute_parameters_directly(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
 
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
-            self.compute_lagrangian(state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
+            self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
 
         parameter_tuple = self.compute_tuple_from_parameter_objects(parameter_objects)
 
@@ -953,8 +1010,8 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
 
         return current_kinetic_energy
 
-    def compute_parameters(self,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
-        return self.compute_parameters_directly(parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
+    def compute_parameters(self,t, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
+        return self.compute_parameters_directly(t=t, parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
 
 class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
@@ -966,14 +1023,14 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
                                                                             concatenate_parameters=concatenate_parameters,
                                                                             *args, **kwargs)
 
-    def compute_parameters_iteratively(self, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
+    def compute_parameters_iteratively(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
 
         learning_rate = 0.5
         nr_of_fixed_point_iterations = 5
 
         for n in range(nr_of_fixed_point_iterations):
             current_lagrangian, current_kinectic_energy, current_potential_energy = \
-                self.compute_lagrangian(state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
+                self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
 
             parameter_tuple = self.compute_tuple_from_parameter_objects(parameter_objects)
 
@@ -994,7 +1051,7 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
 
         return current_kinectic_energy
 
-    def compute_parameters(self,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
-        return self.compute_parameters_iteratively(parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
+    def compute_parameters(self,t, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
+        return self.compute_parameters_iteratively(t=t, parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
 

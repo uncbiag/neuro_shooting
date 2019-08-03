@@ -42,7 +42,7 @@ class AutoShootingIntegrandModelSecondOrder(shooting.LinearInParameterAutogradSh
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
@@ -105,7 +105,7 @@ class AutoShootingIntegrandModelUpDown(shooting.LinearInParameterAutogradShootin
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
@@ -171,7 +171,7 @@ class AutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootin
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
@@ -288,7 +288,7 @@ class ChainableAutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogr
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
@@ -367,7 +367,7 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.LinearInParameterAutogradS
 
         return parameter_objects
 
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 
@@ -445,8 +445,7 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.LinearInParameterAutogradSh
         return parameter_objects
 
 
-
-    def rhs_advect_state(self, state_dict_or_dict_of_dicts, parameter_objects):
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
 
         rhs = SortedDict()
 

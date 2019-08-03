@@ -9,6 +9,7 @@ import random
 
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
+import neuro_shooting.tensorboard_shooting_hooks as thooks
 
 # Command line arguments
 
@@ -384,45 +385,57 @@ if __name__ == '__main__':
         if not validate_with_random_batch_each_time:
             val_batch_y0, val_batch_t, val_batch_y = get_batch(batch_size=args.batch_validation_size)
 
+    custom_hook_data = dict()
+
     for itr in range(0, args.niters):
+
+        custom_hook_data['epoch'] = itr
+        custom_hook_data['batch'] = 0 # we do not really have batches here
 
         optimizer.zero_grad()
         batch_y0, batch_t, batch_y = get_batch()
 
-        if itr % args.test_freq == 0:
-            if itr % args.viz_freq == 0:
-
-                try:
-                    if not is_odenet:
-                        theta_np = (shooting.compute_theta(q=shooting.q_params.transpose(1,2),p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
-                        bias_np = (shooting.compute_bias(p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
-
-                        if all_thetas is None:
-                            all_thetas = theta_np
-                        else:
-                            all_thetas = np.append(all_thetas,theta_np,axis=0)
-
-                        c_true_A = true_A.view(1,-1).detach().cpu().numpy()
-                        if all_real_thetas is None:
-                            all_real_thetas = c_true_A
-                        else:
-                            all_real_thetas = np.append(all_real_thetas,c_true_A,axis=0)
-
-                        if all_bs is None:
-                            all_bs = bias_np
-                        else:
-                            all_bs = np.append(all_bs,bias_np,axis=0)
-
-                    visualize_batch(batch_t,batch_y,thetas=all_thetas,real_thetas=all_real_thetas,bias=all_bs)
-                except:
-                    pass
+        # if itr % args.test_freq == 0:
+        #     if itr % args.viz_freq == 0:
+        #
+        #         try:
+        #             if not is_odenet:
+        #                 theta_np = (shooting.compute_theta(q=shooting.q_params.transpose(1,2),p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
+        #                 bias_np = (shooting.compute_bias(p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
+        #
+        #                 if all_thetas is None:
+        #                     all_thetas = theta_np
+        #                 else:
+        #                     all_thetas = np.append(all_thetas,theta_np,axis=0)
+        #
+        #                 c_true_A = true_A.view(1,-1).detach().cpu().numpy()
+        #                 if all_real_thetas is None:
+        #                     all_real_thetas = c_true_A
+        #                 else:
+        #                     all_real_thetas = np.append(all_real_thetas,c_true_A,axis=0)
+        #
+        #                 if all_bs is None:
+        #                     all_bs = bias_np
+        #                 else:
+        #                     all_bs = np.append(all_bs,bias_np,axis=0)
+        #
+        #             visualize_batch(batch_t,batch_y,thetas=all_thetas,real_thetas=all_real_thetas,bias=all_bs)
+        #         except:
+        #             pass
 
         if is_odenet:
             pred_y = integrator.integrate(func=func, x0=batch_y0, t=batch_t)
         else:
 
+            # register a hook so we can log via tensorboard
+            shooting_hook = shooting.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
+
+            shooting.set_custom_hook_data(data=custom_hook_data)
             z_0 = shooting.get_initial_condition(x=batch_y0)
             temp_pred_y = integrator.integrate(func=shooting,x0=z_0 , t=batch_t)
+
+            # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
+            shooting_hook.remove()
 
             # we are actually only interested in the prediction of the batch itself (not the parameterization)
             pred_y = shooting.disassemble(temp_pred_y,dim=1)

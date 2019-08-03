@@ -10,6 +10,9 @@ class ShootingStridingBlock(nn.Module):
     a dict holding the state for the data and will subsample as desired. This basically amounts to striding.
     """
 
+    # todo: padding should upsample it going forward or we introduce new variables in the surrounding
+    # todo: maybe start with padding as it is easier (zero padding and optimize over dual variables)
+
     def __init__(self,stride=2,dim=2):
         super(ShootingStridingBlock, self).__init__()
 
@@ -32,21 +35,26 @@ class ShootingStridingBlock(nn.Module):
         if dim_input!=self.dim+2:
             raise ValueError('Dimension mismatch. Expected tensor dimension {} for batch x channel x ..., but got {}.'.format(self.dim+2,dim_input))
 
+        # compute stride offsets to make sure we pick the center element if we have an odd number of elements
+        offsets = [0]*self.dim
+        for i,v in stride:
+            offsets[i] = v%2
+
         if self.dim==1:
             if dim_input[2]<stride[0]:
                 return None
             else:
-                return input[:,:,::stride[0]]
+                return input[:,:,offsets[0]::stride[0]]
         elif self.dim==2:
             if (dim_input[2]<stride[0]) or (dim_input[3]<stride[1]):
                 return  None
             else:
-                return input[:,:,::stride[0],::stride[1]]
+                return input[:,:,offsets[0]::stride[0],offsets[1]::stride[1]]
         elif self.dim==3:
             if (dim_input[2]<stride[0]) or (dim_input[3]<stride[1]) or (dim_input[4]<stride[2]):
                 return None
             else:
-                return input[:, :, ::stride[0], ::stride[1], ::stride[2]]
+                return input[:, :, offsets[0]::stride[0], offsets[1]::stride[1], offsets[2]::stride[2]]
         else:
             raise ValueError('Unsupported dimension {}'.format(self.dim))
 
