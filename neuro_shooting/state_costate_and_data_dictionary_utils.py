@@ -1,3 +1,7 @@
+"""
+Various convenience functions to assemble and disassemble state, costate, and data dictionaries.
+"""
+
 import torch
 from sortedcontainers import SortedDict
 

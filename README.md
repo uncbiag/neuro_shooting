@@ -44,7 +44,7 @@ It is now also possible to add hooks to shooting blocks. Most easily results are
 tensorboard --logdir=runs
 ```
 
-(assuming the tensorboard output is in the directory `runs`.
+(assuming the tensorboard output is in the directory `runs`).
 You can look at the results by opening
 
 ```
