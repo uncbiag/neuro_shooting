@@ -141,7 +141,7 @@ class ShootingBlockBase(nn.Module):
         :return: tuple of SortedDicts holding the state dictionary and the cotate dictionary
         """
 
-        state_dict = self.shooting_integrand.create_initial_state_parameters(set_to_zero=self.keep_state_parameters_at_zero, *args, **kwargs)
+        state_dict = self.shooting_integrand.create_initial_state_parameters_if_needed(set_to_zero=self.keep_state_parameters_at_zero, *args, **kwargs)
         costate_dict = self.shooting_integrand.create_initial_costate_parameters(state_dict=state_dict, *args, **kwargs)
 
         return state_dict, costate_dict
@@ -179,7 +179,7 @@ class ShootingBlockBase(nn.Module):
                 current_dict_enlargement = dict_of_dicts_enlargement[dk]
 
                 current_dict = generic_dict_of_dicts[dk]
-                current_size = current_dict[k].size()
+                current_size = torch.tensor(current_dict[k].size())
                 desired_size = desired_size_incorrect_channel
                 desired_size[1] = current_size[1]  # keep the same number of channels (but we are for example at liberty to increase the batch size here)
 
@@ -257,9 +257,9 @@ class ShootingBlockBase(nn.Module):
                 end_pars = e_pars[indx:indx_end]
                 indx = indx_end
 
-                ret = torch.cat((beg_pars.view(beg_size),
+                ret = torch.cat((beg_pars.view(tuple(beg_size)),
                                  ret,
-                                 end_pars.view(end_size)), dim=c_dim)
+                                 end_pars.view(tuple(end_size))), dim=c_dim)
 
                 # keep track of current size so we know how to grow the next dimension
                 current_size = torch.tensor(ret.size())
@@ -351,10 +351,11 @@ class ShootingBlockBase(nn.Module):
                 c_state_dict = pass_through_state_dict_of_dicts_enlargement_parameters[dk]
                 if c_state_dict is not None:
                     for k in c_state_dict:
-                        if keep_state_parameters_at_zero:
-                            print('INFO: Keeping new state enlargement parameters at zero for {}'.format(self._block_name))
-                            c_state_dict[k]._zero()
-                        self.register_parameter('pt_enlarge_' + k, c_state_dict[k])
+                        if c_state_dict[k] is not None:
+                            if keep_state_parameters_at_zero:
+                                print('INFO: Keeping new state enlargement parameters at zero for {}'.format(self._block_name))
+                                c_state_dict[k][0]._zero()
+                            self.register_parameter('pt_enlarge_' + k, c_state_dict[k][0])
 
         if pass_through_costate_dict_of_dicts_enlargement_parameters is not None:
 
@@ -362,7 +363,8 @@ class ShootingBlockBase(nn.Module):
                 c_costate_dict = pass_through_costate_dict_of_dicts_enlargement_parameters[dk]
                 if c_costate_dict is not None:
                     for k in c_costate_dict:
-                        self.register_parameter('pt_enlarge_' + k, c_costate_dict[k])
+                        if c_costate_dict[k] is not None:
+                            self.register_parameter('pt_enlarge_' + k, c_costate_dict[k][0])
 
     def _get_or_create_and_register_pass_through_enlargement_parameters(self,pass_through_state_dict_of_dicts,pass_through_costate_dict_of_dicts,*args,**kwargs):
 

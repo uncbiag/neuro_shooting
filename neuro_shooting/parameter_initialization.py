@@ -43,10 +43,10 @@ class ParameterInitializer(object):
             return self.create_custom_parameters_like(like_tensor=like_tensor,*argv,**kwargs)
 
     def create_zero_parameters_of_size(self, size, *argv, **kwargs):
-        return nn.Parameter(torch.zeros(size=size))
+        return nn.Parameter(torch.zeros(size))
 
     def create_random_parameters_of_size(self, size, *argv, **kwargs):
-        return nn.Parameter(self.random_initialization_magnitude * torch.randn(size=size))
+        return nn.Parameter(self.random_initialization_magnitude * torch.randn(size))
 
     def create_custom_parameters_of_size(self, size, *argv, **kwargs):
         raise ValueError('Not implemented. If you want to use this functionalty, derive an appropriate class.')
@@ -86,11 +86,11 @@ class VectorEvolutionParameterInitializer(ParameterInitializer):
 
     def create_zero_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         size = tuple([nr_of_particles,particle_dimension,particle_size])
-        return nn.Parameter(torch.zeros(size=size))
+        return nn.Parameter(torch.zeros(size))
 
     def create_random_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         size = tuple([nr_of_particles,particle_dimension,particle_size])
-        return nn.Parameter(self.random_initialization_magnitude*torch.randn(size=size))
+        return nn.Parameter(self.random_initialization_magnitude*torch.randn(size))
 
 
 class ConvolutionEvolutionParameterInitializer(ParameterInitializer):
@@ -104,11 +104,12 @@ class ConvolutionEvolutionParameterInitializer(ParameterInitializer):
             raise ValueError('Expected the particle size as a tuple or list e.g., [3,3], but got {}.'.format(type(particle_size)))
 
         size = tuple([nr_of_particles,particle_dimension,*particle_size])
-        return nn.Parameter(torch.zeros(size=size))
+        return nn.Parameter(torch.zeros(size))
 
     def create_zero_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         if type(particle_size) != tuple and type(particle_size) != list:
             raise ValueError('Expected the particle size as a tuple or list e.g., [3,3], but got {}.'.format(type(particle_size)))
 
         size = tuple([nr_of_particles,particle_dimension,*particle_size])
-        return nn.Parameter(self.random_initialization_magnitude*torch.randn(size=size))
+        return nn.Parameter(self.random_initialization_magnitude*torch.randn(size))
+        return nn.Parameter(self.random_initialization_magnitude*torch.randn(size))

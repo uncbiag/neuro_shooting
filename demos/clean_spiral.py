@@ -361,9 +361,9 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(nonlinearity=args.nonlinearity)
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(nonlinearity=args.nonlinearity)
-        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
+        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
         shooting_block = shooting_block.to(device)

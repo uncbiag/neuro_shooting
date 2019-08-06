@@ -174,7 +174,7 @@ def _merge_state_or_costate_dict_with_generic_dict_of_dicts(generic_dict,generic
     """
     To keep the interface reasonably easy it is often desired to add a state or costate dictionary
     to a dictionary of dictionaries (which already contains various state or costate dictionaries) to obtain
-    a combined dictionary of dictionaries. As the entries of the dictonary of dictionaries are named (based on
+    a combined dictionary of dictionaries. As the entries of the dictionary of dictionaries are named (based on
     what block created them) the dictionary is added based on the name of the current block. It can only be
     addded if the name has not been used before. Hence it is essential to use unique names when using multiple
     blocks in a system that are being chained together.
@@ -322,7 +322,7 @@ def compute_tuple_from_parameter_objects(parameter_objects):
     return tuple(sv_list)
 
 
-def _concatenate_dict_of_dicts(generic_dict_of_dicts):
+def _concatenate_dict_of_dicts(generic_dict_of_dicts,dim):
     concatenated_dict = SortedDict()
     for dk in generic_dict_of_dicts:
         c_generic_dict = generic_dict_of_dicts[dk]
@@ -336,7 +336,7 @@ def _concatenate_dict_of_dicts(generic_dict_of_dicts):
                 t_shape2 = c_generic_dict[k].size()
 
                 try:
-                    concatenated_dict[k] = torch.cat((concatenated_dict[k], c_generic_dict[k]), dim=1)
+                    concatenated_dict[k] = torch.cat((concatenated_dict[k], c_generic_dict[k]), dim=dim)
                 except:
                     raise ValueError(
                         'Dimension mismatch when trying to concatenate tensor of shape {} and {} along dimension 1.'.format(
