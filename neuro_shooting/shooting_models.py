@@ -6,8 +6,8 @@ from sortedcontainers import SortedDict
 from torchdiffeq import odeint
 
 class AutoShootingIntegrandModelSecondOrder(shooting.LinearInParameterAutogradShootingIntegrand):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingIntegrandModelSecondOrder, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(AutoShootingIntegrandModelSecondOrder, self).__init__(batch_y0=batch_y0, nonlinearity=nonlinearity,
                                                                     only_random_initialization=only_random_initialization,
                                                                     transpose_state_when_forward=transpose_state_when_forward)
 
@@ -54,24 +54,21 @@ class AutoShootingIntegrandModelSecondOrder(shooting.LinearInParameterAutogradSh
 
         return rhs
 
-    def get_initial_condition(self, x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # intial data dict from given data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
         data_dict['q2'] = torch.zeros_like(x)
 
-        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
-
-        return initial_conditions
+        return data_dict
 
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
 class AutoShootingIntegrandModelUpDown(shooting.LinearInParameterAutogradShootingIntegrand):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingIntegrandModelUpDown, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(AutoShootingIntegrandModelUpDown, self).__init__(batch_y0=batch_y0, nonlinearity=nonlinearity,
                                                                only_random_initialization=only_random_initialization,
                                                                transpose_state_when_forward=transpose_state_when_forward)
 
@@ -117,9 +114,8 @@ class AutoShootingIntegrandModelUpDown(shooting.LinearInParameterAutogradShootin
 
         return rhs
 
-    def get_initial_condition(self, x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data dict from given data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
 
@@ -131,17 +127,15 @@ class AutoShootingIntegrandModelUpDown(shooting.LinearInParameterAutogradShootin
                                      torch.zeros_like(x),
                                      torch.zeros_like(x)), dim=max_dim)
 
-        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
-
-        return initial_conditions
+        return data_dict
 
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
 class AutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootingIntegrand):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
-        super(AutoShootingIntegrandModelSimple, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False):
+        super(AutoShootingIntegrandModelSimple, self).__init__(batch_y0=batch_y0, nonlinearity=nonlinearity,
                                                                only_random_initialization=only_random_initialization,
                                                                transpose_state_when_forward=transpose_state_when_forward)
 
@@ -166,7 +160,10 @@ class AutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootin
 
         parameter_objects = SortedDict()
 
-        linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
+        # todo: make this more generic again
+        dim = 2
+        #linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
+        linear = oc.SNN_Linear(in_features=dim, out_features=dim)
         parameter_objects['l1'] = linear
 
         return parameter_objects
@@ -182,15 +179,12 @@ class AutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootin
 
         return rhs
 
-    def get_initial_condition(self, x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data_dict for given initial data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
 
-        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
-
-        return initial_conditions
+        return data_dict
 
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
@@ -252,10 +246,10 @@ class ChainedShootingBlockExample(nn.Module):
 
 
 class ChainableAutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogradShootingIntegrand):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False, pass_through=False):
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False, pass_through=False):
         self.pass_through = pass_through
 
-        super(ChainableAutoShootingIntegrandModelSimple, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
+        super(ChainableAutoShootingIntegrandModelSimple, self).__init__(batch_y0=batch_y0, nonlinearity=nonlinearity,
                                                                         only_random_initialization=only_random_initialization,
                                                                         transpose_state_when_forward=transpose_state_when_forward)
 
@@ -299,15 +293,12 @@ class ChainableAutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogr
 
         return rhs
 
-    def get_initial_condition(self, x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data dict from given data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
 
-        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
-
-        return initial_conditions
+        return data_dict
 
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
@@ -315,7 +306,7 @@ class ChainableAutoShootingIntegrandModelSimple(shooting.LinearInParameterAutogr
 
 
 class AutoShootingIntegrandModelSimpleConv2D(shooting.LinearInParameterAutogradShootingIntegrand):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
                  particle_size=9,
@@ -325,8 +316,7 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.LinearInParameterAutogradS
         self.particle_number = particle_number
         self.channel_number = channel_number
 
-        super(AutoShootingIntegrandModelSimpleConv2D, self).__init__(name=name,
-                                                                     batch_y0=batch_y0, nonlinearity=nonlinearity,
+        super(AutoShootingIntegrandModelSimpleConv2D, self).__init__(batch_y0=batch_y0, nonlinearity=nonlinearity,
                                                                      only_random_initialization=only_random_initialization,
                                                                      transpose_state_when_forward=transpose_state_when_forward,
                                                                      channel_number=channel_number,
@@ -379,30 +369,26 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.LinearInParameterAutogradS
 
         return rhs
 
-    def get_initial_condition(self, x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data dict from given data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
         data_dict['q2'] = torch.zeros_like(x)
 
-        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
-
-        return initial_conditions
+        return data_dict
 
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
         return data_dict['q1']
 
 class AutoShootingIntegrandModelConv2DBatch(shooting.LinearInParameterAutogradShootingIntegrand):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
+    def __init__(self, batch_y0=None, nonlinearity=None, only_random_initialization=True,transpose_state_when_forward=False,
                  channel_number=64,
                  filter_size=3,
                  particle_size=6,
                  particle_number=25):
 
-        super(AutoShootingIntegrandModelConv2DBatch, self).__init__(name=name,
-                                                                    batch_y0=batch_y0, nonlinearity=nonlinearity,
+        super(AutoShootingIntegrandModelConv2DBatch, self).__init__(batch_y0=batch_y0, nonlinearity=nonlinearity,
                                                                     only_random_initialization=only_random_initialization,
                                                                     transpose_state_when_forward=transpose_state_when_forward,
                                                                     channel_number=channel_number,
@@ -457,16 +443,13 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.LinearInParameterAutogradSh
 
         return rhs
 
-    def get_initial_condition(self, x):
-        # Initial condition from given data vector
-        # easiest to first build a data dictionary and then call get_initial_conditions_from_data_dict(self,data_dict):
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data dict from given data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
         data_dict['q2'] = torch.zeros_like(x)
 
-        initial_conditions = self.get_initial_conditions_from_data_dict(data_dict=data_dict)
-
-        return initial_conditions
+        return data_dict
 
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)

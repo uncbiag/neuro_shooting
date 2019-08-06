@@ -15,53 +15,16 @@ class ShootingIntegrandBase(nn.Module):
     """
     Base class for shooting based neural ODE approaches
     """
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,
-                 transpose_state_when_forward=False,
-                 concatenate_parameters=True,
-                 keep_state_parameters_at_zero=False,
-                 enlarge_pass_through_states_and_costates=True,
-                 *args, **kwargs):
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True, *args, **kwargs):
         """
         Constructor
-        :param name: unique name of this block (needed to keep track of the parameters when there is pass through)
-        :param batch_y0: example batch, can be used to construct initial conditions for patches
         :param nonlinearity: desired nonlinearity to be used tanh, sigmoid, relu, ...
-        :param only_random_initialization: just a flag passed on to the initialization of the state and costate
         :param transpose_state_when_forward: if set to true states get transposed (1,2) at the beginng and end of processing
-        :param concatenate_parameters: before state or costate parameters are passed to the advection methods they are concatenated if set to True. This only works if they are of the same dimension.
-        :param keep_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
-        :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
         """
         super(ShootingIntegrandBase, self).__init__()
 
-        self._block_name = name
-        """Name of the shooting block"""
-
         self.nl, self.dnl = self._get_nonlinearity(nonlinearity=nonlinearity)
         """Nonlinearity and its derivative"""
-
-        self._state_parameter_dict = None
-        """Dictionary holding the state variables"""
-
-        self.keep_state_parameters_at_zero = keep_state_parameters_at_zero
-        """
-        If set to true one only optimizes over the costate and the state parameters are kept at zero (i.e., are no parameters).
-        This is for example useful when mimicking ResNet style dimension increase. 
-        """
-
-        self.enlarge_pass_through_states_and_costates = enlarge_pass_through_states_and_costates
-        """If set to true the pass through states and costates will be enlarged so they are compatible in size with the states and costates and can be concatenated"""
-
-        self._costate_parameter_dict = None
-        """Dictionary holding the costates (i.e., adjoints/duals)"""
-
-        self._pass_through_state_parameter_dict_of_dicts = None
-        """State parameters that are passed in externally, but are not parameters to be optimized over"""
-        self._pass_through_costate_parameter_dict_of_dicts = None
-        """Costate parameters that are passed in externally, but are not parameters to be optimized over"""
-
-        self.concatenate_parameters = concatenate_parameters
-        """If set to True all state and costate dictionaries will be merged into one; only possible when dimension is consistent"""
 
         self._parameter_objects = None
         """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules)"""
@@ -74,23 +37,24 @@ class ShootingIntegrandBase(nn.Module):
 
         self.transpose_state_when_forward = transpose_state_when_forward
 
-        # this allows to define one at some point and it will then be used going forward until it is reset
-        self.auto_assembly_plans = None
-        """Assembly plans, i.e., how to go from vectorized data to the named data structure"""
-
         # norm penalty
         self.current_norm_penalty = None
         """Will hold the last computed norm penality"""
 
-        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,
-                                                                                    only_random_initialization=only_random_initialization,
-                                                                                    *args,**kwargs)
+        self.concatenate_parameters = concatenate_parameters
+        """If set to true, parameters will be concatenated (need to have the same dimension)"""
 
-        self._state_parameter_dict,self._costate_parameter_dict = self.register_state_and_costate_parameters(
-            state_dict=state_dict, costate_dict=costate_dict, keep_state_parameters_at_zero=keep_state_parameters_at_zero)
+        self.auto_assembly_plans = None
+        """Keeps track of how data stuctures are assembled and disassembled"""
 
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
+
+    def concatenate_parameters_on(self):
+        self.concatenate_parameters = True
+
+    def concatenate_parameters_off(self):
+        self.concatenate_parameters = False
 
     def set_custom_hook_data(self,data):
         """
@@ -173,7 +137,10 @@ class ShootingIntegrandBase(nn.Module):
 
         :return:
         """
-        return self.get_current_norm_penalty()
+        current_norm_penalty = self.get_current_norm_penalty()
+        if current_norm_penalty is None:
+            print('WARNING: current norm penalty is None. Make sure your integration time started at zero. As this is when it is computed.')
+        return current_norm_penalty
 
     def _get_nonlinearity(self, nonlinearity):
         """
@@ -214,248 +181,9 @@ class ShootingIntegrandBase(nn.Module):
 
         return nl,dnl
 
-    @abstractmethod
-    def create_initial_state_parameters(self,batch_y0,only_random_initialization,*args,**kwargs):
-        """
-        Abstract method. Needs to be defined and needs to create and return a SortedDict containing the state variables.
 
-        :param batch_y0: sample batch as input, can be used to initialize
-        :param only_random_initialization: to indicate if purely random initialization is desired
-        :return: SortedDict containing the state variables (e.g., SortedDict({'q1': torch.zeros(20,10,5)})
-        """
-        pass
-
-    def set_initial_pass_through_state_parameters(self,state_dict_of_dicts):
-        """
-        If the parameters are not optimized over, this function can be used to set the initial conditions for the state variables.
-        It is possible to pass through states and to create new ones (in this case they will be combined).
-
-        :param state_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the states.
-        :return: n/a
-        """
-        self._pass_through_state_parameter_dict_of_dicts = state_dict_of_dicts
-
-    def set_initial_pass_through_costate_parameters(self,costate_dict_of_dicts):
-        """
-        If the parameters are not optimized over, this function can be used to set the initial conditions for the costate variables.
-        It is possible to pass through co-states and to create new ones (in this case they will be combined).
-
-        :param costate_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the costates.
-        :return: n/a
-        """
-        self._pass_through_costate_parameter_dict_of_dicts = costate_dict_of_dicts
-
-    def set_initial_pass_through_state_and_costate_parameters(self,state_dict_of_dicts,costate_dict_of_dicts):
-        """
-        Convenience function that allows setting the pass-through states and costates at the same time.
-        Same as calling set_initial_pass_through_state_parameters and set_initial_pass_through_costate_parameters separately.
-
-        :param state_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the states.
-        :param costate_dict_of_dicts: SortedDict of possibly multiple SortedDict's that hold the costates.
-        :return: n/a
-        """
-        # if the parameters are not optimized over, this function can be used to set the initial conditions
-        self.set_initial_pass_through_state_parameters(state_dict_of_dicts=state_dict_of_dicts)
-        self.set_initial_pass_through_costate_parameters(costate_dict_of_dicts=costate_dict_of_dicts)
-
-
-    def create_initial_costate_parameters(self,batch_y0=None,only_random_initialization=True,state_dict=None,*args,**kwargs):
-        """
-        By default this function automatically creates the costates for the given states (and does not need to be called
-        manually). Costates are names with the prefix \'p\_\', i.e., if a state was called \'q\' the corresponding costate
-        will be called \'p\_q\'. Overwrite this method if you want to do something custom for the costates, though this
-        should only rarely be necessary.
-
-        :param batch_y0: data batch passed in (but not currently used) that allows to create state-specific costates.
-        :param only_random_initialization: to indicate if the costates should be randomized (also currently not used; will be random by default).
-        :param state_dict: state dictionary which can be used to create the corresponding costate
-        :return: returns a SortedDict containing the costate.
-        """
-
-        if state_dict is None:
-            ValueError('This default method to create the initial costate requires to specify state_dict')
-
-        rand_mag_p = 0.5
-
-        costate_dict = SortedDict()
-        for k in state_dict:
-            costate_dict['p_' + str(k)] = nn.Parameter(rand_mag_p*torch.randn_like(state_dict[k]))
-
-        return costate_dict
-
-    def create_initial_state_and_costate_parameters(self,batch_y0,only_random_initialization,*args,**kwargs):
-        """
-        Creates the intial state and costate parameters. Should typically *not* be necessary to call this manually.
-
-        :param batch_y0: sample batch as input, can be used to initialize
-        :param only_random_initialization: to indicate if purely random initialization is desired
-        :return: tuple of SortedDicts holding the state dictionary and the cotate dictionary
-        """
-
-        state_dict = self.create_initial_state_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,*args,**kwargs)
-        costate_dict = self.create_initial_costate_parameters(batch_y0=batch_y0,only_random_initialization=only_random_initialization,state_dict=state_dict,*args,**kwargs)
-
-        return state_dict,costate_dict
-
-    def _create_raw_enlargement_parameters(self, desired_size, current_size, dtype, device):
-        vol_d = desired_size.prod()
-        vol_c = current_size.prod()
-        if vol_d<vol_c:
-            raise ValueError('Cannot be enlarged. Desired volume is smaller than current volume.')
-        ep = nn.Parameter(torch.zeros(vol_d-vol_c,dtype=dtype,device=device))
-        return ep
-
-
-    def _create_generic_dict_of_dicts_enlargement_parameters(self,generic_dict_of_dicts,dict_for_desired_size):
-
-        dict_of_dicts_enlargement = SortedDict()
-
-        # todo: check that we are not considering the batch and the channel size for enlargement here
-
-        for k in dict_for_desired_size:
-            desired_size_incorrect_channel = torch.tensor(dict_for_desired_size[k].size()) # skip batch and channel size
-            # go through all the dictionaries and find the same keys
-            for dk in generic_dict_of_dicts:
-                if dk not in dict_of_dicts_enlargement:
-                    dict_of_dicts_enlargement[dk] = SortedDict()
-
-                current_dict_enlargement = dict_of_dicts_enlargement[dk]
-
-                current_dict = generic_dict_of_dicts[k]
-                current_size = current_dict[k].size()
-                desired_size = desired_size_incorrect_channel
-                desired_size[1] = current_size[1] # keep the same number of channels (but we are for example at liberty to increase the batch size here)
-
-                dtype = current_dict[k].dtype
-                device = current_dict[k].device
-
-                current_diff = [0] * len(current_size)
-                found_greater_than_zero = False
-
-                for i in range(len(current_diff)):
-                    current_diff[i] = desired_size[i] - current_size
-                    if current_diff[i] > 0:
-                        found_greater_than_zero = True
-                    if current_diff[i] < 0:
-                        raise ValueError(
-                            'State size is smaller than pass through state size. Currently not supported. Aborting.')
-
-                if not found_greater_than_zero:
-                    current_dict_enlargement[k] = None
-                else:
-                    current_dict_enlargement[k] = \
-                        (self._create_raw_enlargement_parameters(desired_size=desired_size, current_size=current_size,
-                                                                 dtype=dtype, device=device), current_diff, desired_size)
-
-        return dict_of_dicts_enlargement
-
-
-    def _create_pass_through_state_and_costate_enlargement_parameters(self,
-                                                                      pass_through_state_parameter_dict_of_dicts,
-                                                                      pass_through_costate_parameter_dict_of_dicts,
-                                                                      state_parameter_dict,
-                                                                      costate_parameter_dict,
-                                                                      *args, **kwargs):
-
-        pass_through_state_dict_of_dicts_enlargement = \
-            self._create_generic_dict_of_dicts_enlargement_parameters(
-                generic_dict_of_dicts=pass_through_state_parameter_dict_of_dicts,
-                dict_for_desired_size=state_parameter_dict,*args,**kwargs)
-
-        pass_through_costate_dict_of_dicts_enlargement = \
-            self._create_generic_dict_of_dicts_enlargement_parameters(
-                generic_dict_of_dicts=pass_through_costate_parameter_dict_of_dicts,
-                dict_for_desired_size=costate_parameter_dict,*args,**kwargs)
-
-        return pass_through_state_dict_of_dicts_enlargement, pass_through_costate_dict_of_dicts_enlargement
-
-    def _enlarge_tensor(self,current_tensor,enlargement):
-        e_pars, e_diff, e_desired_size = enlargement
-
-        # first assure that the channel dimension is the same
-        if e_diff[1]!=0:
-            raise ValueError('Should have the same number of channels. Aborting')
-
-        current_size = torch.tensor(current_tensor.size())
-
-        ret = current_tensor
-
-        indx = 0
-
-        # grows out the hyperrectangle
-        for c_dim,c_diff in enumerate(e_diff):
-            if c_diff>0:
-                # if there is something to grow, grow c_dim
-                beg_add = c_diff//2 # add at the beginning (add less at the beginning if we need to add something odd)
-                end_add = c_diff-beg_add # add at the end
-
-                beg_size = current_size.clone()
-                beg_size[c_dim] = beg_add
-                indx_end = indx + beg_size.prod()
-                beg_pars = e_pars[indx:indx_end]
-                indx = indx_end
-
-                end_size = current_size.clone()
-                end_size[c_dim] = end_add
-                indx_end = indx + end_size.prod()
-                end_pars = e_pars[indx:indx_end]
-                indx = indx_end
-
-                ret = torch.cat((beg_pars.view(beg_size),
-                                 ret,
-                                 end_pars.view(end_size)), dim=c_dim)
-
-                # keep track of current size so we know how to grow the next dimension
-                current_size = torch.tensor(ret.size())
-
-        return ret
-
-    def _enlarge_generic_dict_of_dicts(self,generic_dict_of_dicts,enlargement_parameters):
-
-        enlarged_dict_of_dicts = SortedDict()
-
-        for gd,epd in zip(generic_dict_of_dicts,enlargement_parameters):
-
-            enlarged_dict_of_dicts[gd] = SortedDict()
-
-            c_dict = generic_dict_of_dicts[gd]
-            c_enlargement_parameter_dict = enlargement_parameters[epd]
-            c_enlarged_dict = enlarged_dict_of_dicts[gd]
-
-            for kd,kep in zip(c_dict,c_enlargement_parameter_dict):
-                c_enlarged_dict[kd] = self._enlarge_tensor(c_dict[kd],c_enlargement_parameter_dict[kep])
-
-        return enlarged_dict_of_dicts
-
-    def create_enlarged_pass_through_states_and_costates(self,
-                                                pass_through_state_parameter_dict_of_dicts,
-                                                pass_through_costate_parameter_dict_of_dicts,
-                                                state_parameter_dict,
-                                                costate_parameter_dict,
-                                                *args, **kwargs):
-
-        # applies the enlarged parameters to pass through states and costates (and shapes them into the right form)
-
-        # first compute how much we need to enlarge
-        pass_through_state_dict_of_dicts_enlargement, pass_through_costate_dict_of_dicts_enlargement = \
-            self._create_pass_through_state_and_costate_enlargement_parameters(
-                pass_through_state_parameter_dict_of_dicts=pass_through_state_parameter_dict_of_dicts,
-                pass_through_costate_parameter_dict_of_dicts=pass_through_costate_parameter_dict_of_dicts,
-                state_parameter_dict=state_parameter_dict,
-                costate_parameter_dict=costate_parameter_dict,
-                *args, **kwargs)
-
-        # then compute the actual enlargement
-        enlarged_pass_through_state_parameter_dict_of_dicts = self._enlarge_generic_dict_of_dicts(
-            generic_dict_of_dicts=pass_through_state_parameter_dict_of_dicts,
-            enlargement_parameters=pass_through_state_dict_of_dicts_enlargement)
-
-        enlarged_pass_through_costate_parameter_dict_of_dicts = self._enlarge_generic_dict_of_dicts(
-            generic_dict_of_dicts=pass_through_costate_parameter_dict_of_dicts,
-            enlargement_parameters=pass_through_costate_dict_of_dicts_enlargement)
-
-        return enlarged_pass_through_state_parameter_dict_of_dicts,enlarged_pass_through_costate_parameter_dict_of_dicts,pass_through_state_dict_of_dicts_enlargement,pass_through_costate_dict_of_dicts_enlargement
-
+    def set_auto_assembly_plans(self,assembly_plans):
+        self.auto_assembly_plans = assembly_plans
 
     def assemble_tensor(self, state_dict_of_dicts, costate_dict_of_dicts, data_dict):
         """
@@ -470,7 +198,6 @@ class ShootingIntegrandBase(nn.Module):
         ret_vec, assembly_plans = scd_utils.assemble_tensor(state_dict_of_dicts=state_dict_of_dicts,
                                                             costate_dict_of_dicts=costate_dict_of_dicts,
                                                             data_dict=data_dict)
-
         return ret_vec, assembly_plans
 
     def disassemble_tensor(self, input, assembly_plans=None, dim=0):
@@ -485,6 +212,8 @@ class ShootingIntegrandBase(nn.Module):
 
         if assembly_plans is None:
             assembly_plans = self.auto_assembly_plans
+        else:
+            raise ValueError('No assembly plan specified to disassemble tensor. Either explicity specify when calling this method or set one via set_auto_assembly_plans')
 
         return scd_utils.disassemble_tensor(input=input, assembly_plans=assembly_plans, dim=dim)
 
@@ -595,70 +324,34 @@ class ShootingIntegrandBase(nn.Module):
         return lagrangian, kinetic_energy, potential_energy
 
     @abstractmethod
-    def get_initial_condition(self,x,*args,**kwargs):
-        """
-        Abstract method to obtain the intial condition (as a vector) from a given data vector. It is likely easiest to
-        implement by first building a data dictionary and then calling get_initial_conditions_from_data_dict(self,data_dict).
-
-        :param x: data vector (tensor)
-        :return: initial conditions as a vector (which can then be fed into a general integrator)
-        """
-
-        # todo: it may make more sense to make all the initial condition business part of the block rather than of the integrand
-
+    def create_initial_state_parameters(self, channel_number, batch_y0, only_random_initialization=True,*argv,**kwargs):
+        # todo: maybe a better design is possible here. for now left as part of the integrands as it makes the definitions much easier (in one place)
         pass
 
-
-    def get_initial_conditions_from_data_dict(self,data_dict,*args,**kwargs):
+    def create_initial_costate_parameters(self, batch_y0=None, only_random_initialization=True, state_dict=None, *args,
+                                          **kwargs):
         """
-        Given a data dictionary, this method creates a vector which contains the initial condition consisting of state, costate, and the data.
-        As a side effect it also stores (caches) the created assembly plan so that it does not need to be specified when calling disassemble_tensor.
+        By default this function automatically creates the costates for the given states (and does not need to be called
+        manually). Costates are names with the prefix \'p\_\', i.e., if a state was called \'q\' the corresponding costate
+        will be called \'p\_q\'. Overwrite this method if you want to do something custom for the costates, though this
+        should only rarely be necessary.
 
-        :param data_dict: data dictionary
-        :return: vector of initial conditions
+        :param batch_y0: data batch passed in (but not currently used) that allows to create state-specific costates.
+        :param only_random_initialization: to indicate if the costates should be randomized (also currently not used; will be random by default).
+        :param state_dict: state dictionary which can be used to create the corresponding costate
+        :return: returns a SortedDict containing the costate.
         """
 
-        # todo: we need to make sure that this is indeed always called
+        if state_dict is None:
+            ValueError('This default method to create the initial costate requires to specify state_dict')
 
-        if self.enlarge_pass_through_states_and_costates:
+        rand_mag_p = 0.5
 
-            enlarged_pass_through_state_dict_of_dicts, enlarged_pass_through_costate_dict_of_dicts,\
-                pass_through_state_dict_of_dicts_enlargement_parameters, pass_through_costate_dict_of_dicts_enlargement_parameters = \
-                self.create_enlarged_pass_through_states_and_costates(
-                    pass_through_state_parameter_dict_of_dicts=self._pass_through_state_parameter_dict_of_dicts,
-                    pass_through_costate_parameter_dict_of_dicts=self._pass_through_costate_parameter_dict_of_dicts,
-                    state_parameter_dict=self._state_parameter_dict,
-                    costate_parameter_dict=self._costate_parameter_dict,
-                    *args, **kwargs)
+        costate_dict = SortedDict()
+        for k in state_dict:
+            costate_dict['p_' + str(k)] = nn.Parameter(rand_mag_p * torch.randn_like(state_dict[k]))
 
-            # it is okay if they were registered before, will simply overwrite the ones that were already registered
-            # todo: check that this is actually possible for the optimizer (depends on when block.parameters() is called)
-            # todo: maybe overwrite the parameters() method to warn if this has not been run before
-            self.register_pass_through_state_and_costate_enlargement_parameters(
-                pass_through_state_dict_of_dicts_enlargement_parameters=pass_through_state_dict_of_dicts_enlargement_parameters,
-                pass_through_costate_dict_of_dicts_enlargement_parameters=pass_through_costate_dict_of_dicts_enlargement_parameters,
-                keep_state_parameters_at_zero=self.keep_state_parameters_at_zero
-            )
-
-            pass_through_state_dict_of_dicts = enlarged_pass_through_state_dict_of_dicts
-            pass_through_costate_dict_of_dicts = enlarged_pass_through_costate_dict_of_dicts
-
-        else:
-            pass_through_state_dict_of_dicts = self._pass_through_state_parameter_dict_of_dicts
-            pass_through_costate_dict_of_dicts = self._pass_through_costate_parameter_dict_of_dicts
-
-        state_dicts = scd_utils._merge_state_or_costate_dict_with_generic_dict_of_dicts(generic_dict=self._state_parameter_dict,
-                                                                                        generic_dict_of_dicts=pass_through_state_dict_of_dicts,
-                                                                                        generic_dict_block_name=self._block_name)
-
-        costate_dicts = scd_utils._merge_state_or_costate_dict_with_generic_dict_of_dicts(generic_dict=self._costate_parameter_dict,
-                                                                                          generic_dict_of_dicts=pass_through_costate_dict_of_dicts,
-                                                                                          generic_dict_block_name=self._block_name)
-
-        # initialize the second state of x with zero so far
-        initial_conditions,assembly_plans = self.assemble_tensor(state_dict_of_dicts=state_dicts, costate_dict_of_dicts=costate_dicts, data_dict=data_dict)
-        self.auto_assembly_plans = assembly_plans
-        return initial_conditions
+        return costate_dict
 
     @abstractmethod
     def create_default_parameter_objects(self):
@@ -670,7 +363,19 @@ class ShootingIntegrandBase(nn.Module):
         """
         raise ValueError('Not implemented. Needs to return a SortedDict of parameter objects')
 
+    @abstractmethod
+    def get_initial_data_dict_from_data_tensor(self, x):
+        """
+        Abstract method to obtain an intial data dictionary from a data tensor. Needs to be a SortedDict(). Needs to have
+        the same state variable names as for the states themselves. Needed to make sure what to do with higher-order states
+        (typically set to zero in implementations). Part of the integrands as they know about the states, but will be called
+        by the shooting block to build an initial condition.
 
+        :param x: data vector (tensor)
+        :return: SortedDict() for the data
+        """
+
+        pass
 
     def rhs_advect_state_dict_of_dicts(self,t,state_dict_of_dicts,parameter_objects):
         if self.concatenate_parameters:
@@ -758,7 +463,9 @@ class ShootingIntegrandBase(nn.Module):
 
         current_kinetic_energy = self.compute_parameters(t=t,parameter_objects=self._parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
-        self.current_norm_penalty = current_kinetic_energy
+        if t==0:
+            # we only want it at the initial condition
+            self.current_norm_penalty = current_kinetic_energy
 
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=self._parameter_objects)
         dot_data_dict = self.rhs_advect_data(t=t,data_dict=data_dict,parameter_objects=self._parameter_objects)
@@ -786,55 +493,6 @@ class ShootingIntegrandBase(nn.Module):
             ret[k] = (generic_dict[k]).transpose(1,2)
         return ret
 
-    def register_state_and_costate_parameters(self,state_dict,costate_dict,keep_state_parameters_at_zero):
-
-        if state_dict is not None:
-
-            if type(state_dict) != SortedDict:
-                raise ValueError('state parameter dictionrary needs to be an SortedDict and not {}'.format(
-                    type(state_dict)))
-
-            # only register if we want to optimize over them, otherwise force them to zero
-            if keep_state_parameters_at_zero:
-                print('INFO: Keeping new state parameters at zero for {}'.format(self._block_name))
-                for k in self.state_dict:
-                    self.state_dict[k].zero_()
-            else:
-                for k in self.state_dict:
-                    self.register_parameter(k,state_dict[k])
-
-        if costate_dict is not None:
-
-            if type(costate_dict) != SortedDict:
-                raise ValueError('costate parameter dictionrary needs to be an SortedDict and not {}'.format(
-                    type(costate_dict)))
-
-            for k in costate_dict:
-                self.register_parameter(k,costate_dict[k])
-
-    def register_pass_through_state_and_costate_enlargement_parameters(self,
-                                                                       pass_through_state_dict_of_dicts_enlargement_parameters,
-                                                                       pass_through_costate_dict_of_dicts_enlargement_parameters,
-                                                                       keep_state_parameters_at_zero):
-
-        if pass_through_state_dict_of_dicts_enlargement_parameters is not None:
-
-            for dk in pass_through_state_dict_of_dicts_enlargement_parameters:
-                c_state_dict = pass_through_state_dict_of_dicts_enlargement_parameters[dk]
-                if c_state_dict is not None:
-                    for k in c_state_dict:
-                        if keep_state_parameters_at_zero:
-                            print('INFO: Keeping new state enlargement parameters at zero for {}'.format(self._block_name))
-                            c_state_dict[k]._zero()
-                        self.register_parameter('pt_enlarge_' + k, c_state_dict[k])
-
-        if pass_through_costate_dict_of_dicts_enlargement_parameters is not None:
-
-            for dk in pass_through_costate_dict_of_dicts_enlargement_parameters:
-                c_costate_dict = pass_through_costate_dict_of_dicts_enlargement_parameters[dk]
-                if c_costate_dict is not None:
-                    for k in c_costate_dict:
-                        self.register_parameter('pt_enlarge_' + k, c_costate_dict[k])
 
     def forward(self, t, input):
 
@@ -861,10 +519,9 @@ class ShootingIntegrandBase(nn.Module):
         return output
 
 class AutogradShootingIntegrandBase(ShootingIntegrandBase):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,*args,**kwargs):
-        super(AutogradShootingIntegrandBase, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
-                                                            only_random_initialization=only_random_initialization,
+        super(AutogradShootingIntegrandBase, self).__init__(nonlinearity=nonlinearity,
                                                             transpose_state_when_forward=transpose_state_when_forward,
                                                             concatenate_parameters=concatenate_parameters,
                                                             *args, **kwargs)
@@ -892,10 +549,9 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
 
 
 class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,*args,**kwargs):
-        super(LinearInParameterAutogradShootingIntegrand, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
-                                                                         only_random_initialization=only_random_initialization,
+        super(LinearInParameterAutogradShootingIntegrand, self).__init__(nonlinearity=nonlinearity,
                                                                          transpose_state_when_forward=transpose_state_when_forward,
                                                                          concatenate_parameters=concatenate_parameters,
                                                                          *args, **kwargs)
@@ -929,10 +585,9 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
 
 
 class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
-    def __init__(self, name, batch_y0=None, nonlinearity=None, only_random_initialization=False,transpose_state_when_forward=False,
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,*args,**kwargs):
-        super(NonlinearInParameterAutogradShootingIntegrand, self).__init__(name=name, batch_y0=batch_y0, nonlinearity=nonlinearity,
-                                                                            only_random_initialization=only_random_initialization,
+        super(NonlinearInParameterAutogradShootingIntegrand, self).__init__(nonlinearity=nonlinearity,
                                                                             transpose_state_when_forward=transpose_state_when_forward,
                                                                             concatenate_parameters=concatenate_parameters,
                                                                             *args, **kwargs)

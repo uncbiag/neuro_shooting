@@ -19,14 +19,18 @@ def linear_transform_hook(module, t, state_dicts, costate_dicts, data_dict,
     else:
         batch = 0
 
-    if epoch%10==0: # only every 10th epoch for example
+    if t==0:
 
-        pars = parameter_objects['l1'].get_parameter_dict()
+        with torch.no_grad():
 
-        weight = pars['weight']
-        bias = pars['bias']
+            if epoch%10==0: # only every 10th epoch for example
 
-        writer.add_scalar('bias0', bias[0].item(), global_step=epoch)
-        writer.add_scalar('bias1', bias[1].item(), global_step=epoch)
+                pars = parameter_objects['l1'].get_parameter_dict()
 
-        writer.add_image('weight', weight, global_step=epoch, dataformats='HW')
+                weight = (pars['weight']).detach()
+                bias = (pars['bias']).detach()
+
+                writer.add_scalar('bias0', bias[0].item(), global_step=epoch)
+                writer.add_scalar('bias1', bias[1].item(), global_step=epoch)
+
+                writer.add_image('weight', weight, global_step=epoch, dataformats='HW')

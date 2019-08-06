@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 
+import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
 import neuro_shooting.tensorboard_shooting_hooks as thooks
@@ -237,21 +238,27 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
         # print("q_params",q_params.size())
 
         if not is_odenet:
-            z_0 = odefunc.get_initial_condition(x=current_y.unsqueeze(dim=1))
+            x_0 = current_y.unsqueeze(dim=1)
+            #z_0 = odefunc.get_initial_condition(x=current_y.unsqueeze(dim=1))
+
+
+            viz_time = t[:5] # just 5 timesteps ahead
+            # temp_pred_y = integrator.integrate(func=shooting, x0=z_0, t=viz_time)
+            # dydt_pred_y = shooting.disassemble(temp_pred_y, dim=1)
+
+            odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=True)
+            dydt_pred_y,_,_,_ = odefunc(x=x_0)
 
             if is_higher_order_model:
-
-                viz_time = t[:5] # just 5 timesteps ahead
-                temp_pred_y = integrator.integrate(func=shooting, x0=z_0, t=viz_time)
-                dydt_pred_y = shooting.disassemble(temp_pred_y, dim=1)
-
                 dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
-
                 dydt = dydt[:,0,...]
             else:
-                temp_pred_y = shooting(0,z_0)
-                dydt_tmp = shooting.disassemble(temp_pred_y, dim=0)
-                dydt = dydt_tmp[:,0,...].detach().numpy()
+                dydt = dydt_pred_y[-1,0,...]
+                # temp_pred_y = shooting(0,z_0)
+                # dydt_tmp = shooting.disassemble(temp_pred_y, dim=0)
+                # dydt = dydt_tmp[:,0,...].detach().numpy()
+
+
 
         else:
             dydt = odefunc(0, current_y).cpu().detach().numpy()
@@ -363,14 +370,19 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        shooting = shooting_models.AutoShootingIntegrandModelSimple(name='simple', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = shooting_models.AutoShootingBlockModelSecondOrder(name='second_order', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting = shooting_models.AutoShootingBlockModelUpDown(name='up_down', batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
 
-        shooting = shooting.to(device)
+        shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, batch_y0=batch_y0)
+        shooting_block = shooting_block.to(device)
+
+        # run through the shooting block once (to get parameters as needed)
+        _,_,sample_batch = get_batch()
+        shooting_block(x=sample_batch)
 
         #optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
-        optimizer = optim.Adam(shooting.parameters(), lr=2e-2)
+        optimizer = optim.Adam(shooting_block.parameters(), lr=2e-2)
         #optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
 
@@ -428,17 +440,20 @@ if __name__ == '__main__':
         else:
 
             # register a hook so we can log via tensorboard
-            shooting_hook = shooting.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
+            #shooting_hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
 
-            shooting.set_custom_hook_data(data=custom_hook_data)
-            z_0 = shooting.get_initial_condition(x=batch_y0)
-            temp_pred_y = integrator.integrate(func=shooting,x0=z_0 , t=batch_t)
+            #shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+            #z_0 = shooting.get_initial_condition(x=batch_y0)
+            #temp_pred_y = integrator.integrate(func=shooting,x0=z_0 , t=batch_t)
+
+            shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
+            pred_y,_,_,_ = shooting_block(x=batch_y0)
 
             # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
-            shooting_hook.remove()
+            #shooting_hook.remove()
 
             # we are actually only interested in the prediction of the batch itself (not the parameterization)
-            pred_y = shooting.disassemble(temp_pred_y,dim=1)
+            #pred_y = shooting_block.disassemble(temp_pred_y,dim=1)
 
         # todo: figure out wht the norm penality does not work
         if args.sim_norm == 'l1':
@@ -449,7 +464,7 @@ if __name__ == '__main__':
             raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
         if not is_odenet:
-            loss = loss + args.shooting_norm_penalty * shooting.get_norm_penalty()
+            loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
 
         loss.backward()
 
@@ -493,12 +508,14 @@ if __name__ == '__main__':
                 print("time",t_1 - t_0)
                 t_0 = t_1
 
-                val_z_0 = shooting.get_initial_condition(x=val_y0)
-
-                temp_pred_y = integrator.integrate(func=shooting, x0=val_z_0, t=val_t)
-
+                #val_z_0 = shooting.get_initial_condition(x=val_y0)
+                #temp_pred_y = integrator.integrate(func=shooting, x0=val_z_0, t=val_t)
                 # we are actually only interested in the prediction of the batch itself (not the parameterization)
-                val_pred_y = shooting.disassemble(temp_pred_y,dim=1)
+                #val_pred_y = shooting.disassemble(temp_pred_y, dim=1)
+
+                shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
+                val_pred_y,_,_,_ = shooting_block(x=val_y0)
+
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))
@@ -507,12 +524,12 @@ if __name__ == '__main__':
                 else:
                     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-                loss = loss + args.shooting_norm_penalty * shooting.get_norm_penalty()
+                loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
 
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
                 if itr % args.viz_freq == 0:
-                    visualize(val_y, val_pred_y, val_t, shooting, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
+                    visualize(val_y, val_pred_y, val_t, shooting_block, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
                     ii += 1
 
 
