@@ -22,7 +22,7 @@ def _assemble_generic_dict(d):
     d_list = []
     assembly_plan = SortedDict()
     for k in d:
-        d_list.append(d[k].view(-1))  # entirely flatten is (shape is stored by assembly plan)
+        d_list.append(d[k].contiguous().view(-1))  # entirely flatten is (shape is stored by assembly plan)
         assembly_plan[k] = d[k].shape
 
     if len(d_list) > 0:

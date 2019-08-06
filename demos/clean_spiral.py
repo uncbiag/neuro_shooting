@@ -365,7 +365,7 @@ if __name__ == '__main__':
         #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(nonlinearity=args.nonlinearity)
         shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(nonlinearity=args.nonlinearity)
 
-        shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, batch_y0=batch_y0)
+        shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
         shooting_block = shooting_block.to(device)
 
         # run through the shooting block once (to get parameters as needed)

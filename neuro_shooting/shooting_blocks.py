@@ -178,7 +178,7 @@ class ShootingBlockBase(nn.Module):
 
                 current_dict_enlargement = dict_of_dicts_enlargement[dk]
 
-                current_dict = generic_dict_of_dicts[k]
+                current_dict = generic_dict_of_dicts[dk]
                 current_size = current_dict[k].size()
                 desired_size = desired_size_incorrect_channel
                 desired_size[1] = current_size[1]  # keep the same number of channels (but we are for example at liberty to increase the batch size here)
@@ -190,7 +190,7 @@ class ShootingBlockBase(nn.Module):
                 found_greater_than_zero = False
 
                 for i in range(len(current_diff)):
-                    current_diff[i] = desired_size[i] - current_size
+                    current_diff[i] = desired_size[i] - current_size[i]
                     if current_diff[i] > 0:
                         found_greater_than_zero = True
                     if current_diff[i] < 0:
@@ -279,7 +279,10 @@ class ShootingBlockBase(nn.Module):
             c_enlarged_dict = enlarged_dict_of_dicts[gd]
 
             for kd, kep in zip(c_dict, c_enlargement_parameter_dict):
-                c_enlarged_dict[kd] = self._enlarge_tensor(c_dict[kd], c_enlargement_parameter_dict[kep])
+                if c_enlargement_parameter_dict[kep] is not None:
+                    c_enlarged_dict[kd] = self._enlarge_tensor(c_dict[kd], c_enlargement_parameter_dict[kep])
+                else:
+                    c_enlarged_dict[kd] = c_dict[kd]
 
         return enlarged_dict_of_dicts
 
@@ -395,7 +398,7 @@ class ShootingBlockBase(nn.Module):
 
         enlarged_pass_through_costate_parameter_dict_of_dicts = self._enlarge_generic_dict_of_dicts(
             generic_dict_of_dicts=pass_through_costate_dict_of_dicts,
-            enlargement_parameters=self._pass_through_costate_dict_of_dicts_enlargement)
+            enlargement_parameters=self._pass_through_costate_dict_of_dicts_enlargement_parameters)
 
         return enlarged_pass_through_state_parameter_dict_of_dicts,enlarged_pass_through_costate_parameter_dict_of_dicts
 
