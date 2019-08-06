@@ -16,14 +16,8 @@ class ShootingBlockBase(nn.Module):
                  concatenate_parameters=True,
                  keep_state_parameters_at_zero=False,
                  enlarge_pass_through_states_and_costates=True,
-                 batch_y0=None,only_random_initialization=True,
                  *args,**kwargs):
         """
-
-        :param batch_y0: example batch, can be used to construct initial conditions for patches
-        :param nonlinearity: desired nonlinearity to be used tanh, sigmoid, relu, ...
-        :param only_random_initialization: just a flag passed on to the initialization of the state and costate
-
 
         :param name: unique name of this block (needed to keep track of the parameters when there is pass through)
         :param shooting_integrand:
@@ -100,9 +94,7 @@ class ShootingBlockBase(nn.Module):
         self._pass_through_state_dict_of_dicts_enlargement_parameters = None
         self._pass_through_costate_dict_of_dicts_enlargement_parameters = None
 
-        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(batch_y0=batch_y0,
-                                                                                    only_random_initialization=only_random_initialization,
-                                                                                    *args, **kwargs)
+        state_dict, costate_dict = self.create_initial_state_and_costate_parameters(*args, **kwargs)
 
         self._state_parameter_dict, self._costate_parameter_dict = self.register_state_and_costate_parameters(
             state_dict=state_dict, costate_dict=costate_dict,
@@ -143,38 +135,34 @@ class ShootingBlockBase(nn.Module):
         self.integration_time = self.integration_time.to(*args, **kwargs)
         return self
 
-    def create_initial_state_and_costate_parameters(self, batch_y0, only_random_initialization, *args, **kwargs):
+    def create_initial_state_and_costate_parameters(self, *args, **kwargs):
         """
         Creates the intial state and costate parameters. Should typically *not* be necessary to call this manually.
-
-        :param batch_y0: sample batch as input, can be used to initialize
-        :param only_random_initialization: to indicate if purely random initialization is desired
         :return: tuple of SortedDicts holding the state dictionary and the cotate dictionary
         """
 
-        state_dict = self.shooting_integrand.create_initial_state_parameters(batch_y0=batch_y0,
-                                                                             only_random_initialization=only_random_initialization, *args,
-                                                                             **kwargs)
-
-        costate_dict = self.shooting_integrand.create_initial_costate_parameters(batch_y0=batch_y0,
-                                                                                 only_random_initialization=only_random_initialization,
-                                                                                 state_dict=state_dict, *args, **kwargs)
+        state_dict = self.shooting_integrand.create_initial_state_parameters(set_to_zero=self.keep_state_parameters_at_zero, *args, **kwargs)
+        costate_dict = self.shooting_integrand.create_initial_costate_parameters(state_dict=state_dict, *args, **kwargs)
 
         return state_dict, costate_dict
 
-    def _create_raw_enlargement_parameters(self, desired_size, current_size, dtype, device):
+    def _create_raw_enlargement_parameters(self, desired_size, current_size, data_type, dtype, device):
+        # todo: make sure the device and dtype is correct here (happens implicit in the initializer)
         vol_d = desired_size.prod()
         vol_c = current_size.prod()
         if vol_d < vol_c:
             raise ValueError('Cannot be enlarged. Desired volume is smaller than current volume.')
 
-        # todo: better approach to control initialization of these parameters and states and costates (in the integrands)
-        rand_mag_p = 0.5
+        if data_type=='state':
+            ep = self.shooting_integrand._state_initializer.create_parameters_of_size(vol_d-vol_c, set_to_zero=self.keep_state_parameters_at_zero)
+        elif data_type=='costate':
+            ep = self.shooting_integrand._costate_initializer.create_parameters_of_size(vol_d-vol_c)
+        else:
+            raise ValueError('Unknown data_type {} for initialization. Needs to be state or costate.'.format(data_type))
 
-        ep = nn.Parameter(rand_mag_p*torch.randn(vol_d - vol_c, dtype=dtype, device=device))
         return ep
 
-    def _create_generic_dict_of_dicts_enlargement_parameters(self, generic_dict_of_dicts, dict_for_desired_size):
+    def _create_generic_dict_of_dicts_enlargement_parameters(self, generic_dict_of_dicts, dict_for_desired_size, data_type='state'):
 
         dict_of_dicts_enlargement = SortedDict()
 
@@ -213,9 +201,8 @@ class ShootingBlockBase(nn.Module):
                     current_dict_enlargement[k] = None
                 else:
                     current_dict_enlargement[k] = \
-                        (self._create_raw_enlargement_parameters(desired_size=desired_size, current_size=current_size,
-                                                                 dtype=dtype, device=device), current_diff,
-                         desired_size)
+                        (self._create_raw_enlargement_parameters(desired_size=desired_size, current_size=current_size, data_type=data_type,
+                                                                 dtype=dtype, device=device), current_diff, desired_size)
 
         return dict_of_dicts_enlargement
 
@@ -229,12 +216,12 @@ class ShootingBlockBase(nn.Module):
         pass_through_state_dict_of_dicts_enlargement = \
             self._create_generic_dict_of_dicts_enlargement_parameters(
                 generic_dict_of_dicts=pass_through_state_parameter_dict_of_dicts,
-                dict_for_desired_size=state_parameter_dict, *args, **kwargs)
+                dict_for_desired_size=state_parameter_dict, data_type='state', *args, **kwargs)
 
         pass_through_costate_dict_of_dicts_enlargement = \
             self._create_generic_dict_of_dicts_enlargement_parameters(
                 generic_dict_of_dicts=pass_through_costate_parameter_dict_of_dicts,
-                dict_for_desired_size=costate_parameter_dict, *args, **kwargs)
+                dict_for_desired_size=costate_parameter_dict, data_type='costate', *args, **kwargs)
 
         return pass_through_state_dict_of_dicts_enlargement, pass_through_costate_dict_of_dicts_enlargement
 

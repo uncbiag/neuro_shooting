@@ -10,12 +10,15 @@ import torch.utils.hooks as hooks
 
 import neuro_shooting.activation_functions_and_derivatives as ad
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
+import neuro_shooting.parameter_initialization as parameter_initialization
 
 class ShootingIntegrandBase(nn.Module):
     """
     Base class for shooting based neural ODE approaches
     """
-    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True, *args, **kwargs):
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                nr_of_particles=10, particle_dimension=1, particle_size=2,
+                 *args, **kwargs):
         """
         Constructor
         :param nonlinearity: desired nonlinearity to be used tanh, sigmoid, relu, ...
@@ -23,8 +26,19 @@ class ShootingIntegrandBase(nn.Module):
         """
         super(ShootingIntegrandBase, self).__init__()
 
+        #todo: see how we can make sure these initializers get defined in the derived classes
+        self._state_initializer = None
+        self._costate_initializer = None
+
         self.nl, self.dnl = self._get_nonlinearity(nonlinearity=nonlinearity)
         """Nonlinearity and its derivative"""
+
+        self.nr_of_particles = nr_of_particles
+        """Number of particles used for the representation"""
+        self.particle_dimension = particle_dimension
+        """Dimension of the particle (i.e., how many channels)"""
+        self.particle_size = particle_size
+        """Size of the particle, corresponds to vector dimension for a vector-evolution, should be a tuple for convolution."""
 
         self._parameter_objects = None
         """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules)"""
@@ -47,8 +61,18 @@ class ShootingIntegrandBase(nn.Module):
         self.auto_assembly_plans = None
         """Keeps track of how data stuctures are assembled and disassembled"""
 
-        if self._parameter_objects is None:
-            self._parameter_objects = self.create_default_parameter_objects()
+
+    def set_state_initializer(self,state_initializer):
+        self._state_initializer = state_initializer
+
+    def get_state_initializer(self):
+        return self._state_initializer
+
+    def set_costate_initializer(self,costate_initializer):
+        self._costate_initializer = costate_initializer
+
+    def get_costate_initializer(self):
+        return self._costate_initializer
 
     def concatenate_parameters_on(self):
         self.concatenate_parameters = True
@@ -324,12 +348,12 @@ class ShootingIntegrandBase(nn.Module):
         return lagrangian, kinetic_energy, potential_energy
 
     @abstractmethod
-    def create_initial_state_parameters(self, channel_number, batch_y0, only_random_initialization=True,*argv,**kwargs):
+    def create_initial_state_parameters(self, set_to_zero, *argv,**kwargs):
         # todo: maybe a better design is possible here. for now left as part of the integrands as it makes the definitions much easier (in one place)
+        # use self._state_initializer.create_parameters() or .create_parameters_like() to initialize the state
         pass
 
-    def create_initial_costate_parameters(self, batch_y0=None, only_random_initialization=True, state_dict=None, *args,
-                                          **kwargs):
+    def create_initial_costate_parameters(self, state_dict=None, *args, **kwargs):
         """
         By default this function automatically creates the costates for the given states (and does not need to be called
         manually). Costates are names with the prefix \'p\_\', i.e., if a state was called \'q\' the corresponding costate
@@ -345,11 +369,12 @@ class ShootingIntegrandBase(nn.Module):
         if state_dict is None:
             ValueError('This default method to create the initial costate requires to specify state_dict')
 
-        rand_mag_p = 0.5
+        if self._parameter_objects is None:
+            self._parameter_objects = self.create_default_parameter_objects()
 
         costate_dict = SortedDict()
         for k in state_dict:
-            costate_dict['p_' + str(k)] = nn.Parameter(rand_mag_p * torch.randn_like(state_dict[k]))
+            costate_dict['p_' + str(k)] = self._costate_initializer.create_parameters_like(state_dict[k])
 
         return costate_dict
 
@@ -624,3 +649,105 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
         return self.compute_parameters_iteratively(t=t, parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
 
+class ShootingLinearInParameterVectorIntegrand(LinearInParameterAutogradShootingIntegrand):
+    """
+    Base class for shooting based neural ODE approaches
+    """
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                nr_of_particles=10,particle_dimension=1,particle_size=2,state_initializer=None,costate_initializer=None,
+                 *args, **kwargs):
+
+        super(ShootingLinearInParameterVectorIntegrand, self).__init__(nonlinearity=nonlinearity,
+                                                      transpose_state_when_forward=transpose_state_when_forward,
+                                                      concatenate_parameters=concatenate_parameters,
+                                                      nr_of_particles=nr_of_particles,
+                                                      particle_dimension=particle_dimension,particle_size=particle_size,
+                                                      *args, **kwargs)
+
+        if state_initializer is not None:
+            self._state_initializer = state_initializer
+        else:
+            self._state_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
+
+        if costate_initializer is not None:
+            self._costate_initializer = costate_initializer
+        else:
+            self._costate_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
+
+
+class ShootingNonlinearInParameterVectorIntegrand(NonlinearInParameterAutogradShootingIntegrand):
+    """
+    Base class for shooting based neural ODE approaches
+    """
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                nr_of_particles=10,particle_dimension=1,particle_size=2,state_initializer=None,costate_initializer=None,
+                 *args, **kwargs):
+
+        super(ShootingNonlinearInParameterVectorIntegrand, self).__init__(nonlinearity=nonlinearity,
+                                                      transpose_state_when_forward=transpose_state_when_forward,
+                                                      concatenate_parameters=concatenate_parameters,
+                                                      nr_of_particles=nr_of_particles,
+                                                      particle_dimension=particle_dimension,particle_size=particle_size,
+                                                      *args, **kwargs)
+
+        if state_initializer is not None:
+            self._state_initializer = state_initializer
+        else:
+            self._state_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
+
+        if costate_initializer is not None:
+            self._costate_initializer = costate_initializer
+        else:
+            self._costate_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
+
+class ShootingLinearInParameterConvolutionIntegrand(LinearInParameterAutogradShootingIntegrand):
+    """
+    Base class for shooting based neural ODE approaches
+    """
+
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2,state_initializer=None,costate_initializer=None,
+                 *args, **kwargs):
+
+        super(ShootingLinearInParameterConvolutionIntegrand, self).__init__(nonlinearity=nonlinearity,
+                                                           transpose_state_when_forward=transpose_state_when_forward,
+                                                           concatenate_parameters=concatenate_parameters,
+                                                           nr_of_particles=nr_of_particles,
+                                                           particle_dimension=particle_dimension, particle_size=particle_size,
+                                                           *args, **kwargs)
+
+        if state_initializer is not None:
+            self._state_initializer = state_initializer
+        else:
+            self._state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer()
+
+        if costate_initializer is not None:
+            self._costate_initializer = costate_initializer
+        else:
+            self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer()
+
+class ShootingNonlinearInParameterConvolutionIntegrand(NonlinearInParameterAutogradShootingIntegrand):
+    """
+    Base class for shooting based neural ODE approaches
+    """
+
+    def __init__(self, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2,state_initializer=None,costate_initializer=None,
+                 *args, **kwargs):
+
+        super(ShootingNonlinearInParameterConvolutionIntegrand, self).__init__(nonlinearity=nonlinearity,
+                                                           transpose_state_when_forward=transpose_state_when_forward,
+                                                           concatenate_parameters=concatenate_parameters,
+                                                           nr_of_particles=nr_of_particles,
+                                                           particle_dimension=particle_dimension, particle_size=particle_size,
+                                                           *args, **kwargs)
+
+        if state_initializer is not None:
+            self._state_initializer = state_initializer
+        else:
+            self._state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer()
+
+        if costate_initializer is not None:
+            self._costate_initializer = costate_initializer
+        else:
+            self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer()

@@ -239,12 +239,8 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
 
         if not is_odenet:
             x_0 = current_y.unsqueeze(dim=1)
-            #z_0 = odefunc.get_initial_condition(x=current_y.unsqueeze(dim=1))
-
 
             viz_time = t[:5] # just 5 timesteps ahead
-            # temp_pred_y = integrator.integrate(func=shooting, x0=z_0, t=viz_time)
-            # dydt_pred_y = shooting.disassemble(temp_pred_y, dim=1)
 
             odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=True)
             dydt_pred_y,_,_,_ = odefunc(x=x_0)
@@ -254,11 +250,6 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
                 dydt = dydt[:,0,...]
             else:
                 dydt = dydt_pred_y[-1,0,...]
-                # temp_pred_y = shooting(0,z_0)
-                # dydt_tmp = shooting.disassemble(temp_pred_y, dim=0)
-                # dydt = dydt_tmp[:,0,...].detach().numpy()
-
-
 
         else:
             dydt = odefunc(0, current_y).cpu().detach().numpy()
@@ -370,9 +361,9 @@ if __name__ == '__main__':
 
         batch_y0, batch_t, batch_y = get_batch(K)
 
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
-        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(batch_y0=batch_y0, only_random_initialization=True, nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(nonlinearity=args.nonlinearity)
+        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(nonlinearity=args.nonlinearity)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, batch_y0=batch_y0)
         shooting_block = shooting_block.to(device)
@@ -443,17 +434,11 @@ if __name__ == '__main__':
             #shooting_hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
 
             #shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
-            #z_0 = shooting.get_initial_condition(x=batch_y0)
-            #temp_pred_y = integrator.integrate(func=shooting,x0=z_0 , t=batch_t)
-
             shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
             pred_y,_,_,_ = shooting_block(x=batch_y0)
 
             # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
             #shooting_hook.remove()
-
-            # we are actually only interested in the prediction of the batch itself (not the parameterization)
-            #pred_y = shooting_block.disassemble(temp_pred_y,dim=1)
 
         # todo: figure out wht the norm penality does not work
         if args.sim_norm == 'l1':
@@ -508,14 +493,8 @@ if __name__ == '__main__':
                 print("time",t_1 - t_0)
                 t_0 = t_1
 
-                #val_z_0 = shooting.get_initial_condition(x=val_y0)
-                #temp_pred_y = integrator.integrate(func=shooting, x0=val_z_0, t=val_t)
-                # we are actually only interested in the prediction of the batch itself (not the parameterization)
-                #val_pred_y = shooting.disassemble(temp_pred_y, dim=1)
-
                 shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
                 val_pred_y,_,_,_ = shooting_block(x=val_y0)
-
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))
