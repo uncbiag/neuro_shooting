@@ -10,13 +10,13 @@ import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 
 class ShootingBlockBase(nn.Module):
 
-    def __init__(self,name, shooting_integrand=None,shooting_integrand_name=None,
-                 integrator_library='odeint',integrator_name='rk4',
+    def __init__(self, name, shooting_integrand=None, shooting_integrand_name=None,
+                 integrator_library='odeint', integrator_name='rk4',
                  use_adjoint_integration=False, integrator_options=None,
                  concatenate_parameters=True,
-                 keep_state_parameters_at_zero=False,
+                 keep_initial_state_parameters_at_zero=False,
                  enlarge_pass_through_states_and_costates=True,
-                 *args,**kwargs):
+                 *args, **kwargs):
         """
 
         :param name: unique name of this block (needed to keep track of the parameters when there is pass through)
@@ -27,7 +27,7 @@ class ShootingBlockBase(nn.Module):
         :param use_adjoint_integration:
         :param integrator_options:
         :param concatenate_parameters: before state or costate parameters are passed to the advection methods they are concatenated if set to True. This only works if they are of the same dimension.
-        :param keep_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
+        :param keep_initial_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
         :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
         :param args:
         :param kwargs:
@@ -71,7 +71,7 @@ class ShootingBlockBase(nn.Module):
         self._state_parameter_dict = None
         """Dictionary holding the state variables"""
 
-        self.keep_state_parameters_at_zero = keep_state_parameters_at_zero
+        self.keep_state_parameters_at_zero = keep_initial_state_parameters_at_zero
         """
         If set to true one only optimizes over the costate and the state parameters are kept at zero (i.e., are no parameters).
         This is for example useful when mimicking ResNet style dimension increase. 
@@ -98,7 +98,7 @@ class ShootingBlockBase(nn.Module):
 
         self._state_parameter_dict, self._costate_parameter_dict = self.register_state_and_costate_parameters(
             state_dict=state_dict, costate_dict=costate_dict,
-            keep_state_parameters_at_zero=keep_state_parameters_at_zero)
+            keep_state_parameters_at_zero=keep_initial_state_parameters_at_zero)
 
 
     def parameters(self, recurse=True):

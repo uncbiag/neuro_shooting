@@ -3,14 +3,11 @@ import torch.nn as nn
 from abc import abstractmethod
 
 class ParameterInitializer(object):
-    def __init__(self,only_random_initialization=True,random_initialization_magnitude=0.5):
+    def __init__(self,only_random_initialization=True,random_initialization_magnitude=0.5,sample_batch=None):
         super(ParameterInitializer, self).__init__()
         self.sample_batch = None
         self.only_random_initialization=only_random_initialization
         self.random_initialization_magnitude = random_initialization_magnitude
-
-    def set_sample_batch(self, sample_batch):
-        self.sample_batch = sample_batch
 
     @abstractmethod
     def create_zero_parameters(self,nr_of_particles,particle_dimension,particle_size,*argv,**kwargs):
@@ -79,24 +76,44 @@ class ParameterInitializer(object):
                                                  *argv,**kwargs)
 
 
-class VectorEvolutionParameterInitializer(ParameterInitializer):
-    def __init__(self,only_random_initialization=True,random_initialization_magnitude=0.5):
-        super(VectorEvolutionParameterInitializer, self).__init__(only_random_initialization=only_random_initialization,
-                                                                  random_initialization_magnitude=random_initialization_magnitude)
+class VectorEvolutionParameterInitializerBase(ParameterInitializer):
+    def __init__(self,only_random_initialization=True,random_initialization_magnitude=0.5,sample_batch=None):
+        super(VectorEvolutionParameterInitializerBase, self).__init__(only_random_initialization=only_random_initialization,
+                                                                  random_initialization_magnitude=random_initialization_magnitude,
+                                                                  sample_batch=sample_batch)
 
     def create_zero_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         size = tuple([nr_of_particles,particle_dimension,particle_size])
         return nn.Parameter(torch.zeros(size))
 
+class VectorEvolutionParameterInitializer(VectorEvolutionParameterInitializerBase):
+    def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5, sample_batch=None):
+        super(VectorEvolutionParameterInitializer, self).__init__(
+            only_random_initialization=only_random_initialization,
+            random_initialization_magnitude=random_initialization_magnitude,
+            sample_batch=sample_batch)
+
     def create_random_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         size = tuple([nr_of_particles,particle_dimension,particle_size])
         return nn.Parameter(self.random_initialization_magnitude*torch.randn(size))
 
+class VectorEvolutionSampleBatchParameterInitializer(VectorEvolutionParameterInitializerBase):
+    def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5, sample_batch=None):
+        super(VectorEvolutionSampleBatchParameterInitializer, self).__init__(
+            only_random_initialization=only_random_initialization,
+            random_initialization_magnitude=random_initialization_magnitude,
+            sample_batch=sample_batch)
 
-class ConvolutionEvolutionParameterInitializer(ParameterInitializer):
-    def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5):
-        super(ConvolutionEvolutionParameterInitializer, self).__init__(only_random_initialization=only_random_initialization,
-                                                                       random_initialization_magnitude=random_initialization_magnitude)
+    def create_random_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
+        size = tuple([nr_of_particles,particle_dimension,particle_size])
+        return nn.Parameter(self.sample_batch + self.random_initialization_magnitude*torch.randn(size))
+
+
+class ConvolutionEvolutionParameterInitializerBase(ParameterInitializer):
+    def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5,sample_batch=None):
+        super(ConvolutionEvolutionParameterInitializerBase, self).__init__(only_random_initialization=only_random_initialization,
+                                                                           random_initialization_magnitude=random_initialization_magnitude,
+                                                                           sample_batch=sample_batch)
 
     def create_zero_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
 
@@ -106,6 +123,13 @@ class ConvolutionEvolutionParameterInitializer(ParameterInitializer):
         size = tuple([nr_of_particles,particle_dimension,*particle_size])
         return nn.Parameter(torch.zeros(size))
 
+class ConvolutionEvolutionParameterInitializer(ConvolutionEvolutionParameterInitializerBase):
+    def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5, sample_batch=None):
+        super(ConvolutionEvolutionParameterInitializer, self).__init__(
+            only_random_initialization=only_random_initialization,
+            random_initialization_magnitude=random_initialization_magnitude,
+            sample_batch=sample_batch)
+
     def create_random_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         if type(particle_size) != tuple and type(particle_size) != list:
             raise ValueError('Expected the particle size as a tuple or list e.g., [3,3], but got {}.'.format(type(particle_size)))
@@ -113,3 +137,18 @@ class ConvolutionEvolutionParameterInitializer(ParameterInitializer):
         size = tuple([nr_of_particles,particle_dimension,*particle_size])
         return nn.Parameter(self.random_initialization_magnitude*torch.randn(size))
         return nn.Parameter(self.random_initialization_magnitude*torch.randn(size))
+
+class ConvolutionEvolutionSampleBatchParameterInitializer(ConvolutionEvolutionParameterInitializerBase):
+    def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5, sample_batch=None):
+        super(ConvolutionEvolutionSampleBatchParameterInitializer, self).__init__(
+            only_random_initialization=only_random_initialization,
+            random_initialization_magnitude=random_initialization_magnitude,
+            sample_batch=sample_batch)
+
+    def create_random_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
+        if type(particle_size) != tuple and type(particle_size) != list:
+            raise ValueError('Expected the particle size as a tuple or list e.g., [3,3], but got {}.'.format(type(particle_size)))
+
+        size = tuple([nr_of_particles,particle_dimension,*particle_size])
+        return nn.Parameter(self.sample_batch + self.random_initialization_magnitude*torch.randn(size))
+        return nn.Parameter(self.sample_batch + self.random_initialization_magnitude*torch.randn(size))

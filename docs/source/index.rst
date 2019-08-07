@@ -34,7 +34,11 @@ neuro_shooting: Shooting Neural Networks
    overwrite_classes
    generic_integrator
    activation_functions_and_derivatives
-
+   parameter_initialization
+   state_costate_and_data_dictionary_utils
+   striding_block
+   tensorboard_shooting_hooks
+   
 Indices and tables
 ==================
 
