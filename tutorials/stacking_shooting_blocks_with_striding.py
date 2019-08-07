@@ -34,6 +34,4 @@ s_state_dicts,s_costate_dicts,s_data_dicts = striding(state_dict_of_dicts=state_
                                                       data_dict_of_dicts=data_dicts2)
 
 
-dummy_loss = ret2['block2']['q1'].sum() # there are multiple values from the different blocks. Need to specify which one is desired
-
-
+dummy_loss = ret2['q1'].sum()

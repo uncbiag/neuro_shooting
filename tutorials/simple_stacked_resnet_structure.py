@@ -119,9 +119,5 @@ ret3_3,state_dicts3_3,costate_dicts3_3,data_dicts3_3 = shooting_block_3_3(data_d
                                                                pass_through_state_dict_of_dicts=state_dicts3_2,
                                                                pass_through_costate_dict_of_dicts=costate_dicts3_2)
 
-# concatenate output of different blocks
-ret3_3_concatenated = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=ret3_3,
-                                                                concatenation_dim=shooting_block_3_3.shooting_integrand.concatenation_dim)
-
-dummy_loss = ret3_3_concatenated['q1'].sum() # there are multiple values from the different blocks. Need to specify which one is desired
+dummy_loss = ret3_3.sum()
 dummy_loss.backward()

@@ -13,7 +13,6 @@ class ShootingBlockBase(nn.Module):
     def __init__(self, name, shooting_integrand=None, shooting_integrand_name=None,
                  integrator_library='odeint', integrator_name='rk4',
                  use_adjoint_integration=False, integrator_options=None,
-                 concatenate_parameters=True,
                  keep_initial_state_parameters_at_zero=False,
                  enlarge_pass_through_states_and_costates=True,
                  *args, **kwargs):
@@ -26,7 +25,6 @@ class ShootingBlockBase(nn.Module):
         :param integrator_name:
         :param use_adjoint_integration:
         :param integrator_options:
-        :param concatenate_parameters: before state or costate parameters are passed to the advection methods they are concatenated if set to True. This only works if they are of the same dimension.
         :param keep_initial_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
         :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
         :param args:
@@ -87,9 +85,6 @@ class ShootingBlockBase(nn.Module):
         """State parameters that are passed in externally, but are not parameters to be optimized over"""
         self._pass_through_costate_parameter_dict_of_dicts = None
         """Costate parameters that are passed in externally, but are not parameters to be optimized over"""
-
-        self.concatenate_parameters = concatenate_parameters
-        """If set to True all state and costate dictionaries will be merged into one; only possible when dimension is consistent"""
 
         self._pass_through_state_dict_of_dicts_enlargement_parameters = None
         self._pass_through_costate_dict_of_dicts_enlargement_parameters = None
@@ -507,11 +502,34 @@ class ShootingBlockBase(nn.Module):
             # and get what should typically be returned (the transformed data)
             res = self.shooting_integrand.disassemble(res_final,dim=0)
 
+        if self.shooting_integrand.concatenate_parameters:
+            # we also concatenate the output
+            res_state_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=state_dict_of_dicts,
+                                                                                                   concatenation_dim=self.shooting_integrand.concatenation_dim,
+                                                                                                   block_name=self._block_name)
+            res_costate_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=costate_dict_of_dicts,
+                                                                                                     concatenation_dim=self.shooting_integrand.concatenation_dim,
+                                                                                                     block_name=self._block_name)
+            res_data_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=data_dict_of_dicts,
+                                                                                                  concatenation_dim=self.shooting_integrand.data_concatenation_dim,
+                                                                                                  block_name=self._block_name)
+            # todo: find a more elegant solution to deal with the output
+            if type(res)==torch.Tensor:
+                res_res = res
+            else:
+                res_res = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=res,
+                                                               concatenation_dim=self.shooting_integrand.data_concatenation_dim)
+        else:
+            res_state_dict_of_dicts = state_dict_of_dicts
+            res_costate_dict_of_dicts = costate_dict_of_dicts
+            res_data_dict_of_dicts = data_dict_of_dicts
+            res_res = res
+
         # from now on it will be save to call parameters() for this block
         self._forward_not_yet_executed = False
 
         # we return the typical return value (in case this is the last block and we want to easily integrate,
         # but also all the dictionaries so these blocks can be easily chained together
 
-        return res,state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts
+        return res_res,res_state_dict_of_dicts,res_costate_dict_of_dicts,res_data_dict_of_dicts
 

@@ -36,6 +36,5 @@ ret2,state_dicts2,costate_dicts2,data_dicts2 = shooting_block_2(data_dict_of_dic
                                                                pass_through_costate_dict_of_dicts=s_costate_dicts)
 
 ret1.sum() # there is only one value, so it returns a tensor
-#dummy_loss = ret2.sum()
-dummy_loss = ret2['block2']['q1'].sum() # there are multiple values from the different blocks. Need to specify which one is desired
+dummy_loss = ret2['q1'].sum()
 dummy_loss.backward()

@@ -322,6 +322,11 @@ def compute_tuple_from_parameter_objects(parameter_objects):
     return tuple(sv_list)
 
 
+def _concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts,concatenation_dim,block_name):
+    ret = SortedDict()
+    ret[block_name] = _concatenate_dict_of_dicts(generic_dict_of_dicts=generic_dict_of_dicts,concatenation_dim=concatenation_dim)
+    return ret
+
 def _concatenate_dict_of_dicts(generic_dict_of_dicts,concatenation_dim):
     concatenated_dict = SortedDict()
     for dk in generic_dict_of_dicts:
