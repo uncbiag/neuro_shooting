@@ -106,7 +106,7 @@ class ConvolutionEvolutionParameterInitializer(ParameterInitializer):
         size = tuple([nr_of_particles,particle_dimension,*particle_size])
         return nn.Parameter(torch.zeros(size))
 
-    def create_zero_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
+    def create_random_parameters(self,nr_of_particles,particle_size,particle_dimension=1,*argv,**kwargs):
         if type(particle_size) != tuple and type(particle_size) != list:
             raise ValueError('Expected the particle size as a tuple or list e.g., [3,3], but got {}.'.format(type(particle_size)))
 

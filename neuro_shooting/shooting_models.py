@@ -4,6 +4,7 @@ import neuro_shooting.shooting_integrands as shooting
 import neuro_shooting.overwrite_classes as oc
 from sortedcontainers import SortedDict
 from torchdiffeq import odeint
+import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 
 class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVectorIntegrand):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -67,8 +68,8 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
         return data_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
-        return data_dict['q1']
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts, 'q1')
 
 class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -141,8 +142,8 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         return data_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
-        return data_dict['q1']
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
 class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -201,8 +202,8 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         return data_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
-        return data_dict['q1']
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
 class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
@@ -219,6 +220,7 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
                                                                      *args, **kwargs)
 
         self.filter_size = filter_size
+        self.enlargement_dimensions = [2,3]
 
 
     def create_initial_state_parameters(self,set_to_zero, *args, **kwargs):
@@ -270,8 +272,8 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
         return data_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
-        return data_dict['q1']
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
 class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
@@ -288,7 +290,7 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
                                                                     *args, **kwargs)
 
         self.filter_size = filter_size
-
+        self.enlargement_dimensions = [2,3]
 
     def create_initial_state_parameters(self,set_to_zero,*args,**kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -343,8 +345,8 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
         return data_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dict = self.disassemble_tensor(input, dim=dim)
-        return data_dict['q1']
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
 class ShootingModule(nn.Module):
 

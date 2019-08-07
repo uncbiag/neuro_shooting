@@ -57,25 +57,25 @@ def _assemble_generic_dict_of_dicts(d):
     return ret, assembly_plans
 
 
-def assemble_tensor(state_dict_of_dicts, costate_dict_of_dicts, data_dict):
+def assemble_tensor(state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts):
     """
     Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
 
     :param state_dict: SortedDict holding the SortedDict's of the states
     :param costate_dict: SortedDict holding the SortedDict's of the costate
-    :param data_dict: SortedDict holding the state for the transported data
+    :param data_dict: SortedDict holding SortedDict's of the state for the transported data
     :return: vectorized dictonaries (as one vecctor) and their assembly plans
     """
 
     # these are all ordered dictionaries, will assemble all into a big torch vector
     state_vector, state_assembly_plans = _assemble_generic_dict_of_dicts(state_dict_of_dicts)
     costate_vector, costate_assembly_plans = _assemble_generic_dict_of_dicts(costate_dict_of_dicts)
-    data_vector, data_assembly_plan = _assemble_generic_dict(data_dict)
+    data_vector, data_assembly_plan = _assemble_generic_dict_of_dicts(data_dict_of_dicts)
 
     assembly_plans = dict()
     assembly_plans['state_dicts'] = state_assembly_plans
     assembly_plans['costate_dicts'] = costate_assembly_plans
-    assembly_plans['data_dict'] = data_assembly_plan
+    assembly_plans['data_dicts'] = data_assembly_plan
 
     return torch.cat((state_vector, costate_vector, data_vector)), assembly_plans
 
@@ -153,24 +153,24 @@ def disassemble_tensor(input, assembly_plans=None, dim=0):
 
     state_dicts = None
     costate_dicts = None
-    data_dict = None
+    data_dicts = None
 
     incr = 0
-    for ap in ['state_dicts','costate_dicts','data_dict']:
+    for ap in ['state_dicts','costate_dicts','data_dicts']:
 
         if ap=='state_dicts':
             state_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
         elif ap=='costate_dicts':
             costate_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
-        elif ap=='data_dict':
-            data_dict, incr = _disassemble_dict(input=input, assembly_plan = assembly_plans[ap], dim=dim, incr=incr)
+        elif ap=='data_dicts':
+            data_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
         else:
             raise ValueError('Unknown dictionary assembly plan kind {}'.format(ap))
 
-    return state_dicts,costate_dicts,data_dict
+    return state_dicts,costate_dicts,data_dicts
 
 
-def _merge_state_or_costate_dict_with_generic_dict_of_dicts(generic_dict,generic_dict_of_dicts,generic_dict_block_name):
+def _merge_state_costate_or_data_dict_with_generic_dict_of_dicts(generic_dict, generic_dict_of_dicts, generic_dict_block_name):
     """
     To keep the interface reasonably easy it is often desired to add a state or costate dictionary
     to a dictionary of dictionaries (which already contains various state or costate dictionaries) to obtain
@@ -383,3 +383,93 @@ def _deconcatenate_based_on_generic_dict_of_dicts(concatenated_dict, generic_dic
                 raise ValueError('Deconcatenation is only supported for dimensions 0-4; you requested {} instead.'.format(concatenation_dim))
 
     return ret
+
+def _get_zero_dict_like(dict_like):
+    ret = SortedDict()
+    for k in dict_like:
+        ret[k] = torch.zeros_like(dict_like[k])
+    return ret
+
+def extract_batch_size_from_dict_of_dicts(dict_of_dicts):
+    sz = extract_size_from_dict_of_dicts(dict_of_dicts)
+    return sz[0]
+
+def extract_channel_size_from_dict_of_dicts(dict_of_dicts):
+    sz = extract_size_from_dict_of_dicts(dict_of_dicts)
+    return sz[1]
+
+def extract_size_from_dict_of_dicts(dict_of_dicts):
+    sample_tensor = dict_of_dicts.peekitem(0)[1].peekitem(0)[1]
+    sz = sample_tensor.size()
+    return sz
+
+def extract_size_from_dict(d):
+    sample_tensor = d.peekitem(0)[1]
+    sz = sample_tensor.size()
+    return sz
+
+def _get_zero_dict_like_with_matched_batch_size(dict_like,batch_size):
+    ret = SortedDict()
+    for k in dict_like:
+        sz = list(dict_like[k].size())
+        sz[0] = batch_size
+        ret[k] = torch.zeros(tuple(sz),device=dict_like[k].device,dtype=dict_like[k].dtype)
+    return ret
+
+def _get_zero_dict_like_with_matched_batch_and_channel_size(dict_like,batch_size,channel_size):
+    ret = SortedDict()
+    for k in dict_like:
+        sz = list(dict_like[k].size())
+        sz[0] = batch_size
+        sz[1] = channel_size
+        ret[k] = torch.zeros(tuple(sz),device=dict_like[k].device,dtype=dict_like[k].dtype)
+    return ret
+
+def _get_zero_data_dict_matching_state_dim(state_dict,data_dict_of_dicts,state_concatenation_dim,data_concatenation_dim):
+
+    # todo: not clear if this would work if we have differently sized elements in the dictionary (for now likely okay, because we auto-enlarge)
+    sample_size_data = list(extract_size_from_dict_of_dicts(data_dict_of_dicts))
+
+    ret = SortedDict()
+    for k in state_dict:
+        current_tensor = state_dict[k]
+        current_size = list(current_tensor.size())
+
+        target_sz = sample_size_data
+        target_sz[data_concatenation_dim] = current_size[state_concatenation_dim]
+
+        ret[k] = torch.zeros(tuple(target_sz),device=state_dict[k].device,dtype=state_dict[k].dtype)
+
+    return ret
+
+def get_data_concatenation_dim(state_dict,data_dict_of_dicts,state_concatenation_dim):
+
+    if state_dict is None:
+        return None
+
+    sample_size_data = list(extract_size_from_dict_of_dicts(data_dict_of_dicts))
+    sample_size_state = list(extract_size_from_dict(state_dict))
+
+    diff_dim = len(sample_size_data) - len(sample_size_state)
+    if diff_dim < 0:
+        raise ValueError('Data dimension is expected to be at least as large as the state dimension')
+
+    data_concatenation_dim = state_concatenation_dim + diff_dim
+
+    return data_concatenation_dim
+
+
+def extract_key_from_dict_of_dicts(dict_of_dicts,key):
+    ret = SortedDict()
+    for dk in dict_of_dicts:
+        ret[dk] = SortedDict()
+        c_dict = dict_of_dicts[dk]
+        c_ret = ret[dk]
+        if key in c_dict:
+            c_ret[key] = c_dict[key]
+
+    if len(ret.values())==1:
+        # only one block, then just return this one as a SortedDict and not as a SortedDict of SortedDict's
+        return ret.peekitem(0)[1].peekitem(0)[1]
+    else:
+        return ret

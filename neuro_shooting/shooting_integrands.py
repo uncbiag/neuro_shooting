@@ -64,6 +64,16 @@ class ShootingIntegrandBase(nn.Module):
         self.auto_assembly_plans = None
         """Keeps track of how data stuctures are assembled and disassembled"""
 
+        # todo: can we force somehow that these will be defined in the derived classes
+        self.concatenation_dim = None
+        self.data_concatenation_dim = None
+        self.enlargement_dimensions = None
+
+    def set_data_concatenation_dim(self,data_concatenation_dim):
+        self.data_concatenation_dim = data_concatenation_dim
+
+    def get_data_concatenation_dim(self):
+        return self.data_concatenation_dim
 
     def set_state_initializer(self,state_initializer):
         self._state_initializer = state_initializer
@@ -212,19 +222,19 @@ class ShootingIntegrandBase(nn.Module):
     def set_auto_assembly_plans(self,assembly_plans):
         self.auto_assembly_plans = assembly_plans
 
-    def assemble_tensor(self, state_dict_of_dicts, costate_dict_of_dicts, data_dict):
+    def assemble_tensor(self, state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts):
         """
         Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
 
         :param state_dict: SortedDict holding the SortedDict's of the states
         :param costate_dict: SortedDict holding the SortedDict's of the costate
-        :param data_dict: SortedDict holding the state for the transported data
+        :param data_dict: SortedDict holding the SortedDict's for the transported data
         :return: vectorized dictonaries (as one vecctor) and their assembly plans
         """
 
         ret_vec, assembly_plans = scd_utils.assemble_tensor(state_dict_of_dicts=state_dict_of_dicts,
                                                             costate_dict_of_dicts=costate_dict_of_dicts,
-                                                            data_dict=data_dict)
+                                                            data_dict_of_dicts=data_dict_of_dicts)
         return ret_vec, assembly_plans
 
     def disassemble_tensor(self, input, assembly_plans=None, dim=0):
@@ -272,7 +282,7 @@ class ShootingIntegrandBase(nn.Module):
 
         # this is really only how one propagates through the system given the parameterization
 
-        rhs_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=parameter_objects)
+        rhs_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=parameter_objects,concatenation_dim=self.concatenation_dim)
 
         potential_energy = 0
 
@@ -358,7 +368,7 @@ class ShootingIntegrandBase(nn.Module):
 
     def create_initial_state_parameters_if_needed(self, set_to_zero, *argv, **kwargs):
 
-        if self.nr_of_particles is None:
+        if self.nr_of_particles is None or self.particle_size is None or self.particle_dimension is None:
             return None
         else:
             return self.create_initial_state_parameters(set_to_zero=set_to_zero, *argv, **kwargs)
@@ -413,11 +423,11 @@ class ShootingIntegrandBase(nn.Module):
 
         pass
 
-    def rhs_advect_state_dict_of_dicts(self,t,state_dict_of_dicts,parameter_objects):
+    def rhs_advect_state_dict_of_dicts(self,t,state_dict_of_dicts,parameter_objects,concatenation_dim):
         if self.concatenate_parameters:
-            state_dicts_concatenated = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=state_dict_of_dicts,concatenation_dim=self.concatenation_dim)
+            state_dicts_concatenated = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=state_dict_of_dicts,concatenation_dim=concatenation_dim)
             rhs_state_dict = self.rhs_advect_state(t=t,state_dict_or_dict_of_dicts=state_dicts_concatenated, parameter_objects=parameter_objects)
-            rhs_state_dict_of_dicts = scd_utils._deconcatenate_based_on_generic_dict_of_dicts(rhs_state_dict,generic_dict_of_dicts=state_dict_of_dicts,concatenation_dim=self.concatenation_dim)
+            rhs_state_dict_of_dicts = scd_utils._deconcatenate_based_on_generic_dict_of_dicts(rhs_state_dict,generic_dict_of_dicts=state_dict_of_dicts,concatenation_dim=concatenation_dim)
             #rhs_state_dict_of_dicts = SortedDict({self._block_name:rhs_state_dict})
             return rhs_state_dict_of_dicts
         else:
@@ -428,13 +438,9 @@ class ShootingIntegrandBase(nn.Module):
     def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
         pass
 
-    def rhs_advect_data(self,t,data_dict,parameter_objects):
-        # wrap it
-        c_data_state_dicts = SortedDict({'data':data_dict})
-        ret_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=c_data_state_dicts,parameter_objects=parameter_objects)
-        # unwrap it
-        ret = ret_dict_of_dicts['data']
-        return ret
+    def rhs_advect_data_dict_of_dicts(self,t,data_dict_of_dicts,parameter_objects):
+        ret_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=data_dict_of_dicts,parameter_objects=parameter_objects,concatenation_dim=self.data_concatenation_dim)
+        return ret_dict_of_dicts
 
     @abstractmethod
     def rhs_advect_costate_dict_of_dicts(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
@@ -488,7 +494,7 @@ class ShootingIntegrandBase(nn.Module):
             for k in current_pars:
                 current_pars[k] = current_pars[k].detach().requires_grad_(True)
 
-    def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_dict):
+    def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts):
 
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
@@ -503,17 +509,17 @@ class ShootingIntegrandBase(nn.Module):
             # we only want it at the initial condition
             self.current_norm_penalty = current_kinetic_energy
 
-        dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=self._parameter_objects)
-        dot_data_dict = self.rhs_advect_data(t=t,data_dict=data_dict,parameter_objects=self._parameter_objects)
+        dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=self._parameter_objects,concatenation_dim=self.concatenation_dim)
+        dot_data_dict_of_dicts = self.rhs_advect_data_dict_of_dicts(t=t,data_dict_of_dicts=data_dict_of_dicts,parameter_objects=self._parameter_objects)
         dot_costate_dict_of_dicts = self.rhs_advect_costate_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=self._parameter_objects)
 
         # run the hooks so we can get parameters, states, etc.; for example, to create tensorboard output
         for hook in self._lagrangian_gradient_hooks.values():
-            hook(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_dict,
-                 dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict,
+            hook(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts,
+                 dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts,
                  self._parameter_objects, self._custom_hook_data)
 
-        return dot_state_dict_of_dicts,dot_costate_dict_of_dicts,dot_data_dict
+        return dot_state_dict_of_dicts,dot_costate_dict_of_dicts,dot_data_dict_of_dicts
 
 
     def transpose_state_dict_of_dicts(self,generic_dict_dict_of_dicts):
@@ -532,25 +538,25 @@ class ShootingIntegrandBase(nn.Module):
 
     def forward(self, t, input):
 
-        state_dict_of_dicts,costate_dict_of_dicts,data_dict = self.disassemble_tensor(input)
+        state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts = self.disassemble_tensor(input)
 
         if self.transpose_state_when_forward:
             state_dict_of_dicts = self.transpose_state_dict_of_dicts(state_dict_of_dicts)
             costate_dict_of_dicts = self.transpose_state_dict_of_dicts(costate_dict_of_dicts)
-            data_dict = self.transpose_state(data_dict)
+            data_dict_of_dicts = self.transpose_state_dict_of_dicts(data_dict_of_dicts)
 
         # computing the gradients
-        dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict = \
-            self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict=data_dict)
+        dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts = \
+            self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict_of_dicts=data_dict_of_dicts)
 
         if self.transpose_state_when_forward:
             # as we transposed the vectors before we need to transpose on the way back
             dot_state_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_state_dict_of_dicts)
             dot_costate_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_costate_dict_of_dicts)
-            dot_data_dict = self.transpose_state(dot_data_dict)
+            dot_data_dict_of_dicts = self.transpose_state(dot_data_dict_of_dicts)
 
         # create a vector out of this to pass to integrator
-        output,assembly_plans = self.assemble_tensor(state_dict_of_dicts=dot_state_dict_of_dicts, costate_dict_of_dicts=dot_costate_dict_of_dicts, data_dict=dot_data_dict)
+        output,assembly_plans = self.assemble_tensor(state_dict_of_dicts=dot_state_dict_of_dicts, costate_dict_of_dicts=dot_costate_dict_of_dicts, data_dict_of_dicts=dot_data_dict_of_dicts)
 
         return output
 
@@ -705,6 +711,9 @@ class ShootingLinearInParameterVectorIntegrand(LinearInParameterAutogradShooting
             self._costate_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
 
         self.concatenation_dim = 2
+        self.data_concatenation_dim = self.concatenation_dim
+        self.enlargement_dimensions = None
+
 
 class ShootingNonlinearInParameterVectorIntegrand(NonlinearInParameterAutogradShootingIntegrand):
     """
@@ -733,6 +742,9 @@ class ShootingNonlinearInParameterVectorIntegrand(NonlinearInParameterAutogradSh
             self._costate_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
 
         self.concatenation_dim = 2
+        self.data_concatenation_dim = self.concatenation_dim
+        self.enlargement_dimensions = None
+
 
 class ShootingLinearInParameterConvolutionIntegrand(LinearInParameterAutogradShootingIntegrand):
     """
@@ -762,6 +774,7 @@ class ShootingLinearInParameterConvolutionIntegrand(LinearInParameterAutogradSho
             self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer()
 
         self.concatenation_dim = 1
+        self.data_concatenation_dim = self.concatenation_dim
 
 
 class ShootingNonlinearInParameterConvolutionIntegrand(NonlinearInParameterAutogradShootingIntegrand):
@@ -792,3 +805,4 @@ class ShootingNonlinearInParameterConvolutionIntegrand(NonlinearInParameterAutog
             self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer()
 
         self.concatenation_dim = 1
+        self.data_concatenation_dim = self.concatenation_dim

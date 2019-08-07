@@ -6,8 +6,8 @@ from torch.utils.tensorboard import SummaryWriter
 # Writer will output to ./runs/ directory by default
 writer = SummaryWriter()
 
-def linear_transform_hook(module, t, state_dicts, costate_dicts, data_dict,
-            dot_state_dicts, dot_costate_dicts, dot_data_dict, parameter_objects, custom_hook_data):
+def linear_transform_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
+            dot_state_dicts, dot_costate_dicts, dot_data_dict_of_dicts, parameter_objects, custom_hook_data):
 
     if 'epoch' in custom_hook_data:
         epoch = custom_hook_data['epoch']
