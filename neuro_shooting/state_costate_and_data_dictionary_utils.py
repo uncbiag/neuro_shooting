@@ -322,7 +322,7 @@ def compute_tuple_from_parameter_objects(parameter_objects):
     return tuple(sv_list)
 
 
-def _concatenate_dict_of_dicts(generic_dict_of_dicts,dim):
+def _concatenate_dict_of_dicts(generic_dict_of_dicts,concatenation_dim):
     concatenated_dict = SortedDict()
     for dk in generic_dict_of_dicts:
         c_generic_dict = generic_dict_of_dicts[dk]
@@ -336,7 +336,7 @@ def _concatenate_dict_of_dicts(generic_dict_of_dicts,dim):
                 t_shape2 = c_generic_dict[k].size()
 
                 try:
-                    concatenated_dict[k] = torch.cat((concatenated_dict[k], c_generic_dict[k]), dim=dim)
+                    concatenated_dict[k] = torch.cat((concatenated_dict[k], c_generic_dict[k]), dim=concatenation_dim)
                 except:
                     raise ValueError(
                         'Dimension mismatch when trying to concatenate tensor of shape {} and {} along dimension 1.'.format(
@@ -352,8 +352,8 @@ def _concatenate_dict_of_dicts(generic_dict_of_dicts,dim):
     return concatenated_dict
 
 
-def _deconcatenate_based_on_generic_dict_of_dicts(concatenated_dict, generic_dict_of_dicts):
-    # deconcatenate along dimension 1
+def _deconcatenate_based_on_generic_dict_of_dicts(concatenated_dict, generic_dict_of_dicts, concatenation_dim):
+    # deconcatenate along the specified dimension
     ret = SortedDict()
     indx = dict()
     for dk in generic_dict_of_dicts:
@@ -364,6 +364,22 @@ def _deconcatenate_based_on_generic_dict_of_dicts(concatenated_dict, generic_dic
             if k not in indx:
                 indx[k] = 0
             t_shape = c_generic_dict[k].size()
-            c_ret[kc] = concatenated_dict[kc][:, indx[k]:indx[k] + t_shape[1], ...]
-            indx[k] += t_shape[1]
+            if concatenation_dim==0:
+                c_ret[kc] = concatenated_dict[kc][indx[k]:indx[k] + t_shape[0], ...]
+                indx[k] += t_shape[0]
+            elif concatenation_dim==1:
+                c_ret[kc] = concatenated_dict[kc][:, indx[k]:indx[k] + t_shape[1], ...]
+                indx[k] += t_shape[1]
+            elif concatenation_dim==2:
+                c_ret[kc] = concatenated_dict[kc][:, :, indx[k]:indx[k] + t_shape[2], ...]
+                indx[k] += t_shape[2]
+            elif concatenation_dim==3:
+                c_ret[kc] = concatenated_dict[kc][:, :, :, indx[k]:indx[k] + t_shape[3], ...]
+                indx[k] += t_shape[3]
+            elif concatenation_dim==4:
+                c_ret[kc] = concatenated_dict[kc][:, :, :, :, indx[k]:indx[k] + t_shape[4], ...]
+                indx[k] += t_shape[4]
+            else:
+                raise ValueError('Deconcatenation is only supported for dimensions 0-4; you requested {} instead.'.format(concatenation_dim))
+
     return ret

@@ -415,9 +415,9 @@ class ShootingIntegrandBase(nn.Module):
 
     def rhs_advect_state_dict_of_dicts(self,t,state_dict_of_dicts,parameter_objects):
         if self.concatenate_parameters:
-            state_dicts_concatenated = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=state_dict_of_dicts,dim=self.concatenation_dim)
+            state_dicts_concatenated = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=state_dict_of_dicts,concatenation_dim=self.concatenation_dim)
             rhs_state_dict = self.rhs_advect_state(t=t,state_dict_or_dict_of_dicts=state_dicts_concatenated, parameter_objects=parameter_objects)
-            rhs_state_dict_of_dicts = scd_utils._deconcatenate_based_on_generic_dict_of_dicts(rhs_state_dict,generic_dict_of_dicts=state_dict_of_dicts)
+            rhs_state_dict_of_dicts = scd_utils._deconcatenate_based_on_generic_dict_of_dicts(rhs_state_dict,generic_dict_of_dicts=state_dict_of_dicts,concatenation_dim=self.concatenation_dim)
             #rhs_state_dict_of_dicts = SortedDict({self._block_name:rhs_state_dict})
             return rhs_state_dict_of_dicts
         else:
