@@ -57,7 +57,7 @@ def _assemble_generic_dict_of_dicts(d):
     return ret, assembly_plans
 
 
-def assemble_tensor(state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts):
+def assemble_tensor(state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts):
     """
     Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
 
@@ -70,14 +70,53 @@ def assemble_tensor(state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dic
     # these are all ordered dictionaries, will assemble all into a big torch vector
     state_vector, state_assembly_plans = _assemble_generic_dict_of_dicts(state_dict_of_dicts)
     costate_vector, costate_assembly_plans = _assemble_generic_dict_of_dicts(costate_dict_of_dicts)
-    data_vector, data_assembly_plan = _assemble_generic_dict_of_dicts(data_dict_of_dicts)
+    data_state_vector, data_state_assembly_plan = _assemble_generic_dict_of_dicts(data_state_dict_of_dicts)
+    data_costate_vector, data_costate_assembly_plan = _assemble_generic_dict_of_dicts(data_costate_dict_of_dicts)
 
     assembly_plans = dict()
     assembly_plans['state_dicts'] = state_assembly_plans
     assembly_plans['costate_dicts'] = costate_assembly_plans
-    assembly_plans['data_dicts'] = data_assembly_plan
+    assembly_plans['data_state_dicts'] = data_state_assembly_plan
+    assembly_plans['data_costate_dicts'] = data_costate_assembly_plan
 
-    return torch.cat((state_vector, costate_vector, data_vector)), assembly_plans
+    return torch.cat((state_vector, costate_vector, data_state_vector,data_costate_vector)), assembly_plans
+
+def assemble_tensor_symplectic_map(state_dict_of_dicts, costate_dict_of_dicts, data_state_dict,data_costate_dict):
+    """
+    Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
+
+    :param state_dict: SortedDict holding the SortedDict's of the states
+    :param costate_dict: SortedDict holding the SortedDict's of the costate
+    :param data_state_dict: SortedDict holding the state for the transported data
+    :param data_costate_dict: SortedDict holding the costate for the transported data
+    :return: vectorized dictonaries (as one vecctor) and their assembly plans
+    """
+
+    # these are all ordered dictionaries, will assemble all into a big torch vector
+    state_vector, state_assembly_plans = _assemble_generic_dict_of_dicts(state_dict_of_dicts)
+    costate_vector, costate_assembly_plans = _assemble_generic_dict_of_dicts(costate_dict_of_dicts)
+    data_state_vector, data_state_assembly_plan = _assemble_generic_dict_of_dicts(data_state_dict_of_dicts)
+    data_costate_vector, data_costate_assembly_plan = _assemble_generic_dict_of_dicts(data_costate_dict_of_dicts)
+
+    assembly_plans = dict()
+    assembly_plans['state_dicts'] = state_assembly_plans
+    assembly_plans['costate_dicts'] = costate_assembly_plans
+    assembly_plans['data_state_dicts'] = data_state_assembly_plan
+    assembly_plans['data_costate_dicts'] = data_costate_assembly_plan
+
+    return torch.cat((-costate_vector,state_vector, -data_costate_vector,data_state_vector)), assembly_plans
+
+def symplectic_map(tensor,assembly_plans = None,dim = 0):
+    """
+
+    :param tensor: symplectic transform
+    :param assembly_plans:
+    :param dim:
+    :return:
+    """
+    state_dicts,costate_dicts,data_state_dicts,data_costate_dicts = disassemble_tensor(tensor,assembly_plans = assembly_plans,dim = dim)
+    result,plan =  assemble_tensor_symplectic_map(state_dicts,costate_dicts,data_state_dicts,data_costate_dicts)
+    return result
 
 def _disassemble_dict(input, assembly_plan, dim, incr):
     """
@@ -153,21 +192,25 @@ def disassemble_tensor(input, assembly_plans=None, dim=0):
 
     state_dicts = None
     costate_dicts = None
-    data_dicts = None
+    data_state_dicts = None
+    data_costate_dicts = None
 
     incr = 0
-    for ap in ['state_dicts','costate_dicts','data_dicts']:
+    for ap in ['state_dicts','costate_dicts','data_state_dicts',"data_costate_dicts"]:
 
         if ap=='state_dicts':
             state_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
         elif ap=='costate_dicts':
             costate_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
-        elif ap=='data_dicts':
-            data_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
+        elif ap=='data_state_dicts':
+            data_state_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
+        elif ap=='data_costate_dicts':
+            data_costate_dicts, incr = _disassemble_dict_of_dicts(input=input, assembly_plans = assembly_plans[ap], dim=dim, incr=incr)
+
         else:
             raise ValueError('Unknown dictionary assembly plan kind {}'.format(ap))
 
-    return state_dicts,costate_dicts,data_dicts
+    return state_dicts,costate_dicts,data_state_dicts,data_costate_dicts
 
 
 def _merge_state_costate_or_data_dict_with_generic_dict_of_dicts(generic_dict, generic_dict_of_dicts, generic_dict_block_name):

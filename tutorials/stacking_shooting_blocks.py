@@ -20,8 +20,8 @@ shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_int
 shooting_block_1 = shooting_block_1.to(device)
 shooting_block_2 = shooting_block_2.to(device)
 
-ret1,state_dicts1,costate_dicts1,data_dicts1 = shooting_block_1(x=sample_batch)
-ret2,state_dicts2,costate_dicts2,data_dicts2 = shooting_block_2(data_dict_of_dicts=data_dicts1,
+ret1,state_dicts1,costate_dicts1,data_state_dicts1,data_costate_dicts1 = shooting_block_1(x=sample_batch)
+ret2,state_dicts2,costate_dicts2,data_state_dicts2,data_costate_dicts2 = shooting_block_2(data_state_dict_of_dicts=data_state_dicts1,data_costate_dict_of_dicts = data_costate_dicts1,
                                                                pass_through_state_dict_of_dicts=state_dicts1,
                                                                pass_through_costate_dict_of_dicts=costate_dicts1)
 
@@ -29,3 +29,4 @@ ret2,state_dicts2,costate_dicts2,data_dicts2 = shooting_block_2(data_dict_of_dic
 ret1.sum() # there is only one value, so it returns a tensor
 dummy_loss = ret2.sum()
 dummy_loss.backward()
+

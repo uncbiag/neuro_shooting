@@ -61,15 +61,17 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
 
     def get_initial_data_dict_from_data_tensor(self, x):
         # intial data dict from given data tensor
-        data_dict = SortedDict()
-        data_dict['q1'] = x
-        data_dict['q2'] = torch.zeros_like(x)
-
-        return data_dict
+        data_state_dict = SortedDict()
+        data_costate_dict = SortedDict()
+        data_state_dict['q1'] = x
+        data_costate_dict['p_q1'] = torch.zeros_like(data_state_dict['q1'])
+        data_state_dict['q2'] = torch.zeros_like(x)
+        data_costate_dict['p_q2'] = torch.zeros_like(data_state_dict['q2'])
+        return data_state_dict,data_costate_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
-        return scd_utils.extract_key_from_dict_of_dicts(data_dicts, 'q1')
+        state_dict, costate_dict, data_state_dicts, data_costate_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_state_dicts, 'q1')
 
 class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -130,20 +132,23 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
     def get_initial_data_dict_from_data_tensor(self, x):
         # Initial data dict from given data tensor
-        data_dict = SortedDict()
-        data_dict['q1'] = x
+        data_state_dict = SortedDict()
+        data_costate_dict = SortedDict()
+        data_state_dict['q1'] = x
+        data_costate_dict['p_q1'] = torch.zeros_like(x)
 
         z = torch.zeros_like(x)
         sz = [1]*len(z.shape)
         sz[-1] = self.inflation_factor
 
-        data_dict['q2'] = z.repeat(sz)
+        data_state_dict['q2'] = z.repeat(sz)
+        data_costate_dict['p_q2'] = torch.zeros_like(data_state_dict["q2"])
 
-        return data_dict
+        return data_state_dict,data_costate_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
-        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+        state_dict, costate_dict, data_state_dicts,data_costate_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_state_dicts,'q1')
 
 class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -196,14 +201,16 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
 
     def get_initial_data_dict_from_data_tensor(self, x):
         # Initial data_dict for given initial data tensor
-        data_dict = SortedDict()
-        data_dict['q1'] = x
+        data_state_dict = SortedDict()
+        data_costate_dict = SortedDict()
+        data_state_dict['q1'] = x
+        data_costate_dict['p_q1'] = torch.zeros_like(x)
 
-        return data_dict
+        return data_state_dict,data_costate_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
-        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+        state_dict, costate_dict, data_state_dicts,data_costate_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_state_dicts,'q1')
 
 class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
@@ -265,15 +272,18 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
 
     def get_initial_data_dict_from_data_tensor(self, x):
         # Initial data dict from given data tensor
-        data_dict = SortedDict()
-        data_dict['q1'] = x
-        data_dict['q2'] = torch.zeros_like(x)
+        data_state_dict = SortedDict()
+        data_costate_dict = SortedDict()
+        data_state_dict['q1'] = x
+        data_costate_dict['p_q1'] = torch.zeros_like(x)
+        data_state_dict['q2'] = torch.zeros_like(x)
+        data_costate_dict['p_q2'] = torch.zeros_like(x)
 
-        return data_dict
+        return data_state_dict,data_costate_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
-        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+        state_dict, costate_dict, data_state_dicts,data_costate_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_state_dicts,'q1')
 
 class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
@@ -338,17 +348,23 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
 
     def get_initial_data_dict_from_data_tensor(self, x):
         # Initial data dict from given data tensor
-        data_dict = SortedDict()
-        data_dict['q1'] = x
-        data_dict['q2'] = torch.zeros_like(x)
+        data_state_dict = SortedDict()
+        data_state_dict['q1'] = x
+        data_state_dict['q2'] = torch.zeros_like(x)
 
-        return data_dict
+        data_costate_dict = SortedDict()
+        data_costate_dict['q1'] = torch.zeros_like(data_state_dict['q1'])
+        data_costate_dict['q2'] = torch.zeros_like(data_state_dict['q2'])
+
+        return data_state_dict,data_costate_dict
 
     def disassemble(self,input,dim=1):
-        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
-        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+        state_dict, costate_dict, data_state_dicts,data_costate_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_state_dicts,'q1')
 
-class ShootingModule(nn.Module):
+
+class ShootingModule(nn.Module,torch.autograd.Function):
+
 
     def __init__(self,shooting,method = 'rk4',rtol = 1e-8,atol = 1e-10, step_size = None, max_num_steps=None):
         super(ShootingModule, self).__init__()
@@ -377,11 +393,34 @@ class ShootingModule(nn.Module):
         self.integration_time = self.integration_time.to(*args, **kwargs)
         return self
 
-    def forward(self, x):
-        self.initial_condition = self.shooting.get_initial_condition(x)
-        out = odeint(self.shooting, self.initial_condition, self.integration_time,method = self.method, rtol = self.rtol,atol = self.atol, options=self.integrator_options)
-        out1 = self.shooting.disassemble(out, dim=1)
+    @staticmethod
+    def forward(ctx, x,shooting = None,integration_time=None,method = None, rtol = None,atol = None, integrator_options=None):
+        initial_condition = shooting.get_initial_condition(x)
+        ctx.shooting = shooting
+        ctx.rtol = rtol
+        ctx.atol = atol
+        ctx.result = out[1, ...]
+        ctx.init_cond = input
+        out = odeint(shooting, initial_condition, integration_time,method = method, rtol = rtol,atol = atol, options=integrator_options)
+        out1 = shooting.disassemble(out, dim=1)
         return out1[1,...]
+
+
+    @staticmethod
+    def backward(ctx,grad_output):
+        grad_input = grad_output.clone()
+        integration_time_backward = torch.tensor([0, -1]).float()
+        shooting = ctx.shooting
+        rtol = ctx.rtol
+        atol = ctx.atol
+        init_cond = ctx.init_cond
+        result = ctx.result
+        eps = 0.001
+        tensor_initial_conditions = None
+        temp = result + eps * symplectic_map(tensor_initial_conditions)
+        out = odeint(shooting, temp, integration_time_backward, rtol=rtol, atol=atol)
+        y = out[1, ...] - init_cond
+        return -symplectic_map(y) / eps, None, None, None, None, None, None
 
 
 

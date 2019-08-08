@@ -222,19 +222,21 @@ class ShootingIntegrandBase(nn.Module):
     def set_auto_assembly_plans(self,assembly_plans):
         self.auto_assembly_plans = assembly_plans
 
-    def assemble_tensor(self, state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts):
+    def assemble_tensor(self, state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts):
         """
         Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
 
         :param state_dict: SortedDict holding the SortedDict's of the states
         :param costate_dict: SortedDict holding the SortedDict's of the costate
-        :param data_dict: SortedDict holding the SortedDict's for the transported data
+        :param data_state_dict: SortedDict holding the SortedDict's for the transported data
+        :param data_costate_dict: SortedDict holding the SortedDict's for the transported costate data
         :return: vectorized dictonaries (as one vecctor) and their assembly plans
         """
 
         ret_vec, assembly_plans = scd_utils.assemble_tensor(state_dict_of_dicts=state_dict_of_dicts,
                                                             costate_dict_of_dicts=costate_dict_of_dicts,
-                                                            data_dict_of_dicts=data_dict_of_dicts)
+                                                            data_state_dict_of_dicts=data_state_dict_of_dicts,
+                                                            data_costate_dict_of_dicts=data_costate_dict_of_dicts)
         return ret_vec, assembly_plans
 
     def disassemble_tensor(self, input, assembly_plans=None, dim=0):
@@ -399,6 +401,32 @@ class ShootingIntegrandBase(nn.Module):
 
             return costate_dict
 
+    def create_initial_costate_data(self, data_state_dict=None, *args, **kwargs):
+        """
+        By default this function automatically creates the costates for the given states (and does not need to be called
+        manually). Costates are names with the prefix \'p\_\', i.e., if a state was called \'q\' the corresponding costate
+        will be called \'p\_q\'. Overwrite this method if you want to do something custom for the costates, though this
+        should only rarely be necessary.
+
+        :param batch_y0: data batch passed in (but not currently used) that allows to create state-specific costates.
+        :param only_random_initialization: to indicate if the costates should be randomized (also currently not used; will be random by default).
+        :param state_dict: state dictionary which can be used to create the corresponding costate
+        :return: returns a SortedDict containing the costate.
+        """
+
+        if self._parameter_objects is None:
+            self._parameter_objects = self.create_default_parameter_objects()
+
+        if state_dict is None:
+            return None
+        else:
+
+            data_costate_dict = SortedDict()
+            for k in data_state_dict:
+                data_costate_dict['p_' + str(k)] = torch.zeros_like(data_state_dict[k])
+
+            return data_costate_dict
+
     @abstractmethod
     def create_default_parameter_objects(self):
         """
@@ -438,12 +466,18 @@ class ShootingIntegrandBase(nn.Module):
     def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
         pass
 
-    def rhs_advect_data_dict_of_dicts(self,t,data_dict_of_dicts,parameter_objects):
-        ret_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=data_dict_of_dicts,parameter_objects=parameter_objects,concatenation_dim=self.data_concatenation_dim)
+    def rhs_advect_data_state_dict_of_dicts(self,t,data_state_dict_of_dicts,parameter_objects):
+        ret_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=data_state_dict_of_dicts,parameter_objects=parameter_objects,concatenation_dim=self.data_concatenation_dim)
         return ret_dict_of_dicts
 
     @abstractmethod
     def rhs_advect_costate_dict_of_dicts(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+        # now that we have the parameters we can get the rhs for the costate using autodiff
+        # returns a dictionary of the RHS of the costate
+        pass
+
+    @abstractmethod
+    def rhs_advect_data_costate_dict_of_dicts(self, t, data_state_dict_of_dicts, data_costate_dict_of_dicts, parameter_objects):
         # now that we have the parameters we can get the rhs for the costate using autodiff
         # returns a dictionary of the RHS of the costate
         pass
@@ -494,7 +528,7 @@ class ShootingIntegrandBase(nn.Module):
             for k in current_pars:
                 current_pars[k] = current_pars[k].detach().requires_grad_(True)
 
-    def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts):
+    def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_state_dict_of_dicts,data_costate_dict_of_dicts):
 
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
@@ -510,16 +544,17 @@ class ShootingIntegrandBase(nn.Module):
             self.current_norm_penalty = current_kinetic_energy
 
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=self._parameter_objects,concatenation_dim=self.concatenation_dim)
-        dot_data_dict_of_dicts = self.rhs_advect_data_dict_of_dicts(t=t,data_dict_of_dicts=data_dict_of_dicts,parameter_objects=self._parameter_objects)
+        dot_data_state_dict_of_dicts = self.rhs_advect_data_state_dict_of_dicts(t=t,data_state_dict_of_dicts=data_state_dict_of_dicts,parameter_objects=self._parameter_objects)
+        dot_data_costate_dict_of_dicts = self.rhs_advect_data_costate_dict_of_dicts(t=t,data_state_dict_of_dicts=data_state_dict_of_dicts,data_costate_dict_of_dicts=data_costate_dict_of_dicts,parameter_objects=self._parameter_objects)
         dot_costate_dict_of_dicts = self.rhs_advect_costate_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=self._parameter_objects)
 
         # run the hooks so we can get parameters, states, etc.; for example, to create tensorboard output
         for hook in self._lagrangian_gradient_hooks.values():
-            hook(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts,
-                 dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts,
+            hook(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts,
+                 dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_state_dict_of_dicts, dot_data_costate_dict_of_dicts,
                  self._parameter_objects, self._custom_hook_data)
 
-        return dot_state_dict_of_dicts,dot_costate_dict_of_dicts,dot_data_dict_of_dicts
+        return dot_state_dict_of_dicts,dot_costate_dict_of_dicts,dot_data_state_dict_of_dicts,dot_data_costate_dict_of_dicts
 
 
     def transpose_state_dict_of_dicts(self,generic_dict_dict_of_dicts):
@@ -537,26 +572,27 @@ class ShootingIntegrandBase(nn.Module):
 
 
     def forward(self, t, input):
-
-        state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts = self.disassemble_tensor(input)
+        state_dict_of_dicts,costate_dict_of_dicts,data_state_dict_of_dicts,data_costate_dict_of_dicts = self.disassemble_tensor(input)
 
         if self.transpose_state_when_forward:
             state_dict_of_dicts = self.transpose_state_dict_of_dicts(state_dict_of_dicts)
             costate_dict_of_dicts = self.transpose_state_dict_of_dicts(costate_dict_of_dicts)
-            data_dict_of_dicts = self.transpose_state_dict_of_dicts(data_dict_of_dicts)
+            data_state_dict_of_dicts = self.transpose_state_dict_of_dicts(data_state_dict_of_dicts)
+            data_costate_dict_of_dicts = self.transpose_state_dict_of_dicts(data_costate_dict_of_dicts)
 
         # computing the gradients
-        dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts = \
-            self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict_of_dicts=data_dict_of_dicts)
+        dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_state_dict_of_dicts, dot_data_costate_dict_of_dicts = \
+            self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_state_dict_of_dicts=data_state_dict_of_dicts,data_costate_dict_of_dicts=data_costate_dict_of_dicts)
 
         if self.transpose_state_when_forward:
             # as we transposed the vectors before we need to transpose on the way back
             dot_state_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_state_dict_of_dicts)
             dot_costate_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_costate_dict_of_dicts)
-            dot_data_dict_of_dicts = self.transpose_state(dot_data_dict_of_dicts)
+            dot_data_state_dict_of_dicts = self.transpose_state(dot_data_state_dict_of_dicts)
+            dot_data_costate_dict_of_dicts = self.transpose_state(dot_data_costate_dict_of_dicts)
 
         # create a vector out of this to pass to integrator
-        output,assembly_plans = self.assemble_tensor(state_dict_of_dicts=dot_state_dict_of_dicts, costate_dict_of_dicts=dot_costate_dict_of_dicts, data_dict_of_dicts=dot_data_dict_of_dicts)
+        output,assembly_plans = self.assemble_tensor(state_dict_of_dicts=dot_state_dict_of_dicts, costate_dict_of_dicts=dot_costate_dict_of_dicts, data_state_dict_of_dicts=dot_data_state_dict_of_dicts,data_costate_dict_of_dicts=dot_data_costate_dict_of_dicts)
 
         return output
 
@@ -594,6 +630,27 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
                                                                               generic_dict_of_dicts=state_dict_of_dicts, prefix='dot_p_')
 
         return dot_costate_dict_of_dicts
+
+    def rhs_advect_data_costate_dict_of_dicts(self, t, data_state_dict_of_dicts, data_costate_dict_of_dicts, parameter_objects):
+        # now that we have the parameters we can get the rhs for the costate using autodiff
+
+        current_lagrangian, current_kinetic_energy, current_potential_energy = \
+            self.compute_lagrangian(t=t, state_dict_of_dicts=data_state_dict_of_dicts, costate_dict_of_dicts=data_costate_dict_of_dicts, parameter_objects=parameter_objects)
+
+        # form a tuple of all the state variables (because this is what we take the derivative of)
+        state_tuple = scd_utils.compute_tuple_from_generic_dict_of_dicts(data_state_dict_of_dicts)
+
+        dot_data_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
+                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1),
+                                          create_graph=True,
+                                          retain_graph=True,
+                                          allow_unused=True)
+
+        # now we need to put these into a sorted dictionary
+        dot_data_costate_dict_of_dicts = scd_utils.extract_dict_of_dicts_from_tuple_based_on_generic_dict_of_dicts(data_tuple=dot_data_costate_tuple,
+                                                                              generic_dict_of_dicts=data_state_dict_of_dicts, prefix='dot_p_')
+
+        return dot_data_costate_dict_of_dicts
 
 
 class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
