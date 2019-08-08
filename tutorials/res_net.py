@@ -5,13 +5,11 @@ import torch.nn.functional as F
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.striding_block as striding_block
-import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 import neuro_shooting.parameter_initialization as parameter_initialization
+import neuro_shooting.activation_functions_and_derivatives as ad
 
 gpu = 0
 device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
-nonlinearity = 'tanh'
-
 
 class BasicResNet(nn.Module):
 
@@ -20,6 +18,9 @@ class BasicResNet(nn.Module):
                  layer_channels=[64,128,256,512],
                  nr_of_blocks_per_layer=[3,3,3,3],
                  downsampling_stride=2,
+                 nonlinearity='tanh',
+                 particle_sizes=[[15,15],[11,11],[7,7],[5,5]],
+                 nr_of_particles=10,
                  nr_of_classes=10
                  ):
 
@@ -29,13 +30,17 @@ class BasicResNet(nn.Module):
         self.nr_of_blocks_per_layer = nr_of_blocks_per_layer
         self.nr_of_classes = nr_of_classes
 
-        self.nonlinearity = 'tanh'
+        self.nonlinearity = nonlinearity
+        self.nl,_ = ad.get_nonlinearity(nonlinearity=nonlinearity)
 
         self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
         self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
 
-        self.nr_of_particles = 10
-        self.particle_sizes = [[15,15],[11,11],[7,7]]
+        self.nr_of_particles = nr_of_particles
+        self.particle_sizes = particle_sizes
+
+        if len(layer_channels)!=len(self.particle_sizes):
+            raise ValueError('Dimension mismatch, between laters and particle sizes. A particle size needs to be defined for each layer.')
 
         # initial convolution layer
         self.initial_conv = nn.Conv2d(self.nr_of_image_channels, layer_channels[0], kernel_size=3, padding=1, bias=True)
@@ -45,18 +50,16 @@ class BasicResNet(nn.Module):
 
         self.shooting_model = shooting_models.AutoShootingIntegrandModelSimpleConv2D
         self.shooting_layers = self._create_shooting_layers(layer_channels=self.layer_channels,
-                                                            nr_of_blocks_per_layernr_of=self.nr_of_blocks_per_layer_)
+                                                            nr_of_blocks_per_layer=self.nr_of_blocks_per_layer)
 
         self.striding_blocks = self._create_striding_blocks(strides=downsampling_strides)
 
-        size_of_last_output_block = None
-
-        self.last_linear = nn.Linear(layer_channels[-1]*size_of_last_output_block, self.nr_of_classes)
+        self.last_linear = nn.Linear(layer_channels[-1], self.nr_of_classes)
 
     def _create_one_shooting_block(self,name, nr_of_channels,nr_of_particles,particle_size, particle_dimension, only_pass_through=False):
         if only_pass_through:
             shooting_model = self.shooting_model(in_features=nr_of_channels,
-                                                 nonlinearity=nonlinearity,
+                                                 nonlinearity=self.nonlinearity,
                                                  nr_of_particles=None)
         else:
             shooting_model = self.shooting_model(in_features=nr_of_channels,
@@ -72,14 +75,14 @@ class BasicResNet(nn.Module):
 
         return shooting_block
 
-    def compute_nr_of_additional_channels(self,layer_channels):
+    def _compute_nr_of_additional_channels(self,layer_channels):
 
         nr_of_additional_channels = []
         for i,nr_of_channels in enumerate(layer_channels):
             if i==0:
                 nr_of_additional_channels.append(nr_of_channels)
             else:
-                nr_of_additional_channels.append(nr_of_channels-nr_of_additional_channels[-1])
+                nr_of_additional_channels.append(nr_of_channels-layer_channels[i-1])
         return nr_of_additional_channels
 
     def _create_shooting_layers(self,layer_channels,nr_of_blocks_per_layer):
@@ -101,7 +104,7 @@ class BasicResNet(nn.Module):
                                                                 only_pass_through=only_pass_through)
                 shooting_blocks_for_layer.append(current_block)
 
-            shooting_layers.append(shooting_blocks)
+            shooting_layers.append(shooting_blocks_for_layer)
 
         return shooting_layers
 
@@ -123,7 +126,7 @@ class BasicResNet(nn.Module):
         # first a convolution, with batch norm and relu
         ret = self.initial_conv(x)
         ret = self.batch_norm(ret)
-        ret = F.relu(ret)
+        ret = self.nl(ret)
 
         is_first = True
 
@@ -144,15 +147,16 @@ class BasicResNet(nn.Module):
                                                                         data_dict_of_dicts=data_dicts)
 
         # now we can apply some average pooling if desired and then apply the linear layer
-        # todo: check that the input is proper here
-        ret = F.avg_pool2d(ret)
+        ret = F.avg_pool2d(ret,4)
         ret = ret.view(ret.size(0), -1)
         ret = self.last_linear(ret)
 
         return ret
 
-
-
-
+# batch_size = 5
+# sample_cifar_data = torch.zeros(batch_size,3,32,32)
+#
+# res_net = BasicResNet(nr_of_image_channels=3)
+# ret = res_net(sample_cifar_data)
 
 

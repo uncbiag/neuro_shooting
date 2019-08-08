@@ -30,7 +30,7 @@ class ShootingIntegrandBase(nn.Module):
         self._state_initializer = None
         self._costate_initializer = None
 
-        self.nl, self.dnl = self._get_nonlinearity(nonlinearity=nonlinearity)
+        self.nl, self.dnl = ad.get_nonlinearity(nonlinearity=nonlinearity)
         """Nonlinearity and its derivative"""
 
         self.in_features = in_features
@@ -178,46 +178,6 @@ class ShootingIntegrandBase(nn.Module):
         if current_norm_penalty is None:
             print('WARNING: current norm penalty is None. Make sure your integration time started at zero. As this is when it is computed.')
         return current_norm_penalty
-
-    def _get_nonlinearity(self, nonlinearity):
-        """
-        Returns the desired nonlinearity and its derivative as a tuple. Currently supported nonlinearities are:
-        identity, relu, tanh, sigmoid, and softmax.
-
-        :param nonlinearity: as a string: 'identity', 'relu', 'tanh', 'sigmoid', 'softmax'
-        :return: tuple (nonlinearity,derivative of nonlinearity)
-        """
-
-        supported_nonlinearities = ['identity', 'relu', 'tanh', 'sigmoid', 'softmax']
-
-        if nonlinearity is None:
-            use_nonlinearity = 'identity'
-        else:
-            use_nonlinearity = nonlinearity.lower()
-
-        if use_nonlinearity not in supported_nonlinearities:
-            raise ValueError('Unsupported nonlinearity {}'.format(use_nonlinearity))
-
-        if use_nonlinearity == 'relu':
-            nl = nn.functional.relu
-            dnl = ad.drelu
-        elif use_nonlinearity == 'tanh':
-            nl = torch.tanh
-            dnl = ad.dtanh
-        elif use_nonlinearity == 'identity':
-            nl = ad.identity
-            dnl = ad.didentity
-        elif use_nonlinearity == 'sigmoid':
-            nl = torch.sigmoid
-            dnl = torch.sigmoid
-        elif use_nonlinearity == 'softmax':
-            nl = ad.softmax
-            dnl = ad.dsoftmax
-        else:
-            raise ValueError('Unknown nonlinearity {}'.format(use_nonlinearity))
-
-        return nl,dnl
-
 
     def set_auto_assembly_plans(self,assembly_plans):
         self.auto_assembly_plans = assembly_plans
