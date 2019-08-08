@@ -417,7 +417,11 @@ class ShootingBlockBase(nn.Module):
                 keep_state_parameters_at_zero=self.keep_state_parameters_at_zero
             )
 
-        return pass_through_state_dict_of_dicts_enlargement_parameters,pass_through_costate_dict_of_dicts_enlargement_parameters
+            return pass_through_state_dict_of_dicts_enlargement_parameters,pass_through_costate_dict_of_dicts_enlargement_parameters
+
+        else:
+            # just return what we computed previously
+            return self._pass_through_state_dict_of_dicts_enlargement_parameters,self._pass_through_costate_dict_of_dicts_enlargement_parameters
 
     def _enlarge_pass_through_state_and_costate_dict_of_dicts(self,pass_through_state_dict_of_dicts,pass_through_costate_dict_of_dicts):
 

@@ -156,7 +156,9 @@ class BasicResNet(nn.Module):
 # batch_size = 5
 # sample_cifar_data = torch.zeros(batch_size,3,32,32)
 #
-# res_net = BasicResNet(nr_of_image_channels=3)
+# # todo: if one only uses one layer the return data is not properly done, but returns a SortedDict. Needs to be fixed within shooting block.
+#
+# res_net = BasicResNet(nr_of_image_channels=3,nr_of_blocks_per_layer=[2,2,2,2])
 # ret = res_net(sample_cifar_data)
 
 
