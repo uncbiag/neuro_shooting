@@ -293,7 +293,7 @@ class ShootingBlockBase(nn.Module):
 
         return enlarged_dict_of_dicts
 
-    def _get_initial_conditions_from_data_dict_of_dicts(self, data_dict_of_dicts, pass_through_state_dict_of_dicts, pass_through_costate_dict_of_dicts, zero_pad_new_data_states, *args, **kwargs):
+    def _get_initial_conditions_from_data_state_dict_of_dicts(self, data_state_dict_of_dicts,data_costate_dict_of_dicts, pass_through_state_dict_of_dicts, pass_through_costate_dict_of_dicts, zero_pad_new_data_states, *args, **kwargs):
         """
         Given a data dictionary, this method creates a vector which contains the initial condition consisting of state, costate, and the data.
         As a side effect it also stores (caches) the created assembly plan so that it does not need to be specified when calling disassemble_tensor.
@@ -314,28 +314,34 @@ class ShootingBlockBase(nn.Module):
 
         if zero_pad_new_data_states and self._state_parameter_dict is not None:
 
-            data_concatenation_dim = scd_utils.get_data_concatenation_dim(state_dict=self._state_parameter_dict,
-                                                                          data_dict_of_dicts=data_dict_of_dicts,
+            data_state_concatenation_dim = scd_utils.get_data_concatenation_dim(state_dict=self._state_parameter_dict,
+                                                                          data_state_dict_of_dicts=data_state_dict_of_dicts,
                                                                           state_concatenation_dim=self.shooting_integrand.concatenation_dim)
 
-            self.shooting_integrand.set_data_concatenation_dim(data_concatenation_dim=data_concatenation_dim)
+            self.shooting_integrand.set_data_concatenation_dim(data_concatenation_dim=data_state_concatenation_dim)
 
             padded_zeros = scd_utils._get_zero_data_dict_matching_state_dim(state_dict=self._state_parameter_dict,
-                                                                            data_dict_of_dicts=data_dict_of_dicts,
+                                                                            data_dict_of_dicts=data_state_dict_of_dicts,
                                                                             state_concatenation_dim=self.shooting_integrand.concatenation_dim,
-                                                                            data_concatenation_dim=data_concatenation_dim)
+                                                                            data_concatenation_dim=data_state_concatenation_dim)
 
-            data_dicts = scd_utils._merge_state_costate_or_data_dict_with_generic_dict_of_dicts(
+            data_state_dicts = scd_utils._merge_state_costate_or_data_dict_with_generic_dict_of_dicts(
                 generic_dict=padded_zeros,
-                generic_dict_of_dicts=data_dict_of_dicts,
+                generic_dict_of_dicts=data_state_dict_of_dicts,
+                generic_dict_block_name=self._block_name)
+            data_costate_dicts = scd_utils._merge_state_costate_or_data_dict_with_generic_dict_of_dicts(
+                generic_dict=padded_zeros,
+                generic_dict_of_dicts=data_costate_dict_of_dicts,
                 generic_dict_block_name=self._block_name)
         else:
-            data_dicts = data_dict_of_dicts
+            data_state_dicts = data_state_dict_of_dicts
+            data_costate_dicts = data_costate_dict_of_dicts
 
         # initialize the second state of x with zero so far
         initial_conditions, assembly_plans = self.shooting_integrand.assemble_tensor(state_dict_of_dicts=state_dicts,
                                                                                      costate_dict_of_dicts=costate_dicts,
-                                                                                     data_dict_of_dicts=data_dicts)
+                                                                                     data_state_dict_of_dicts=data_state_dicts,
+                                                                                     data_costate_dict_of_dicts=data_costate_dicts)
         return initial_conditions,assembly_plans
 
 
@@ -431,7 +437,7 @@ class ShootingBlockBase(nn.Module):
 
         return enlarged_pass_through_state_parameter_dict_of_dicts,enlarged_pass_through_costate_parameter_dict_of_dicts
 
-    def forward(self,x=None,pass_through_state_dict_of_dicts=None,pass_through_costate_dict_of_dicts=None,data_dict_of_dicts=None,*args,**kwargs):
+    def forward(self,x=None,pass_through_state_dict_of_dicts=None,pass_through_costate_dict_of_dicts=None,data_state_dict_of_dicts=None,data_costate_dict_of_dicts=None,*args,**kwargs):
 
         if x is None and pass_through_state_dict_of_dicts is None and pass_through_costate_dict_of_dicts is None:
             raise ValueError('At least one input needs to be specified')
@@ -469,20 +475,25 @@ class ShootingBlockBase(nn.Module):
             effective_pass_through_costate_dict_of_dicts = None
 
 
-        if data_dict_of_dicts is not None and x is not None:
+        if data_state_dict_of_dicts is not None and x is not None:
             raise ValueError('Cannot specify x and data_dict_of_dicts at the same time. When at all possible specify the data_dict_of_dicts instead as it will contain the full state.')
 
-        if data_dict_of_dicts is not None:
-            effective_data_dict_of_dicts = data_dict_of_dicts
+        if data_state_dict_of_dicts is not None:
+            effective_data_state_dict_of_dicts = data_state_dict_of_dicts
+        if data_costate_dict_of_dicts is not None:
+            effective_data_costate_dict_of_dicts = data_costate_dict_of_dicts
+
             zero_pad_new_data_states = True
         elif x is not None:
-            effective_data_dict = self.shooting_integrand.get_initial_data_dict_from_data_tensor(x)
-            effective_data_dict_of_dicts = SortedDict({self._block_name: effective_data_dict})
+            effective_data_state_dict,effective_data_costate_dict = self.shooting_integrand.get_initial_data_dict_from_data_tensor(x)
+            effective_data_state_dict_of_dicts = SortedDict({self._block_name: effective_data_state_dict})
+            effective_data_costate_dict_of_dicts = SortedDict({self._block_name: effective_data_costate_dict})
             zero_pad_new_data_states = False
         else:
             raise ValueError('Neither x or a data_dict is specified, cannot compute initial condition. Aborting.')
 
-        initial_conditions,assembly_plans = self._get_initial_conditions_from_data_dict_of_dicts(data_dict_of_dicts=effective_data_dict_of_dicts,
+        initial_conditions,assembly_plans = self._get_initial_conditions_from_data_state_dict_of_dicts(data_state_dict_of_dicts=effective_data_state_dict_of_dicts,
+                                                                                                       data_costate_dict_of_dicts = effective_data_costate_dict_of_dicts,
                                                                                                  pass_through_state_dict_of_dicts=effective_pass_through_state_dict_of_dicts,
                                                                                                  pass_through_costate_dict_of_dicts=effective_pass_through_costate_dict_of_dicts,
                                                                                                  zero_pad_new_data_states=zero_pad_new_data_states)
@@ -493,12 +504,12 @@ class ShootingBlockBase(nn.Module):
         #integrate
         if self.integration_time_vector is not None:
             res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time_vector)
-            state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times,dim=1)
+            state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times,dim=1)
             res = self.shooting_integrand.disassemble(res_all_times,dim=1)
         else:
             res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time)
             res_final = res_all_times[-1, ...]
-            state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_final)
+            state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_final)
             # and get what should typically be returned (the transformed data)
             res = self.shooting_integrand.disassemble(res_final,dim=0)
 
@@ -510,9 +521,12 @@ class ShootingBlockBase(nn.Module):
             res_costate_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=costate_dict_of_dicts,
                                                                                                      concatenation_dim=self.shooting_integrand.concatenation_dim,
                                                                                                      block_name=self._block_name)
-            res_data_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=data_dict_of_dicts,
+            res_data_state_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=data_state_dict_of_dicts,
                                                                                                   concatenation_dim=self.shooting_integrand.data_concatenation_dim,
                                                                                                   block_name=self._block_name)
+            res_data_costate_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=data_costate_dict_of_dicts,
+                                                                                                    concatenation_dim=self.shooting_integrand.data_concatenation_dim,
+                                                                                                    block_name=self._block_name)
             # todo: find a more elegant solution to deal with the output
             if type(res)==torch.Tensor:
                 res_res = res
@@ -522,7 +536,8 @@ class ShootingBlockBase(nn.Module):
         else:
             res_state_dict_of_dicts = state_dict_of_dicts
             res_costate_dict_of_dicts = costate_dict_of_dicts
-            res_data_dict_of_dicts = data_dict_of_dicts
+            res_data_state_dict_of_dicts = data_state_dict_of_dicts
+            res_data_costate_dict_of_dicts = data_costate_dict_of_dicts
             res_res = res
 
         # from now on it will be save to call parameters() for this block
@@ -531,5 +546,5 @@ class ShootingBlockBase(nn.Module):
         # we return the typical return value (in case this is the last block and we want to easily integrate,
         # but also all the dictionaries so these blocks can be easily chained together
 
-        return res_res,res_state_dict_of_dicts,res_costate_dict_of_dicts,res_data_dict_of_dicts
+        return res_res,res_state_dict_of_dicts,res_costate_dict_of_dicts,res_data_state_dict_of_dicts,res_data_costate_dict_of_dicts
 
