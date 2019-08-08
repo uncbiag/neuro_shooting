@@ -126,7 +126,7 @@ class ShootingIntegrandBase(nn.Module):
                 a handle that can be used to remove the added hook by calling
                 ``handle.remove()``
         """
-        handle = hooks.RemovableHandle(self._forward_hooks)
+        handle = hooks.RemovableHandle(self._lagrangian_gradient_hooks)
         self._lagrangian_gradient_hooks[handle.id] = hook
         return handle
 

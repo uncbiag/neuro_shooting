@@ -29,25 +29,94 @@ class BasicResNet(nn.Module):
         self.nr_of_blocks_per_layer = nr_of_blocks_per_layer
         self.nr_of_classes = nr_of_classes
 
+        self.nonlinearity = 'tanh'
+
+        self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
+        self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
+
+        self.nr_of_particles = 10
+        self.particle_sizes = [[15,15],[11,11],[7,7]]
+
         # initial convolution layer
         self.initial_conv = nn.Conv2d(self.nr_of_image_channels, layer_channels[0], kernel_size=3, padding=1, bias=True)
         self.batch_norm = nn.BatchNorm2d(layer_channels[0])
 
-        downsampling_strides = [downsampling_stride]*(len(layer_channels)-1)
+        downsampling_strides = [downsampling_stride]*(len(layer_channels)-1) + [None]
 
+        self.shooting_model = shooting_models.AutoShootingIntegrandModelSimpleConv2D
         self.shooting_layers = self._create_shooting_layers(layer_channels=self.layer_channels,
                                                             nr_of_blocks_per_layernr_of=self.nr_of_blocks_per_layer_)
-        self.striding_layers = self._create_striding_layers(strides=downsampling_strides)
+
+        self.striding_blocks = self._create_striding_blocks(strides=downsampling_strides)
 
         size_of_last_output_block = None
 
         self.last_linear = nn.Linear(layer_channels[-1]*size_of_last_output_block, self.nr_of_classes)
 
-    def _create_shooting_layers(self,layer_channels):
-        pass
+    def _create_one_shooting_block(self,name, nr_of_channels,nr_of_particles,particle_size, particle_dimension, only_pass_through=False):
+        if only_pass_through:
+            shooting_model = self.shooting_model(in_features=nr_of_channels,
+                                                 nonlinearity=nonlinearity,
+                                                 nr_of_particles=None)
+        else:
+            shooting_model = self.shooting_model(in_features=nr_of_channels,
+                                                 nonlinearity=self.nonlinearity,
+                                                 state_initializer=self._state_initializer,
+                                                 costate_initializer=self._costate_initializer,
+                                                 nr_of_particles=nr_of_particles,
+                                                 particle_size=particle_size,
+                                                 particle_dimension=particle_dimension)
 
-    def _create_striding_layers(self,strides):
-        pass
+        shooting_block = shooting_blocks.ShootingBlockBase(name=name, shooting_integrand=shooting_model)
+
+
+        return shooting_block
+
+    def compute_nr_of_additional_channels(self,layer_channels):
+
+        nr_of_additional_channels = []
+        for i,nr_of_channels in enumerate(layer_channels):
+            if i==0:
+                nr_of_additional_channels.append(nr_of_channels)
+            else:
+                nr_of_additional_channels.append(nr_of_channels-nr_of_additional_channels[-1])
+        return nr_of_additional_channels
+
+    def _create_shooting_layers(self,layer_channels,nr_of_blocks_per_layer):
+        layer_base_name = 'shooting_layer'
+        shooting_layers = []
+
+        nr_of_additional_channels = self._compute_nr_of_additional_channels(layer_channels)
+        for layer_nr,nr_of_channels in enumerate(layer_channels):
+            shooting_blocks_for_layer = []
+            for shooting_block in range(nr_of_blocks_per_layer[layer_nr]):
+                current_name = layer_base_name + '_' + str(layer_nr) + '_' + str(shooting_block)
+
+                only_pass_through = shooting_block>0
+                current_block = self._create_one_shooting_block(name=current_name,
+                                                                nr_of_channels=nr_of_channels,
+                                                                nr_of_particles=self.nr_of_particles,
+                                                                particle_size=self.particle_sizes[layer_nr],
+                                                                particle_dimension=nr_of_additional_channels[layer_nr],
+                                                                only_pass_through=only_pass_through)
+                shooting_blocks_for_layer.append(current_block)
+
+            shooting_layers.append(shooting_blocks)
+
+        return shooting_layers
+
+
+
+    def _create_striding_blocks(self,strides):
+
+        striding_blocks = []
+        for stride in strides:
+            if stride is None:
+                striding_blocks.append(None)
+            else:
+                current_striding_block = striding_block.ShootingStridingBlock(stride=[stride]*2,stride_dims=[2,3])
+                striding_blocks.append(current_striding_block)
+        return striding_blocks
 
     def forward(self, x):
 
@@ -56,10 +125,34 @@ class BasicResNet(nn.Module):
         ret = self.batch_norm(ret)
         ret = F.relu(ret)
 
-        for slayers in self.shooting_layers:
-            for b in slayers:
-                pass
+        is_first = True
 
-        CONTINUE HERE
+        for shooting_layer,striding_block in zip(self.shooting_layers,self.striding_blocks):
+            for shooting_block in shooting_layer:
+                if is_first:
+                    _, state_dicts, costate_dicts, data_dicts = shooting_block(x=ret)
+                    is_first = False
+                else:
+                    ret, state_dicts, costate_dicts, data_dicts = shooting_block(data_dict_of_dicts=data_dicts,
+                                                               pass_through_state_dict_of_dicts=state_dicts,
+                                                               pass_through_costate_dict_of_dicts=costate_dicts)
+
+            # we do striding after each shooting layer
+            if striding_block is not None:
+                state_dicts, costate_dicts, data_dicts = striding_block(state_dict_of_dicts=state_dicts,
+                                                                        costate_dict_of_dicts=costate_dicts,
+                                                                        data_dict_of_dicts=data_dicts)
+
+        # now we can apply some average pooling if desired and then apply the linear layer
+        # todo: check that the input is proper here
+        ret = F.avg_pool2d(ret)
+        ret = ret.view(ret.size(0), -1)
+        ret = self.last_linear(ret)
+
+        return ret
+
+
+
+
 
 
