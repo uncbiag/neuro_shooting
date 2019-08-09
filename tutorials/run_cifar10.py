@@ -106,6 +106,8 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 # We simply have to loop over our data iterator, and feed the inputs to the
 # network and optimize.
 
+print_every_multiple_of = 10
+
 for epoch in range(2):  # loop over the dataset multiple times
 
     running_loss = 0.0
@@ -125,9 +127,10 @@ for epoch in range(2):  # loop over the dataset multiple times
 
         # print statistics
         running_loss += loss.item()
-        if i % 2000 == 1999:    # print every 2000 mini-batches
+
+        if i % print_every_multiple_of == print_every_multiple_of-1:    # print every print_every_multiple_of mini-batches
             print('[%d, %5d] loss: %.3f' %
-                  (epoch + 1, i + 1, running_loss / 2000))
+                  (epoch + 1, i + 1, running_loss / print_every_multiple_of))
             running_loss = 0.0
 
 print('Finished Training')
