@@ -140,7 +140,7 @@ class ShootingIntegrandBase(nn.Module):
         super(ShootingIntegrandBase, self)._apply(fn)
         # make sure that all the filters that were created get moved
         for k in self._parameter_objects:
-            print('Applying _apply, to {}'.format(k))
+            #print('Applying _apply, to {}'.format(k))
             self._parameter_objects[k]._apply(fn)
         return self
 

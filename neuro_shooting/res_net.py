@@ -52,9 +52,20 @@ class BasicResNet(nn.Module):
         self.shooting_layers = self._create_shooting_layers(layer_channels=self.layer_channels,
                                                             nr_of_blocks_per_layer=self.nr_of_blocks_per_layer)
 
+
+
         self.striding_blocks = self._create_striding_blocks(strides=downsampling_strides)
 
         self.last_linear = nn.Linear(layer_channels[-1], self.nr_of_classes)
+
+        self._forward_not_yet_executed = True
+
+    def parameters(self, recurse=True):
+        if self._forward_not_yet_executed:
+            raise ValueError('Parameters are created dynamically. Please execute your entire pipeline once first before calling parameters()!')
+        # we overwrite this to assure that one forward pass has been done (so we can collect parameters)
+        return super(BasicResNet, self).parameters(recurse=recurse)
+
 
     def _create_one_shooting_block(self,name, nr_of_channels,nr_of_particles,particle_size, particle_dimension, only_pass_through=False):
         if only_pass_through:
@@ -103,6 +114,8 @@ class BasicResNet(nn.Module):
                                                                 particle_dimension=nr_of_additional_channels[layer_nr],
                                                                 only_pass_through=only_pass_through)
                 shooting_blocks_for_layer.append(current_block)
+                # and also register it with the module
+                self.add_module(name=current_name,module=current_block)
 
             shooting_layers.append(shooting_blocks_for_layer)
 
@@ -150,6 +163,8 @@ class BasicResNet(nn.Module):
         ret = F.avg_pool2d(ret,4)
         ret = ret.view(ret.size(0), -1)
         ret = self.last_linear(ret)
+
+        self._forward_not_yet_executed = False
 
         return ret
 

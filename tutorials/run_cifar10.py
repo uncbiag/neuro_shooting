@@ -86,7 +86,13 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #net = Net()
 net = res_net.BasicResNet(nr_of_image_channels=3,nr_of_blocks_per_layer=[2,2,2,2])
+# run it once before to dynamically allocate parameters
+net(images)
+net.parameters()
+# once they have been allocated move everything to the GPU
 net = net.to(device)
+
+print(net)
 
 ########################################################################
 # 3. Define a Loss function and optimizer
@@ -106,7 +112,7 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 # We simply have to loop over our data iterator, and feed the inputs to the
 # network and optimize.
 
-print_every_multiple_of = 10
+print_every_multiple_of = 2
 
 for epoch in range(2):  # loop over the dataset multiple times
 
