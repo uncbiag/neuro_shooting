@@ -101,3 +101,37 @@ class GenericIntegrator(object):
         elif self.integrator_library=='anode':
             return self._integrate_anode(func=func,x0=x0,t=t)
 
+
+class HamiltonianFlowAndCustomBackward(torch.autograd.Function):
+
+    def __init__(self):
+        super(HamiltonianFlowAndCustomBackward, self).__init__()
+
+    @staticmethod
+    def forward(ctx,input,integrator,shooting,times_integration):
+        initial_condition = shooting.get_initial_condition(input)
+        ctx.shooting = shooting
+        ctx.integrator = integrator
+        ctx.init_cond = initial_condition
+        ctx.times_integration = times_integration
+        out = integrator.integrate(shooting.forward,initial_condition,times_integration)
+        ctx.final_condition = out
+        return out
+
+
+    @staticmethod
+    def backward(ctx,grad_output):
+        grad_input = grad_output.clone()
+        integration_time_backward = -ctx.times_integration
+        init_cond = ctx.init_cond
+        final_condition = ctx.final_condition
+        eps = 0.001
+        tensor_initial_conditions = shooting.get_initial_conditions_for_backward(grad_input,final_condition,dim = 0)
+        temp = final_condition + eps * shooting.symplectic_map(tensor_initial_conditions)
+        out = integrator.integrate(shooting.forward,temp,integration_time_backward)
+        y = out - init_cond
+        grad = -shooting.symplectic_map(y) / eps
+        return grad, None, None
+
+
+

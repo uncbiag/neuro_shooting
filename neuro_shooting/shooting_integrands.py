@@ -256,6 +256,24 @@ class ShootingIntegrandBase(nn.Module):
 
         return scd_utils.disassemble_tensor(input=input, assembly_plans=assembly_plans, dim=dim)
 
+    def symplectic_map(self,tensor, assembly_plans=None, dim=0):
+        """
+        :param tensor: symplectic transform
+        :param assembly_plans:
+        :param dim:
+        :return:
+        """
+        state_dicts, costate_dicts, data_state_dicts, data_costate_dicts = self.disassemble_tensor(tensor,assembly_plans=assembly_plans,dim=dim)
+        result, plan = scd_utils.assemble_tensor_symplectic_map(state_dicts, costate_dicts, data_state_dicts, data_costate_dicts)
+        return result
+
+    def get_initial_conditions_for_backward(self,grad_input,final_condition,dim = 0):
+        temp = torch.zeros_like(final_condition)
+        state_dicts, costate_dicts, data_state_dicts, data_costate_dicts = self.disassemble_tensor(temp,assembly_plans=self.auto_assembly_plans,dim=dim)
+        res,dummy =  scd_utils.assemble_tensor_partial(grad_input, costate_dicts, data_state_dicts, data_costate_dicts)
+        return res
+
+
     @abstractmethod
     def disassemble(self, input):
         """

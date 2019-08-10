@@ -81,7 +81,30 @@ def assemble_tensor(state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_
 
     return torch.cat((state_vector, costate_vector, data_state_vector,data_costate_vector)), assembly_plans
 
-def assemble_tensor_symplectic_map(state_dict_of_dicts, costate_dict_of_dicts, data_state_dict,data_costate_dict):
+def assemble_tensor_partial(state_vector, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts):
+    """
+    Vectorize dictionaries together (costate, and data) and add a given state_vector
+
+    :param state_dict: SortedDict holding the SortedDict's of the states
+    :param costate_dict: SortedDict holding the SortedDict's of the costate
+    :param data_dict: SortedDict holding SortedDict's of the state for the transported data
+    :return: vectorized dictonaries (as one vecctor) and their assembly plans
+    """
+
+    # these are all ordered dictionaries, will assemble all into a big torch vector
+    costate_vector, costate_assembly_plans = _assemble_generic_dict_of_dicts(costate_dict_of_dicts)
+    data_state_vector, data_state_assembly_plan = _assemble_generic_dict_of_dicts(data_state_dict_of_dicts)
+    data_costate_vector, data_costate_assembly_plan = _assemble_generic_dict_of_dicts(data_costate_dict_of_dicts)
+
+    assembly_plans = dict()
+    assembly_plans['costate_dicts'] = costate_assembly_plans
+    assembly_plans['data_state_dicts'] = data_state_assembly_plan
+    assembly_plans['data_costate_dicts'] = data_costate_assembly_plan
+
+    return torch.cat((state_vector, costate_vector, data_state_vector,data_costate_vector)), assembly_plans
+
+
+def assemble_tensor_symplectic_map(state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts):
     """
     Vectorize all dictionaries together (state, costate, and data). Also returns all their assembly plans.
 
@@ -104,19 +127,9 @@ def assemble_tensor_symplectic_map(state_dict_of_dicts, costate_dict_of_dicts, d
     assembly_plans['data_state_dicts'] = data_state_assembly_plan
     assembly_plans['data_costate_dicts'] = data_costate_assembly_plan
 
-    return torch.cat((-costate_vector,state_vector, -data_costate_vector,data_state_vector)), assembly_plans
+    return torch.cat((-costate_vector,state_vector,-data_costate_vector,data_state_vector)), assembly_plans
 
-def symplectic_map(tensor,assembly_plans = None,dim = 0):
-    """
 
-    :param tensor: symplectic transform
-    :param assembly_plans:
-    :param dim:
-    :return:
-    """
-    state_dicts,costate_dicts,data_state_dicts,data_costate_dicts = disassemble_tensor(tensor,assembly_plans = assembly_plans,dim = dim)
-    result,plan =  assemble_tensor_symplectic_map(state_dicts,costate_dicts,data_state_dicts,data_costate_dicts)
-    return result
 
 def _disassemble_dict(input, assembly_plan, dim, incr):
     """

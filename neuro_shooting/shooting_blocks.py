@@ -14,7 +14,7 @@ class ShootingBlockBase(nn.Module):
                  integrator_library='odeint', integrator_name='rk4',
                  use_adjoint_integration=False, integrator_options=None,
                  keep_initial_state_parameters_at_zero=False,
-                 enlarge_pass_through_states_and_costates=True,
+                 enlarge_pass_through_states_and_costates=True,use_finite_difference = False,
                  *args, **kwargs):
         """
 
@@ -27,6 +27,7 @@ class ShootingBlockBase(nn.Module):
         :param integrator_options:
         :param keep_initial_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
         :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
+        :param use_finite_difference:
         :param args:
         :param kwargs:
         """
@@ -60,6 +61,7 @@ class ShootingBlockBase(nn.Module):
         self.integrator_library = integrator_library
         self.integrator_options = integrator_options
         self.use_adjoint_integration = use_adjoint_integration
+
 
         self.integrator = generic_integrator.GenericIntegrator(integrator_library = self.integrator_library,
                                                                integrator_name = self.integrator_name,
@@ -501,17 +503,33 @@ class ShootingBlockBase(nn.Module):
         # need to let the integrand know how to go from the vector to the data stuctures
         self.shooting_integrand.set_auto_assembly_plans(assembly_plans=assembly_plans)
 
-        #integrate
-        if self.integration_time_vector is not None:
-            res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time_vector)
-            state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times,dim=1)
-            res = self.shooting_integrand.disassemble(res_all_times,dim=1)
+        # integrate
+        if use_finite_difference:
+
+            if self.integration_time_vector is not None:
+                res_all_times = generic_integrator.HamiltonianFlowAndCustomBackward.forward(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time_vector)
+                state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times, dim=1)
+                res = self.shooting_integrand.disassemble(res_all_times, dim=1)
+            else:
+                res_all_times = generic_integrator.HamiltonianFlowAndCustomBackward.forward(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time_vector)
+                res_final = res_all_times[-1, ...]
+                state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(
+                    res_final)
+                #and get what should typically be returned (the transformed data)
+                res = self.shooting_integrand.disassemble(res_final, dim=0)
+
         else:
-            res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time)
-            res_final = res_all_times[-1, ...]
-            state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_final)
-            # and get what should typically be returned (the transformed data)
-            res = self.shooting_integrand.disassemble(res_final,dim=0)
+
+            if self.integration_time_vector is not None:
+                res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time_vector)
+                state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts,data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times,dim=1)
+                res = self.shooting_integrand.disassemble(res_all_times,dim=1)
+            else:
+                res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time)
+                res_final = res_all_times[-1, ...]
+                state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_final)
+                # and get what should typically be returned (the transformed data)
+                res = self.shooting_integrand.disassemble(res_final,dim=0)
 
         if self.shooting_integrand.concatenate_parameters:
             # we also concatenate the output
