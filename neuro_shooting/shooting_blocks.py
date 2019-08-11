@@ -514,7 +514,8 @@ class ShootingBlockBase(nn.Module):
                 res = self.shooting_integrand.disassemble(res_all_times, dim=1)
             else:
                 res_all_times = self.myfwd(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time)
-                res_final = res_all_times[-1, ...]
+                #res_final = res_all_times[-1, ...]
+                res_final = res_all_times
                 state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(
                     res_final)
                 #and get what should typically be returned (the transformed data)

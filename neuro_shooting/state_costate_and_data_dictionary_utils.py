@@ -127,7 +127,7 @@ def assemble_tensor_symplectic_map(state_dict_of_dicts, costate_dict_of_dicts, d
     assembly_plans['data_state_dicts'] = data_state_assembly_plan
     assembly_plans['data_costate_dicts'] = data_costate_assembly_plan
 
-    return torch.cat((-costate_vector,state_vector,-data_costate_vector,data_state_vector)), assembly_plans
+    return torch.cat((-costate_vector,state_vector,-data_costate_vector,data_state_vector))
 
 
 

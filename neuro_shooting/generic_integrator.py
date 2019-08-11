@@ -118,24 +118,26 @@ class HamiltonianFlowAndCustomBackward(torch.autograd.Function):
         ctx.init_cond = initial_condition
         ctx.times_integration = times_integration
         out = integrator.integrate(shooting,initial_condition,times_integration)
-        ctx.final_condition = out
-        return out
+        ctx.final_condition = out[-1,...]
+        return out[-1,...]
 
 
     @staticmethod
     def backward(ctx,grad_output):
         print("going in my backyward")
         grad_input = grad_output.clone()
+        torch.set_grad_enabled(True)
         integration_time_backward = -ctx.times_integration
         init_cond = ctx.init_cond
         final_condition = ctx.final_condition
         eps = 0.001
-        tensor_initial_conditions = ctx.shooting.get_initial_conditions_for_backward(grad_input,final_condition,dim = 0)
+        #tensor_initial_conditions = ctx.shooting.get_initial_conditions_for_backward(grad_input,final_condition,dim = 0)
+        tensor_initial_conditions = grad_input
         temp = final_condition + eps * ctx.shooting.symplectic_map(tensor_initial_conditions)
-        out = integrator.integrate(ctx.shooting.forward,temp,integration_time_backward)
+        out = ctx.integrator.integrate(ctx.shooting.forward,temp,integration_time_backward)
         y = out - init_cond
-        grad = -ctx.shooting.symplectic_map(y) / eps
-        return grad, None, None
+        grad = -ctx.shooting.symplectic_map(y[1,...]) / eps
+        return grad, None, None,None
 
 
 
