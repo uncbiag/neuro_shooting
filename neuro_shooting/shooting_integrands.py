@@ -311,8 +311,8 @@ class ShootingIntegrandBase(nn.Module):
             c_costate_dict = costate_dict_of_dicts[d_kcs]
             for ks,kcs in zip(c_rhs_state_dict,c_costate_dict):
                 potential_energy = potential_energy + torch.mean(c_costate_dict[kcs]*c_rhs_state_dict[ks])
-
         return potential_energy
+        #return torch.autograd.Variable(potential_energy,requires_grad = True)
 
     def compute_kinetic_energy(self,t,parameter_objects):
         """
@@ -332,7 +332,7 @@ class ShootingIntegrandBase(nn.Module):
         # a weight dictionary can be specified for the individual parameters as part of their
         # overwritten classes (default is all uniform weight)
 
-        kinetic_energy = 0
+        kinetic_energy = torch.autograd.Variable(torch.zeros(1), requires_grad = True)
 
         for o in parameter_objects:
 
@@ -342,7 +342,7 @@ class ShootingIntegrandBase(nn.Module):
             for k in current_pars:
                 cpar = current_pars[k]
                 if k not in current_weights:
-                    cpar_penalty = (cpar ** 2).sum()
+                    cpar_penalty = torch.sum((cpar ** 2))
                 else:
                     cpar_penalty = current_weights[k]*(cpar**2).sum()
 
@@ -351,6 +351,8 @@ class ShootingIntegrandBase(nn.Module):
         kinetic_energy = 0.5*kinetic_energy
 
         return kinetic_energy
+
+        #return torch.autograd.Variable(kinetic_energy, requires_grad=True)
 
     def compute_lagrangian(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         """
@@ -376,7 +378,7 @@ class ShootingIntegrandBase(nn.Module):
                                                          costate_dict_of_dicts=costate_dict_of_dicts,
                                                          parameter_objects=parameter_objects)
 
-        lagrangian = kinetic_energy-potential_energy
+        lagrangian = kinetic_energy - potential_energy
 
         return lagrangian, kinetic_energy, potential_energy
 
@@ -545,7 +547,7 @@ class ShootingIntegrandBase(nn.Module):
             current_pars = parameter_objects[o].get_parameter_dict()
             for k in current_pars:
                 current_pars[k] = current_pars[k].detach().requires_grad_(True)
-
+                #pass
     def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_state_dict_of_dicts,data_costate_dict_of_dicts):
 
         if self._parameter_objects is None:

@@ -109,18 +109,20 @@ class HamiltonianFlowAndCustomBackward(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx,input,integrator,shooting,times_integration):
-        initial_condition = shooting.get_initial_condition(input)
+        #initial_condition = shooting.get_initial_condition_for_forward(input)
+        initial_condition = input
         ctx.shooting = shooting
         ctx.integrator = integrator
         ctx.init_cond = initial_condition
         ctx.times_integration = times_integration
-        out = integrator.integrate(shooting.forward,initial_condition,times_integration)
+        out = integrator.integrate(shooting,initial_condition,times_integration)
         ctx.final_condition = out
         return out
 
 
     @staticmethod
     def backward(ctx,grad_output):
+        print("je passe dans mon backward")
         grad_input = grad_output.clone()
         integration_time_backward = -ctx.times_integration
         init_cond = ctx.init_cond

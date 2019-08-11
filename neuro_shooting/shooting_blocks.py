@@ -61,8 +61,10 @@ class ShootingBlockBase(nn.Module):
         self.integrator_library = integrator_library
         self.integrator_options = integrator_options
         self.use_adjoint_integration = use_adjoint_integration
-
-
+        self.use_finite_difference = use_finite_difference
+        if use_finite_difference:
+            self.myfwd = generic_integrator.HamiltonianFlowAndCustomBackward()
+            self.myfwd = self.myfwd.apply
         self.integrator = generic_integrator.GenericIntegrator(integrator_library = self.integrator_library,
                                                                integrator_name = self.integrator_name,
                                                                use_adjoint_integration=self.use_adjoint_integration,
@@ -504,20 +506,19 @@ class ShootingBlockBase(nn.Module):
         self.shooting_integrand.set_auto_assembly_plans(assembly_plans=assembly_plans)
 
         # integrate
-        if use_finite_difference:
+        if self.use_finite_difference:
 
             if self.integration_time_vector is not None:
-                res_all_times = generic_integrator.HamiltonianFlowAndCustomBackward.forward(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time_vector)
+                res_all_times = self.myfwd(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time_vector)
                 state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times, dim=1)
                 res = self.shooting_integrand.disassemble(res_all_times, dim=1)
             else:
-                res_all_times = generic_integrator.HamiltonianFlowAndCustomBackward.forward(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time_vector)
+                res_all_times = self.myfwd(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time)
                 res_final = res_all_times[-1, ...]
                 state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(
                     res_final)
                 #and get what should typically be returned (the transformed data)
                 res = self.shooting_integrand.disassemble(res_final, dim=0)
-
         else:
 
             if self.integration_time_vector is not None:
