@@ -15,7 +15,7 @@ shooting_model_1 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=
 shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=None)
 
 shooting_block_1 = shooting_blocks.ShootingBlockBase(name='block1', shooting_integrand=shooting_model_1,use_finite_difference =True)
-shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2)
+shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2,use_finite_difference = True)
 
 shooting_block_1 = shooting_block_1.to(device)
 shooting_block_2 = shooting_block_2.to(device)

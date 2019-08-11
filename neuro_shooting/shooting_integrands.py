@@ -267,9 +267,9 @@ class ShootingIntegrandBase(nn.Module):
         result, plan = scd_utils.assemble_tensor_symplectic_map(state_dicts, costate_dicts, data_state_dicts, data_costate_dicts)
         return result
 
-    def get_initial_conditions_for_backward(self,grad_input,final_condition,dim = 0):
+    def get_initial_conditions_for_backward(self,grad_input,final_condition,dim = 1):
         temp = torch.zeros_like(final_condition)
-        state_dicts, costate_dicts, data_state_dicts, data_costate_dicts = self.disassemble_tensor(temp,assembly_plans=self.auto_assembly_plans,dim=dim)
+        state_dicts, costate_dicts, data_state_dicts, data_costate_dicts = self.disassemble_tensor(temp,assembly_plans=None,dim=dim)
         res,dummy =  scd_utils.assemble_tensor_partial(grad_input, costate_dicts, data_state_dicts, data_costate_dicts)
         return res
 
@@ -301,7 +301,6 @@ class ShootingIntegrandBase(nn.Module):
         """
 
         # this is really only how one propagates through the system given the parameterization
-
         rhs_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t,state_dict_of_dicts=state_dict_of_dicts,parameter_objects=parameter_objects,concatenation_dim=self.concatenation_dim)
 
         potential_energy = 0
@@ -310,6 +309,8 @@ class ShootingIntegrandBase(nn.Module):
             c_rhs_state_dict = rhs_state_dict_of_dicts[d_ks]
             c_costate_dict = costate_dict_of_dicts[d_kcs]
             for ks,kcs in zip(c_rhs_state_dict,c_costate_dict):
+                #c_costate_dict[kcs].requires_grad = True
+                #c_rhs_state_dict[ks].requires_grad = True
                 potential_energy = potential_energy + torch.mean(c_costate_dict[kcs]*c_rhs_state_dict[ks])
         return potential_energy
         #return torch.autograd.Variable(potential_energy,requires_grad = True)
@@ -331,8 +332,7 @@ class ShootingIntegrandBase(nn.Module):
         # as a default it just computes the square norms of all of them (overwrite this if it is not the desired behavior)
         # a weight dictionary can be specified for the individual parameters as part of their
         # overwritten classes (default is all uniform weight)
-
-        kinetic_energy = torch.autograd.Variable(torch.zeros(1), requires_grad = True)
+        kinetic_energy = 0
 
         for o in parameter_objects:
 
@@ -341,9 +341,11 @@ class ShootingIntegrandBase(nn.Module):
 
             for k in current_pars:
                 cpar = current_pars[k]
+                #cpar.requires_grad = True
                 if k not in current_weights:
                     cpar_penalty = torch.sum((cpar ** 2))
                 else:
+                    current_weights[k].requires_grad = True
                     cpar_penalty = current_weights[k]*(cpar**2).sum()
 
                 kinetic_energy = kinetic_energy + cpar_penalty
@@ -549,7 +551,6 @@ class ShootingIntegrandBase(nn.Module):
                 current_pars[k] = current_pars[k].detach().requires_grad_(True)
                 #pass
     def compute_gradients(self,t,state_dict_of_dicts,costate_dict_of_dicts,data_state_dict_of_dicts,data_costate_dict_of_dicts):
-
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
         else:
@@ -573,7 +574,6 @@ class ShootingIntegrandBase(nn.Module):
             hook(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts,
                  dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_state_dict_of_dicts, dot_data_costate_dict_of_dicts,
                  self._parameter_objects, self._custom_hook_data)
-
         return dot_state_dict_of_dicts,dot_costate_dict_of_dicts,dot_data_state_dict_of_dicts,dot_data_costate_dict_of_dicts
 
 
@@ -659,7 +659,7 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
 
         # form a tuple of all the state variables (because this is what we take the derivative of)
         state_tuple = scd_utils.compute_tuple_from_generic_dict_of_dicts(data_state_dict_of_dicts)
-
+        #torch.set_grad_enabled(True)
         dot_data_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
                                           grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1),
                                           create_graph=True,
@@ -689,11 +689,15 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
 
     def compute_parameters_directly(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
+        #torch.set_grad_enabled(True)
 
+        parameter_tuple = scd_utils.compute_tuple_from_parameter_objects(parameter_objects)
+        #for p in parameter_tuple:
+        #    p.requires_grad = True
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
             self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
 
-        parameter_tuple = scd_utils.compute_tuple_from_parameter_objects(parameter_objects)
+
 
         parameter_grad_tuple = autograd.grad(current_potential_energy,
                                              parameter_tuple,
