@@ -24,6 +24,9 @@ class ParameterInitializer(object):
     def create_zero_parameters_like(self, like_tensor, *argv, **kwargs):
         return nn.Parameter(torch.zeros_like(like_tensor))
 
+    def create_ones_parameters_like(self, like_tensor, *argv, **kwargs):
+        return nn.Parameter(torch.ones_like(like_tensor))
+
     def create_random_parameters_like(self, like_tensor, *argv, **kwargs):
         return nn.Parameter(self.random_initialization_magnitude * torch.randn_like(like_tensor))
 

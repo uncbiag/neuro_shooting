@@ -365,7 +365,7 @@ if __name__ == '__main__':
         #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
         shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity)
 
-        shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
+        shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model,use_finite_difference = False)
         shooting_block = shooting_block.to(device)
 
         # run through the shooting block once (to get parameters as needed)
@@ -435,7 +435,7 @@ if __name__ == '__main__':
 
             #shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
             shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
-            pred_y,_,_,_ = shooting_block(x=batch_y0)
+            pred_y,_,_,_,_ = shooting_block(x=batch_y0)
 
             # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
             #shooting_hook.remove()
@@ -494,7 +494,7 @@ if __name__ == '__main__':
                 t_0 = t_1
 
                 shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
-                val_pred_y,_,_,_ = shooting_block(x=val_y0)
+                val_pred_y,_,_,_,_ = shooting_block(x=val_y0)
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))

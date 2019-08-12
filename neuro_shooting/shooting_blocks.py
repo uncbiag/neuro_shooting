@@ -509,9 +509,7 @@ class ShootingBlockBase(nn.Module):
         if self.use_finite_difference:
 
             if self.integration_time_vector is not None:
-                res_all_times = self.myfwd(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time_vector)
-                state_dict_of_dicts, costate_dict_of_dicts, data_state_dict_of_dicts, data_costate_dict_of_dicts = self.shooting_integrand.disassemble_tensor(res_all_times, dim=1)
-                res = self.shooting_integrand.disassemble(res_all_times, dim=1)
+                raise ValueError('Finite difference does not support multiple timepoints. Simply set option use_finite_difference to False')
             else:
                 res_all_times = self.myfwd(initial_conditions,self.integrator,self.shooting_integrand,self.integration_time)
                 #res_final = res_all_times[-1, ...]
