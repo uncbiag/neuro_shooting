@@ -135,7 +135,7 @@ class HamiltonianFlowAndCustomBackward(torch.autograd.Function):
         out = ctx.integrator.integrate(ctx.shooting.forward,temp,integration_time_backward)
         y = out - init_cond
         grad = -ctx.shooting.symplectic_map(y[-1,...]) / eps
-        print("gradient finite diff ",grad)
+        #print("gradient finite diff ",torch.sum(grad))
         return grad, None, None, None
 
 

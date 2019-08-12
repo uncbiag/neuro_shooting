@@ -358,10 +358,15 @@ class ShootingBlockBase(nn.Module):
                     type(state_dict)))
 
             # only register if we want to optimize over them, otherwise force them to zero
-            if keep_state_parameters_at_zero:
+            if keep_state_parameters_at_zero==True:
                 print('INFO: Keeping new state parameters at zero for {}'.format(self._block_name))
                 for k in state_dict:
                     state_dict[k].zero_()
+            elif keep_state_parameters_at_zero==1:
+                print('INFO: Keeping new state parameters at zero for {}'.format(self._block_name))
+                for k in state_dict:
+                    state_dict[k] = torch.ones_like(state_dict[k])
+
             else:
                 for k in state_dict:
                     self.register_parameter(k,state_dict[k])

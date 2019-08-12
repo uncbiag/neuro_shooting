@@ -7,38 +7,57 @@ gpu = 0
 device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
 nonlinearity = 'tanh'
 
-state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
-costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
-
-shooting_model_1 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=2,particle_dimension=1)
-shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=2,particle_dimension=1)
-#shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=4, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=2,particle_dimension=1)
-#shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=None)
-
-shooting_block_1 = shooting_blocks.ShootingBlockBase(name='block1', shooting_integrand=shooting_model_1,use_finite_difference =False)
-shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2,use_finite_difference = True)
-
-shooting_block_1 = shooting_block_1.to(device)
-shooting_block_2 = shooting_block_2.to(device)
+# Let's create some random input images of size 64x64, batch size 15
+sample_image_batch = torch.ones(15,1,64,64,device = device,requires_grad = True)
+sample_image_batch2 = torch.ones(15,1,64,64,device = device,requires_grad = True)
 
 
+nr_of_particles = 10
+particle_sizes = [[15,15],[11,11],[7,7]]
+nr_of_features = [10,20,40]
 
-sample_batch_1 = torch.ones(10,1,2,requires_grad = True,device = device)
-sample_batch_2 = torch.ones(10,1,2,requires_grad = True,device = device)
+sz = [1]*len(sample_image_batch.shape)
+sz[1] = nr_of_features[0]
+sample_image_batch_multi_channel = sample_image_batch.repeat(sz)
+sample_image_batch_multi_channel2 = sample_image_batch2.repeat(sz)
+
+state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
+costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
+
+shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,
+                                                                            state_initializer=state_initializer,
+                                                                            costate_initializer=costate_initializer,
+                                                                            nr_of_particles=nr_of_particles,particle_size=particle_sizes[0],particle_dimension=nr_of_features[0])
 
 
-ret1,state_dicts1,costate_dicts1,data_state_dicts1,data_costate_dicts1 = shooting_block_1(x=sample_batch_1)
-ret2,state_dicts2,costate_dicts2,data_state_dicts2,data_costate_dicts2 = shooting_block_2(x=sample_batch_2)
-#ret2,state_dicts2,costate_dicts2,data_state_dicts2,data_costate_dicts2 = shooting_block_2(data_state_dict_of_dicts=data_state_dicts1,data_costate_dict_of_dicts = data_costate_dicts1,
-                                                               #pass_through_state_dict_of_dicts=state_dicts1,
-                                                               #pass_through_costate_dict_of_dicts=costate_dicts1)
 
-a = torch.randn(ret1.shape,device = device)
-dummy_loss1 =  torch.sum(ret1*a)# there is only one value, so it returns a tensor
-dummy_loss2 = torch.sum(ret2*a)
-print("loss ",dummy_loss1)
-print("loss ",dummy_loss2)
-dummy_loss1.backward()
-dummy_loss2.backward()
-print("gradient ",sample_batch_1.grad)
-print("gradient finite difference",sample_batch_2.grad)
+
+shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1,use_finite_difference = True,keep_initial_state_parameters_at_zero=False)
+shooting_block_1_1 = shooting_block_1_1.to(device)
+ret1_1,state_dicts1_1,costate_dicts1_1,data_state_dicts1_1,data_costate_dicts1_1 = shooting_block_1_1(x=sample_image_batch_multi_channel)
+
+dummy_loss = ret1_1.sum()
+dummy_loss.backward()
+print(dummy_loss)
+
+print("gradient",sample_image_batch_multi_channel.grad)
+
+state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
+costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
+
+shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,
+                                                                            state_initializer=state_initializer,
+                                                                            costate_initializer=costate_initializer,
+                                                                            nr_of_particles=nr_of_particles,particle_size=particle_sizes[0],particle_dimension=nr_of_features[0])
+
+
+
+
+shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1,use_finite_difference = False,keep_initial_state_parameters_at_zero=False)
+shooting_block_1_1 = shooting_block_1_1.to(device)
+ret1_1,state_dicts1_1,costate_dicts1_1,data_state_dicts1_1,data_costate_dicts1_1 = shooting_block_1_1(x=sample_image_batch_multi_channel2)
+
+dummy_loss = ret1_1.sum()
+print(dummy_loss)
+dummy_loss.backward()
+print("gradient",sample_image_batch_multi_channel2.grad)

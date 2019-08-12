@@ -237,12 +237,12 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
         state_dict['q1'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
                                                                      particle_size=self.particle_size,
                                                                      particle_dimension=self.particle_dimension,
-                                                                     set_to_zero=set_to_zero)
+                                                                     set_to_zero=1)
 
         state_dict['q2'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
                                                                      particle_size=self.particle_size,
                                                                      particle_dimension=self.particle_dimension,
-                                                                     set_to_zero=set_to_zero)
+                                                                     set_to_zero=1)
 
         return state_dict
 
