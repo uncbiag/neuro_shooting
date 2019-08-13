@@ -21,8 +21,8 @@ sz[1] = nr_of_features[0]
 sample_image_batch_multi_channel = sample_image_batch.repeat(sz)
 sample_image_batch_multi_channel2 = sample_image_batch2.repeat(sz)
 
-state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
-costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
+state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.)
+costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.)
 
 shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,
                                                                             state_initializer=state_initializer,
@@ -32,7 +32,7 @@ shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_f
 
 
 
-shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1,use_finite_difference = True,keep_initial_state_parameters_at_zero=False)
+shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1,use_finite_difference = True)
 shooting_block_1_1 = shooting_block_1_1.to(device)
 ret1_1,state_dicts1_1,costate_dicts1_1,data_state_dicts1_1,data_costate_dicts1_1 = shooting_block_1_1(x=sample_image_batch_multi_channel)
 
@@ -42,8 +42,8 @@ print(dummy_loss)
 
 print("gradient",sample_image_batch_multi_channel.grad)
 
-state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
-costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=False, random_initialization_magnitude=0.5)
+state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.)
+costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.)
 
 shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,
                                                                             state_initializer=state_initializer,
@@ -53,7 +53,7 @@ shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_f
 
 
 
-shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1,use_finite_difference = False,keep_initial_state_parameters_at_zero=False)
+shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1,use_finite_difference = False)
 shooting_block_1_1 = shooting_block_1_1.to(device)
 ret1_1,state_dicts1_1,costate_dicts1_1,data_state_dicts1_1,data_costate_dicts1_1 = shooting_block_1_1(x=sample_image_batch_multi_channel2)
 

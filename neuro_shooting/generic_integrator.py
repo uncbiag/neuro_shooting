@@ -84,7 +84,7 @@ class GenericIntegrator(object):
 
         # everything okay, so we can proceed
 
-        Nt = 10
+        Nt = 20
         options.update({'Nt': int(Nt)})
         options.update({'method': (self.integrator_name).upper()})
 
@@ -123,6 +123,7 @@ class HamiltonianFlowAndCustomBackward(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx,grad_output):
+        print("passe dans bc")
         grad_input = grad_output.clone()
         torch.set_grad_enabled(True)
         integration_time_backward = - ctx.times_integration
@@ -133,9 +134,9 @@ class HamiltonianFlowAndCustomBackward(torch.autograd.Function):
         tensor_initial_conditions = grad_input
         temp = final_condition + eps * ctx.shooting.symplectic_map(tensor_initial_conditions)
         out = ctx.integrator.integrate(ctx.shooting.forward,temp,integration_time_backward)
-        y = out - init_cond
-        grad = -ctx.shooting.symplectic_map(y[-1,...]) / eps
-        #print("gradient finite diff ",torch.sum(grad))
+        y = out[-1,...] - init_cond
+        grad = -ctx.shooting.symplectic_map(y) / eps
+        print("gradient finite diff ",grad)
         return grad, None, None, None
 
 

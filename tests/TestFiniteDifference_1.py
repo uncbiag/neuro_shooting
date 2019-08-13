@@ -1,6 +1,9 @@
 import torch
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
+import neuro_shooting.parameter_initialization as parameter_initialization
+
+
 
 gpu = 0
 device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
@@ -10,14 +13,16 @@ nonlinearity = 'tanh'
 #sample_batch = torch.randn(50,10,1,2)
 sample_batch_1 = torch.ones(10,1,2,requires_grad = True,device = device)
 sample_batch_2 = torch.ones(10,1,2,requires_grad = True,device = device)
+#state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.)
+#costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.)
 
 shooting_model_1 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=2,particle_dimension=1)
 shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=2,particle_dimension=1)
 #shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=4, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=2,particle_dimension=1)
 #shooting_model_2 = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,nr_of_particles=None)
 
-shooting_block_1 = shooting_blocks.ShootingBlockBase(name='block1', shooting_integrand=shooting_model_1,use_finite_difference =False)
-shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2,use_finite_difference = True)
+shooting_block_1 = shooting_blocks.ShootingBlockBase(name='block1', shooting_integrand=shooting_model_1,use_finite_difference =True)
+shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2,use_finite_difference = False)
 
 shooting_block_1 = shooting_block_1.to(device)
 shooting_block_2 = shooting_block_2.to(device)
