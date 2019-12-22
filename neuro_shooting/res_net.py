@@ -159,8 +159,9 @@ class BasicResNet(nn.Module):
                                                                         costate_dict_of_dicts=costate_dicts,
                                                                         data_dict_of_dicts=data_dicts)
 
-        # now we can apply some average pooling if desired and then apply the linear layer
-        ret = F.avg_pool2d(ret,4)
+        # now we can apply some global average pooling if desired and then apply the linear layer
+        #ret = F.avg_pool2d(ret,4)
+        ret = nn.AdaptiveMaxPool2d(1)(ret)
         ret = ret.view(ret.size(0), -1)
         ret = self.last_linear(ret)
 
