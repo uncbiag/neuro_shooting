@@ -71,7 +71,8 @@ import neuro_shooting.res_net as res_net
 
 layer_channels = [2,3]
 downsampling_stride = 2
-particle_sizes = [[5,5],[5,5]]
+#particle_sizes = [[5,5],[5,5]]
+particle_sizes = [[5,5],[3,3]]
 nr_of_particles = 2
 nr_of_classes = 2
 
@@ -121,6 +122,30 @@ expected_parameters = {
 }
 
 count_print_and_compare_parameters(net=net,target_parameter_numbers=expected_parameters)
+
+import torch.optim as optim
+# just to test that all the paramters here change indeed
+optimizer = optim.SGD(net.parameters(), lr=1.0, momentum=0.9)
+
+# zero the parameter gradients
+optimizer.zero_grad()
+
+# compute gradient and do a test update
+ret = net(images)
+loss = torch.mean(ret)
+loss.backward()
+
+params_before = dict()
+for name,p in net.named_parameters():
+    params_before[name] = p.clone()
+
+optimizer.step()
+
+# now check that they are different
+for name,p in net.named_parameters():
+    diff = torch.sum(torch.abs(p-params_before[name]))
+    diff_same_elements = torch.sum(p==params_before[name])
+    print('Diff {}: {}; # of elements that stayed the same = {}'.format(name,diff.item(), diff_same_elements.item()))
 
 #print(list(net.named_parameters()))
 #print(net)
