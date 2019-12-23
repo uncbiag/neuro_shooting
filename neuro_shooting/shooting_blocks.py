@@ -81,10 +81,11 @@ class ShootingBlockBase(nn.Module):
         self._costate_parameter_dict = None
         """Dictionary holding the costates (i.e., adjoints/duals)"""
 
-        self._pass_through_state_parameter_dict_of_dicts = None
-        """State parameters that are passed in externally, but are not parameters to be optimized over"""
-        self._pass_through_costate_parameter_dict_of_dicts = None
-        """Costate parameters that are passed in externally, but are not parameters to be optimized over"""
+        # TODO: see if we really need these variables, seems like they are no longer needed
+        # self._pass_through_state_parameter_dict_of_dicts = None
+        # """State parameters that are passed in externally, but are not parameters to be optimized over"""
+        # self._pass_through_costate_parameter_dict_of_dicts = None
+        # """Costate parameters that are passed in externally, but are not parameters to be optimized over"""
 
         self._pass_through_state_dict_of_dicts_enlargement_parameters = None
         self._pass_through_costate_dict_of_dicts_enlargement_parameters = None
@@ -158,6 +159,14 @@ class ShootingBlockBase(nn.Module):
         return ep
 
     def _create_generic_dict_of_dicts_enlargement_parameters(self, generic_dict_of_dicts, dict_for_desired_size, data_type='state', enlargement_dimensions = None):
+        """
+
+        :param generic_dict_of_dicts:
+        :param dict_for_desired_size:
+        :param data_type:
+        :param enlargement_dimensions:
+        :return: returns a three-tuple: first element are the new parameters; second one is the size of the enlargement; third one is the target size
+        """
 
         if dict_for_desired_size is None or enlargement_dimensions is None:
             # for example if this block does not have a state of its own, but is pure pass-through
@@ -383,6 +392,7 @@ class ShootingBlockBase(nn.Module):
                                 print('INFO: Keeping new state enlargement parameters at zero for {}'.format(self._block_name))
                                 c_state_dict[k][0]._zero()
                             self.register_parameter('pt_enlarge_' + k, c_state_dict[k][0])
+                            print('INFO: registering enlargement state parameters {} of size {} for block {}'.format(k,c_state_dict[k][0].numel(),self._block_name))
 
         if pass_through_costate_dict_of_dicts_enlargement_parameters is not None:
 
@@ -392,6 +402,7 @@ class ShootingBlockBase(nn.Module):
                     for k in c_costate_dict:
                         if c_costate_dict[k] is not None:
                             self.register_parameter('pt_enlarge_' + k, c_costate_dict[k][0])
+                            print('INFO: registering enlargement costate parameters {} of size {} for block {}'.format(k,c_costate_dict[k][0].numel(),self._block_name))
 
     def _get_or_create_and_register_pass_through_enlargement_parameters(self,pass_through_state_dict_of_dicts,pass_through_costate_dict_of_dicts,*args,**kwargs):
 
