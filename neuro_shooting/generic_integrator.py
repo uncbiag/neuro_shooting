@@ -17,7 +17,21 @@ except:
 
 
 class GenericIntegrator(object):
-    def __init__(self,integrator_library = None, integrator_name = None, use_adjoint_integration=False, integrator_options=None, **kwargs):
+    def __init__(self,integrator_library = None, integrator_name = None, use_adjoint_integration=False,
+                 integrator_options=None, step_size=0.5, rtol=1e-3, atol=1e-5, **kwargs):
+        """
+        Generic integrator class
+
+        :param integrator_library: 'odeint' (for NODE integrators) or 'anode' (for ANODE integrators)
+        :param integrator_name: string of integrator name ('odeint': 'dopri5','adams','euler','midpoint','rk4','explicit_adams','fixed_adams; 'anode': 'rk2', 'rk4'
+        :param use_adjoint_integration: if true, then ODE is solved backward to compute gradient (only for odeint)
+        :param integrator_options: dictionary with additional integrator option (passed to the integrators)
+        :param step_size: integrator step size (only for fixed steps-size solvers, i.e., not for dopri5/adams)
+        :param rtol: relative integration tolerance (only for adaptive solvers (dopri5/adams))
+        :param atol: absolute integration tolerance (only for adaptive solvers (dopri5/adams))
+        :param kwargs: optional arguments passed directly to the integrator
+
+        """
         super(GenericIntegrator, self).__init__()
 
         self._available_integrator_libraries = ['odeint','anode']
@@ -31,7 +45,7 @@ class GenericIntegrator(object):
             raise ValueError('Unknown integrator library {}'.format(self.integrator_library))
 
         self._available_integrators = dict()
-        self._available_integrators['odeint'] = ['rk4','dopri5']
+        self._available_integrators['odeint'] = ['dopri5','adams','euler','midpoint','rk4','explicit_adams','fixed_adams']
         self._available_integrators['anode'] = ['rk2','rk4']
 
         if integrator_name is None:
@@ -44,26 +58,32 @@ class GenericIntegrator(object):
 
         self.use_adjoint_integration = use_adjoint_integration
         self.integrator_options = integrator_options
+        if self.integrator_options is None:
+            self.integrator_options = dict()
 
         self.kwargs = kwargs
 
-        # self.rtol = rtol
-        # self.atol = atol
-        # self.method = method
+        self.rtol = rtol
+        self.atol = atol
+        self.step_size = step_size
 
-        # self.integrator_options = dict()
-        # if step_size is not None:
-        #     self.integrator_options['step_size'] = step_size
+        if step_size is not None:
+            if self.integrator_library == 'odeint':
+                if self.integrator_name not in ['dopri5', 'adams']:
+                    self.integrator_options['step_size'] = step_size
+
         # if max_num_steps is not None:
         #     self.integrator_options['max_num_steps'] = max_num_steps
 
 
     def _integrate_odeint(self,func,x0,t):
         if self.use_adjoint_integration:
-            res = odeintadjoint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
+            # odeint(func, y0, t, rtol=1e-7, atol=1e-9, method=None, options=None)
+            res = odeintadjoint(func=func,y0=x0,t=t,rtol=self.rtol, atol=self.atol, method=self.integrator_name,options=self.integrator_options,**self.kwargs)
             return res
         else:
-            res = odeint(func=func,y0=x0,t=t,method=self.integrator_name,options=self.integrator_options,**self.kwargs)
+            # odeint(func, y0, t, rtol=1e-7, atol=1e-9, method=None, options=None)
+            res = odeint(func=func,y0=x0,t=t, rtol=self.rtol, atol=self.atol, method=self.integrator_name,options=self.integrator_options,**self.kwargs)
             return res
 
     def _integrate_anode(self,func,x0,t=None):

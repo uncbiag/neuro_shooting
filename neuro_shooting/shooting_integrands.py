@@ -498,25 +498,33 @@ class ShootingIntegrandBase(nn.Module):
 
     def forward(self, t, input):
 
-        state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts = self.disassemble_tensor(input)
+        with torch.enable_grad():
 
-        if self.transpose_state_when_forward:
-            state_dict_of_dicts = self.transpose_state_dict_of_dicts(state_dict_of_dicts)
-            costate_dict_of_dicts = self.transpose_state_dict_of_dicts(costate_dict_of_dicts)
-            data_dict_of_dicts = self.transpose_state_dict_of_dicts(data_dict_of_dicts)
+            if input.requires_grad==False:
+                # we always need this to compute the gradient, because we derive the shooting equations automatically
+                # if the gradient computation is on by default nothing should change here
+                # however, when the adjoint integrators are used, these variables will not have the gradient on
+                input = input.clone().detach().requires_grad_(True)
 
-        # computing the gradients
-        dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts = \
-            self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict_of_dicts=data_dict_of_dicts)
+            state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts = self.disassemble_tensor(input)
 
-        if self.transpose_state_when_forward:
-            # as we transposed the vectors before we need to transpose on the way back
-            dot_state_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_state_dict_of_dicts)
-            dot_costate_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_costate_dict_of_dicts)
-            dot_data_dict_of_dicts = self.transpose_state(dot_data_dict_of_dicts)
+            if self.transpose_state_when_forward:
+                state_dict_of_dicts = self.transpose_state_dict_of_dicts(state_dict_of_dicts)
+                costate_dict_of_dicts = self.transpose_state_dict_of_dicts(costate_dict_of_dicts)
+                data_dict_of_dicts = self.transpose_state_dict_of_dicts(data_dict_of_dicts)
 
-        # create a vector out of this to pass to integrator
-        output,assembly_plans = self.assemble_tensor(state_dict_of_dicts=dot_state_dict_of_dicts, costate_dict_of_dicts=dot_costate_dict_of_dicts, data_dict_of_dicts=dot_data_dict_of_dicts)
+            # computing the gradients
+            dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts = \
+                self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict_of_dicts=data_dict_of_dicts)
+
+            if self.transpose_state_when_forward:
+                # as we transposed the vectors before we need to transpose on the way back
+                dot_state_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_state_dict_of_dicts)
+                dot_costate_dict_of_dicts = self.transpose_state_dict_of_dicts(dot_costate_dict_of_dicts)
+                dot_data_dict_of_dicts = self.transpose_state(dot_data_dict_of_dicts)
+
+            # create a vector out of this to pass to integrator
+            output,assembly_plans = self.assemble_tensor(state_dict_of_dicts=dot_state_dict_of_dicts, costate_dict_of_dicts=dot_costate_dict_of_dicts, data_dict_of_dicts=dot_data_dict_of_dicts)
 
         return output
 
