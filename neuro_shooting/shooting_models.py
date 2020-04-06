@@ -8,7 +8,8 @@ import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 
 class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVectorIntegrand):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2,*args, **kwargs):
+                nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
+                *args, **kwargs):
 
         super(AutoShootingIntegrandModelSecondOrder, self).__init__(in_features=in_features,
                                                                     nonlinearity=nonlinearity,
@@ -17,6 +18,7 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
                                                                     nr_of_particles=nr_of_particles,
                                                                     particle_dimension=particle_dimension,
                                                                     particle_size=particle_size,
+                                                                    parameter_weight=parameter_weight,
                                                                     *args, **kwargs)
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
@@ -39,8 +41,8 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
 
         parameter_objects = SortedDict()
 
-        linear1 = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features)
-        linear2 = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features)
+        linear1 = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features, weight=self.parameter_weight)
+        linear2 = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features, weight=self.parameter_weight)
 
         parameter_objects['l1'] = linear1
         parameter_objects['l2'] = linear2
@@ -74,7 +76,8 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
 class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2,*args, **kwargs):
+                nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
+                *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDown, self).__init__(in_features=in_features,
                                                                nonlinearity=nonlinearity,
@@ -83,6 +86,7 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
                                                                nr_of_particles=nr_of_particles,
                                                                particle_dimension=particle_dimension,
                                                                particle_size=particle_size,
+                                                               parameter_weight=parameter_weight,
                                                                *args, **kwargs)
 
         self.inflation_factor = 5
@@ -108,8 +112,8 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         parameter_objects = SortedDict()
 
-        linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features)
-        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor)
+        linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight)
+        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight)
 
         parameter_objects['l1'] = linear1
         parameter_objects['l2'] = linear2
@@ -148,7 +152,8 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2,*args, **kwargs):
+                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
+                *args, **kwargs):
 
         super(AutoShootingIntegrandModelSimple, self).__init__(in_features=in_features,
                                                                nonlinearity=nonlinearity,
@@ -157,6 +162,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
                                                                nr_of_particles=nr_of_particles,
                                                                particle_dimension=particle_dimension,
                                                                particle_size=particle_size,
+                                                               parameter_weight=parameter_weight,
                                                                *args, **kwargs)
 
 
@@ -178,7 +184,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         # todo: make this more generic again
         dim = 2
         #linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
-        linear = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features)
+        linear = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features, weight=self.parameter_weight)
         parameter_objects['l1'] = linear
 
         return parameter_objects
@@ -208,7 +214,8 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
 class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, *args, **kwargs):
+                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,
+                *args, **kwargs):
 
         super(AutoShootingIntegrandModelSimpleConv2D, self).__init__(in_features=in_features,
                                                                      nonlinearity=nonlinearity,
@@ -217,6 +224,7 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
                                                                      nr_of_particles=nr_of_particles,
                                                                      particle_dimension=particle_dimension,
                                                                      particle_size=particle_size,
+                                                                     parameter_weight=parameter_weight,
                                                                      *args, **kwargs)
 
         self.filter_size = filter_size
@@ -243,8 +251,8 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
 
         parameter_objects = SortedDict()
 
-        conv1 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1)
-        conv2 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1)
+        conv1 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1, weight=self.parameter_weight)
+        conv2 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1, weight=self.parameter_weight)
 
         parameter_objects['conv1'] = conv1
         parameter_objects['conv2'] = conv2
@@ -278,7 +286,8 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
 class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                 nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, *args, **kwargs):
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,
+                 *args, **kwargs):
 
         super(AutoShootingIntegrandModelConv2DBatch, self).__init__(in_features=in_features,
                                                                     nonlinearity=nonlinearity,
@@ -287,6 +296,7 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
                                                                     nr_of_particles=nr_of_particles,
                                                                     particle_dimension=particle_dimension,
                                                                     particle_size=particle_size,
+                                                                    parameter_weight=parameter_weight,
                                                                     *args, **kwargs)
 
         self.filter_size = filter_size
@@ -313,8 +323,8 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
 
         parameter_objects = SortedDict()
 
-        conv1 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1)
-        conv2 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1)
+        conv1 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1, weight=self.parameter_weight)
+        conv2 = oc.SNN_Conv2d(in_channels=self.in_features,out_channels=self.in_features,kernel_size=self.filter_size,padding = 1, weight=self.parameter_weight)
         #group_norm = oc.SNN_GroupNorm(self.channel_number,self.channel_number,affine = False)
         group_norm = nn.GroupNorm(self.in_features,self.in_features,affine = False)
         parameter_objects['conv1'] = conv1

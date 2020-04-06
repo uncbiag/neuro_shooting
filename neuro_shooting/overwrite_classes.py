@@ -9,10 +9,16 @@ from sortedcontainers import SortedDict
 # todo: implement convenience functions so we can move datastructures to the GPU if desired
 
 class RemoveParameters(object):
-    def __init__(self):
+    def __init__(self,weight=None):
+        """
+        Removes the parameters and replaces them by variables.
+        :param weight: if specified this scalar is used to weight this parameter in the energy. \
+                    Can also be specified individually via the add_weight method (if different weights for the different parameters are desired)
+        """
         super(RemoveParameters, self).__init__()
         self._parameter_dict = None
         self._parameter_weight_dict = SortedDict()
+        self._weight = weight
 
     def _remove_parameters(self):
         new_parameter_dict = SortedDict()
@@ -27,6 +33,12 @@ class RemoveParameters(object):
 
         self._parameters.clear()
         self._parameter_dict = new_parameter_dict
+
+        # if there is a global weight specified, associate it with all the parameters
+        if self._weight is not None:
+            self._parameter_weight_dict = SortedDict()
+            for k in self._parameter_dict:
+                self._parameter_weight_dict[k] = self._weight
 
     def add_weight(self,parameter_name,parameter_weight):
         if parameter_name not in self._parameter_dict:
@@ -70,9 +82,9 @@ class RemoveParameters(object):
         return self
 
 class SNN_Linear(nn.Linear,RemoveParameters):
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, bias=True, weight=None):
         super(SNN_Linear, self).__init__(in_features=in_features, out_features=out_features, bias=bias)
-        RemoveParameters.__init__(self)
+        RemoveParameters.__init__(self, weight=weight)
         self._remove_parameters()
 
     def _apply(self, fn):
@@ -91,12 +103,12 @@ class SNN_Linear(nn.Linear,RemoveParameters):
 class SNN_Conv2d(nn.Conv2d,RemoveParameters):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,
-                 bias=True, padding_mode='zeros'):
+                 bias=True, padding_mode='zeros', weight=None):
         super(SNN_Conv2d, self).__init__(in_channels=in_channels, out_channels=out_channels,
                                          kernel_size=kernel_size, stride=stride,
                                          padding=padding, dilation=dilation, groups=groups,
                                          bias=bias, padding_mode=padding_mode)
-        RemoveParameters.__init__(self)
+        RemoveParameters.__init__(self, weight=weight)
         self._remove_parameters()
 
     def _apply(self, fn):
@@ -123,10 +135,10 @@ class SNN_Conv2d(nn.Conv2d,RemoveParameters):
 
 class SNN_GroupNorm(nn.GroupNorm,RemoveParameters):
     def __init__(self, num_groups, num_channels, affine = True,
-                 eps=1e-05):
+                 eps=1e-05, weight=None):
         super(SNN_GroupNorm, self).__init__(num_groups=num_groups, num_channels=num_channels,
                                          affine=affine, eps=eps)
-        RemoveParameters.__init__(self)
+        RemoveParameters.__init__(self, weight=weight)
         if affine:
             self._remove_parameters()
         else:

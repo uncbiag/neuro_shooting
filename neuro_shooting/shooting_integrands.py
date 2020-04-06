@@ -17,12 +17,13 @@ class ShootingIntegrandBase(nn.Module):
     Base class for shooting based neural ODE approaches
     """
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
                  *args, **kwargs):
         """
         Constructor
         :param nonlinearity: desired nonlinearity to be used tanh, sigmoid, relu, ...
         :param transpose_state_when_forward: if set to true states get transposed (1,2) at the beginng and end of processing
+        :param parameter_weight: weight that gets associated to the kinetic energy for the parameters
         """
         super(ShootingIntegrandBase, self).__init__()
 
@@ -42,6 +43,8 @@ class ShootingIntegrandBase(nn.Module):
         """Dimension of the particle (i.e., how many channels)"""
         self.particle_size = particle_size
         """Size of the particle, corresponds to vector dimension for a vector-evolution, should be a tuple for convolution."""
+        self.parameter_weight = parameter_weight
+        """This weight should be associated with the model parameters when the different layers are created"""
 
         self._parameter_objects = None
         """Hierarchical dictionary for the parameters (stored within the repspective nn.Modules)"""
@@ -257,7 +260,7 @@ class ShootingIntegrandBase(nn.Module):
     def compute_kinetic_energy(self,t,parameter_objects):
         """
         Computes the kinetic energy. This is the kinetic energy given the parameters. Will only be relevant if the system is
-        nonlinear in its parameters (when a fixed point solution needs to be computed). Otherwise will bot be used. By default just
+        nonlinear in its parameters (when a fixed point solution needs to be computed). Otherwise will not be used. By default just
         computes the sum of squares of the parameters which can be weighted via a scalar (given by the instance of the class
         defining the transformation).
 
@@ -435,7 +438,7 @@ class ShootingIntegrandBase(nn.Module):
                 if k not in current_weights:
                     current_pars[k] = -current_pars_from[f]
                 else:
-                    current_pars[k] = -current_weights[k]*current_pars_from[f]
+                    current_pars[k] = -current_pars_from[f]/current_weights[k]
 
     @abstractmethod
     def compute_parameters(self,t,parameter_objects,state_dict,costate_dict):
@@ -531,7 +534,7 @@ class ShootingIntegrandBase(nn.Module):
 class AutogradShootingIntegrandBase(ShootingIntegrandBase):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,
-                 nr_of_particles=10, particle_dimension=1, particle_size=2,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
                  *args,**kwargs):
         super(AutogradShootingIntegrandBase, self).__init__(in_features=in_features,
                                                             nonlinearity=nonlinearity,
@@ -540,6 +543,7 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
                                                             nr_of_particles=nr_of_particles,
                                                             particle_dimension=particle_dimension,
                                                             particle_size=particle_size,
+                                                            parameter_weight=parameter_weight,
                                                             *args, **kwargs)
 
     def rhs_advect_costate_dict_of_dicts(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
@@ -567,7 +571,7 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
 class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,
-                 nr_of_particles=10, particle_dimension=1, particle_size=2,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
                  *args,**kwargs):
         super(LinearInParameterAutogradShootingIntegrand, self).__init__(in_features=in_features,
                                                                          nonlinearity=nonlinearity,
@@ -576,6 +580,7 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
                                                                          nr_of_particles=nr_of_particles,
                                                                          particle_dimension=particle_dimension,
                                                                          particle_size=particle_size,
+                                                                         parameter_weight=parameter_weight,
                                                                          *args, **kwargs)
 
     def compute_parameters_directly(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
@@ -609,7 +614,7 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
 class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,
-                 nr_of_particles=10, particle_dimension=1, particle_size=2,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
                  *args,**kwargs):
         super(NonlinearInParameterAutogradShootingIntegrand, self).__init__(in_features=in_features,
                                                                             nonlinearity=nonlinearity,
@@ -618,6 +623,7 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
                                                                             nr_of_particles=nr_of_particles,
                                                                             particle_dimension=particle_dimension,
                                                                             particle_size=particle_size,
+                                                                            parameter_weight=parameter_weight,
                                                                             *args, **kwargs)
 
     def compute_parameters_iteratively(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
@@ -657,7 +663,8 @@ class ShootingLinearInParameterVectorIntegrand(LinearInParameterAutogradShooting
     Base class for shooting based neural ODE approaches
     """
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10,particle_dimension=1,particle_size=2,state_initializer=None,costate_initializer=None,
+                nr_of_particles=10,particle_dimension=1,particle_size=2,parameter_weight=None,
+                 state_initializer=None,costate_initializer=None,
                  *args, **kwargs):
 
         super(ShootingLinearInParameterVectorIntegrand, self).__init__(in_features=in_features,
@@ -666,6 +673,7 @@ class ShootingLinearInParameterVectorIntegrand(LinearInParameterAutogradShooting
                                                                        concatenate_parameters=concatenate_parameters,
                                                                        nr_of_particles=nr_of_particles,
                                                                        particle_dimension=particle_dimension,particle_size=particle_size,
+                                                                       parameter_weight=parameter_weight,
                                                                        *args, **kwargs)
 
         if state_initializer is not None:
@@ -688,7 +696,9 @@ class ShootingNonlinearInParameterVectorIntegrand(NonlinearInParameterAutogradSh
     Base class for shooting based neural ODE approaches
     """
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10,particle_dimension=1,particle_size=2,state_initializer=None,costate_initializer=None,
+                nr_of_particles=10,particle_dimension=1,particle_size=2,
+                 parameter_weight=None,
+                 state_initializer=None,costate_initializer=None,
                  *args, **kwargs):
 
         super(ShootingNonlinearInParameterVectorIntegrand, self).__init__(in_features=in_features,
@@ -697,6 +707,7 @@ class ShootingNonlinearInParameterVectorIntegrand(NonlinearInParameterAutogradSh
                                                                           concatenate_parameters=concatenate_parameters,
                                                                           nr_of_particles=nr_of_particles,
                                                                           particle_dimension=particle_dimension,particle_size=particle_size,
+                                                                          parameter_weight=parameter_weight,
                                                                           *args, **kwargs)
 
         if state_initializer is not None:
@@ -720,7 +731,8 @@ class ShootingLinearInParameterConvolutionIntegrand(LinearInParameterAutogradSho
     """
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                 nr_of_particles=10, particle_dimension=1, particle_size=2,state_initializer=None,costate_initializer=None,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
+                 state_initializer=None,costate_initializer=None,
                  *args, **kwargs):
 
         super(ShootingLinearInParameterConvolutionIntegrand, self).__init__(in_features=in_features,
@@ -729,6 +741,7 @@ class ShootingLinearInParameterConvolutionIntegrand(LinearInParameterAutogradSho
                                                                             concatenate_parameters=concatenate_parameters,
                                                                             nr_of_particles=nr_of_particles,
                                                                             particle_dimension=particle_dimension, particle_size=particle_size,
+                                                                            parameter_weight=parameter_weight,
                                                                             *args, **kwargs)
 
         if state_initializer is not None:
@@ -751,7 +764,8 @@ class ShootingNonlinearInParameterConvolutionIntegrand(NonlinearInParameterAutog
     """
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                 nr_of_particles=10, particle_dimension=1, particle_size=2,state_initializer=None,costate_initializer=None,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
+                 state_initializer=None,costate_initializer=None,
                  *args, **kwargs):
 
         super(ShootingNonlinearInParameterConvolutionIntegrand, self).__init__(in_features=in_features,
@@ -760,6 +774,7 @@ class ShootingNonlinearInParameterConvolutionIntegrand(NonlinearInParameterAutog
                                                                                concatenate_parameters=concatenate_parameters,
                                                                                nr_of_particles=nr_of_particles,
                                                                                particle_dimension=particle_dimension, particle_size=particle_size,
+                                                                               parameter_weight=parameter_weight,
                                                                                *args, **kwargs)
 
         if state_initializer is not None:
