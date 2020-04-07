@@ -77,7 +77,8 @@ class RemoveParameters(object):
             self._parameter_dict[k] = convert(self._parameter_dict[k])
 
         for k in self._parameter_weight_dict:
-            self._parameter_weight_dict[k] = convert(self._parameter_weight_dict[k])
+            if type(self._parameter_weight_dict[k]) is torch.Tensor:
+                self._parameter_weight_dict[k] = convert(self._parameter_weight_dict[k])
 
         return self
 
