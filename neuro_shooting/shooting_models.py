@@ -358,6 +358,68 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
+class AutoShootingOptimalTransportSimple(shooting.OptimalTransportNonLinearInParameter):
+    def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
+                *args, **kwargs):
+
+        super(AutoShootingOptimalTransportSimple, self).__init__(in_features=in_features,
+                                                               nonlinearity=nonlinearity,
+                                                               transpose_state_when_forward=transpose_state_when_forward,
+                                                               concatenate_parameters=concatenate_parameters,
+                                                               nr_of_particles=nr_of_particles,
+                                                               particle_dimension=particle_dimension,
+                                                               particle_size=particle_size,
+                                                               parameter_weight=parameter_weight,
+                                                               *args, **kwargs)
+        self.inflation_factor = 1
+
+    def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+
+        state_dict['q1'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=self.particle_size,
+                                                                     particle_dimension=self.particle_dimension,
+                                                                     set_to_zero=set_to_zero)
+        state_dict['q2'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=self.particle_size,
+                                                                     particle_dimension=self.particle_dimension,
+                                                                     set_to_zero=set_to_zero)
+        return state_dict
+
+    def create_default_parameter_objects(self):
+
+        parameter_objects = SortedDict()
+
+        # todo: make this more generic again
+        dim = 2
+        #linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
+        linear = oc.SNN_Linear(in_features=self.in_features, out_features=self.inflation_factor * self.in_features, weight=self.parameter_weight)
+        linear2 = oc.SNN_Linear(in_features=self.inflation_factor * self.in_features, out_features=self.in_features, weight=self.parameter_weight)
+        parameter_objects['l1'] = linear
+        parameter_objects["l2"] = linear2
+        return parameter_objects
+
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
+        rhs = SortedDict()
+        s = state_dict_or_dict_of_dicts
+        p = parameter_objects
+        rhs['dot_q1'] = p['l1'](self.nl(s["q2"]))
+        rhs['dot_q2'] = p['l2'](s["q1"])
+        return rhs
+
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data_dict for given initial data tensor
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+        data_dict['q2'] = torch.zeros_like(x)
+        return data_dict
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+
 class ShootingModule(nn.Module):
 
     def __init__(self,shooting,method = 'rk4',rtol = 1e-8,atol = 1e-10, step_size = None, max_num_steps=None):
