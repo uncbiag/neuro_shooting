@@ -182,7 +182,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         parameter_objects = SortedDict()
 
         # todo: make this more generic again
-        dim = 2
+        # dim = 2
         #linear = oc.SNN_Linear(in_features=self.d, out_features=self.d)
         linear = oc.SNN_Linear(in_features=self.in_features, out_features=self.in_features, weight=self.parameter_weight)
         parameter_objects['l1'] = linear
