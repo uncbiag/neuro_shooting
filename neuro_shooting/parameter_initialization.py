@@ -3,9 +3,10 @@ import torch.nn as nn
 from abc import abstractmethod
 
 class ParameterInitializer(object):
+
     def __init__(self,only_random_initialization=True,random_initialization_magnitude=0.5,sample_batch=None):
         super(ParameterInitializer, self).__init__()
-        self.sample_batch = None
+        self.sample_batch = sample_batch
         self.only_random_initialization=only_random_initialization
         self.random_initialization_magnitude = random_initialization_magnitude
 
