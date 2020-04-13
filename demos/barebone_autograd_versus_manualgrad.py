@@ -22,6 +22,8 @@ parameter_weight = 1.0
 in_features = 3
 nr_of_particles = 2
 
+# this is neeeded to determine how many Lagrangian multipliers there are
+# as we add them via their mean
 nr_of_particle_parameters = in_features*nr_of_particles
 
 shooting_integrand = shooting_models.AutoShootingIntegrandModelSimple(
@@ -162,7 +164,8 @@ pi = c['p_q1']
 At = torch.zeros(in_features,in_features)
 for i in range(nr_of_particles):
     At = At -(pi[i,...].t()*nl(qi[i,...])).t()
-bt = -pi.sum(dim=0)  # -\sum_i q_i
+At = 1/nr_of_particle_parameters*At # because of the mean in the Lagrangian multiplier
+bt = -1/nr_of_particle_parameters*pi.sum(dim=0)  # -\sum_i q_i
 
 # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
 dot_qt = torch.matmul(nl(qi),At) + bt
@@ -188,7 +191,7 @@ parameter_tuple = scd_utils.compute_tuple_from_parameter_objects(parameter_objec
 parameter_grad_tuple = autograd.grad(current_potential_energy,
                                      parameter_tuple,
                                      grad_outputs=current_potential_energy.data.new(
-                                         current_potential_energy.shape).fill_(nr_of_particle_parameters),
+                                         current_potential_energy.shape).fill_(1),
                                      create_graph=True,
                                      retain_graph=True,
                                      allow_unused=True)

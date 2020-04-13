@@ -52,19 +52,19 @@ torch.manual_seed(args.seed)
 integrator_options = dict()
 
 # default tolerance settings
-#rtol=1e-6
-#atol=1e-12
+rtol=1e-6
+atol=1e-12
 
-rtol = 1e-8
-atol = 1e-10
+#rtol = 1e-8
+#atol = 1e-10
 
 integrator_options  = {'step_size': args.stepsize}
 
-integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
-                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
-
-#integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'dopri5',
+#integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
 #                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
+
+integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'dopri5',
+                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
@@ -366,8 +366,8 @@ if __name__ == '__main__':
         batch_y0, batch_t, batch_y = get_batch(K)
 
         #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
-        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity,parameter_weight=0.1)
+        shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
+        #shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity,parameter_weight=1.0)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
         shooting_block = shooting_block.to(device)

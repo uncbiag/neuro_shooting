@@ -66,6 +66,10 @@ parameter_weight = 1.0
 in_features = 3
 nr_of_particles = 2
 
+# this is neeeded to determine how many Lagrangian multipliers there are
+# as we add them via their mean
+nr_of_particle_parameters = in_features*nr_of_particles
+
 shooting_integrand = shooting_models.AutoShootingIntegrandModelSimple(
             in_features=in_features,
             particle_dimension=1,
@@ -128,7 +132,8 @@ pi = c['p_q1']
 At = torch.zeros(in_features,in_features)
 for i in range(nr_of_particles):
     At = At -(pi[i,...].t()*nl(qi[i,...])).t()
-bt = -pi.sum(dim=0)  # -\sum_i q_i
+At = 1/nr_of_particle_parameters*At # because of the mean in the Lagrangian multiplier
+bt = -1/nr_of_particle_parameters*pi.sum(dim=0)  # -\sum_i q_i
 
 # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
 dot_qt = torch.matmul(nl(qi),At) + bt
@@ -150,7 +155,7 @@ p = parameter_objects
 
 # extracting the auto-shooting quantities
 
-as_At = p['l1']._parameter_dict['weight'] # should be the same as At
+as_A = p['l1']._parameter_dict['weight'] # should be the same as At
 as_bt = p['l1']._parameter_dict['bias'] # should be the same as bt
 
 as_dot_qt = rhs_state_dict[block_name]['q1'] # should be the same as dot_qt
