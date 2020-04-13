@@ -220,6 +220,11 @@ print('At-as_At = {}'.format(At-as_At))
 # check b
 print('bt-as_bt = {}'.format(bt-as_bt))
 
+# check A
+print('At/as_At = {}'.format(At/as_At))
+
+# check b
+print('bt/as_bt = {}'.format(bt/as_bt))
 
 print('Hello world')
 
