@@ -1,18 +1,17 @@
 # the goal of this script is to use a simple affine model and check if the gradients are computed correctly
 
-import numpy as np
 import torch
-import torch.nn as nn
 import random
+
+seed = 1234
+print('Setting the random seed to {:}'.format(seed))
+random.seed(seed)
+torch.manual_seed(seed)
 
 from sortedcontainers import SortedDict
 
-import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
-import neuro_shooting.generic_integrator as generic_integrator
-
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
-import neuro_shooting.overwrite_classes as oc
 
 # this is the initial conditions code more or less straight from shooting_blocks.py (with some input parameters added to avoid using self
 def _get_initial_conditions_from_data_dict_of_dicts(state_parameter_dict, costate_parameter_dict, data_dict_of_dicts, pass_through_state_dict_of_dicts,
