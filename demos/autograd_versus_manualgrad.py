@@ -113,7 +113,7 @@ t_state_dict, t_costate_dict, t_data_dict = shooting_integrand.disassemble_tenso
 # dot_qi = A \sigma(qi) + b
 # dot_pi = -d\sigma(qi)^T A^T pi
 # A = \sum_i pi\sigma(qi)^T
-# b = -\sum_i qi
+# b = -\sum_i pi
 
 # compute rhs for the state and costate
 # first get the state and the costate (for the current block)
