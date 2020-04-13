@@ -141,7 +141,7 @@ dot_qt = torch.matmul(nl(qi),At) + bt
 # now we can also compute the rhs of the costate (based on the manually computed shooting equations)
 dot_pt = torch.zeros_like(pi)
 for i in range(nr_of_particles):
-    dot_pt[i,...] = -dnl(qi[0,...])*torch.matmul(pi[0,...],At.t())
+    dot_pt[i,...] = -dnl(qi[i,...])*torch.matmul(pi[i,...],At.t())
 
 initial_time = torch.tensor([0.0]).float()
 rhs = shooting_integrand(initial_time,initial_conditions)
