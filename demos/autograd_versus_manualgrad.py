@@ -163,13 +163,13 @@ print('dot_qt-as_dot_qt = {}'.format(dot_qt-as_dot_qt))
 print('dot_pt-as_dot_pt = {}'.format(dot_pt-as_dot_pt))
 
 # check A
-print('At-as_At = {}'.format(At-as_At))
+print('At.t()-as_A = {}'.format(At.t()-as_A))
 
 # check b
 print('bt-as_bt = {}'.format(bt-as_bt))
 
 # check A
-print('At/as_At = {}'.format(At/as_At))
+print('At.t()/as_A = {}'.format(At.t()/as_A))
 
 # check b
 print('bt/as_bt = {}'.format(bt/as_bt))

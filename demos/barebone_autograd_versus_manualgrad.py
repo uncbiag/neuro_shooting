@@ -22,6 +22,8 @@ parameter_weight = 1.0
 in_features = 3
 nr_of_particles = 2
 
+nr_of_particle_parameters = in_features*nr_of_particles
+
 shooting_integrand = shooting_models.AutoShootingIntegrandModelSimple(
             in_features=in_features,
             particle_dimension=1,
@@ -186,7 +188,7 @@ parameter_tuple = scd_utils.compute_tuple_from_parameter_objects(parameter_objec
 parameter_grad_tuple = autograd.grad(current_potential_energy,
                                      parameter_tuple,
                                      grad_outputs=current_potential_energy.data.new(
-                                         current_potential_energy.shape).fill_(1),
+                                         current_potential_energy.shape).fill_(nr_of_particle_parameters),
                                      create_graph=True,
                                      retain_graph=True,
                                      allow_unused=True)
@@ -201,7 +203,7 @@ negate_divide_and_store_in_parameter_objects(parameter_objects=parameter_objects
 
 # extracting the auto-shooting quantities
 
-as_At = p['l1']._parameter_dict['weight'] # should be the same as At
+as_A = p['l1']._parameter_dict['weight'] # should be the same as At
 as_bt = p['l1']._parameter_dict['bias'] # should be the same as bt
 
 #
@@ -215,13 +217,13 @@ as_bt = p['l1']._parameter_dict['bias'] # should be the same as bt
 # print('dot_pt-as_dot_pt = {}'.format(dot_pt-as_dot_pt))
 #
 # check A
-print('At-as_At = {}'.format(At-as_At))
+print('At.t()-as_A = {}'.format(At.t()-as_A))
 
 # check b
 print('bt-as_bt = {}'.format(bt-as_bt))
 
 # check A
-print('At/as_At = {}'.format(At/as_At))
+print('At.t()/as_A = {}'.format(At.t()/as_A))
 
 # check b
 print('bt/as_bt = {}'.format(bt/as_bt))
