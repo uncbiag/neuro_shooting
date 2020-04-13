@@ -128,7 +128,7 @@ pi = c['p_q1']
 At = torch.zeros(in_features,in_features)
 for i in range(nr_of_particles):
     At = At -(pi[i,...].t()*nl(qi[i,...])).t()
-bt = -qi.sum(dim=0)  # -\sum_i q_i
+bt = -pi.sum(dim=0)  # -\sum_i q_i
 
 # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
 dot_qt = torch.matmul(nl(qi),At) + bt
