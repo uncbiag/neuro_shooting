@@ -55,6 +55,9 @@ class ShootingIntegrandBase(nn.Module):
         self._custom_hook_data = None
         """Custom data that is passed to a hook (set via set_custom_hook_data)"""
 
+        self._overall_number_of_state_parameters = None
+        """Will hold the number of parameters (i.e. number of entries) over; this number is needed to get an appropriate co-state as we add the rhs via mean to the Lagrangian """
+
         self.transpose_state_when_forward = transpose_state_when_forward
 
         # norm penalty
@@ -314,6 +317,10 @@ class ShootingIntegrandBase(nn.Module):
         :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
         """
 
+        # make sure that we do not deal with some lingering dependencies here
+        # TODO: check this. This is newly introduced! Where do we need to detach?
+        self.detach_and_require_gradients_for_parameter_objects(self._parameter_objects)
+
         kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects)
         potential_energy = self.compute_potential_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                          costate_dict_of_dicts=costate_dict_of_dicts,
@@ -352,6 +359,8 @@ class ShootingIntegrandBase(nn.Module):
         if self._parameter_objects is None:
             self._parameter_objects = self.create_default_parameter_objects()
 
+        self._overall_number_of_state_parameters = 0
+
         if state_dict is None:
             return None
         else:
@@ -359,6 +368,7 @@ class ShootingIntegrandBase(nn.Module):
             costate_dict = SortedDict()
             for k in state_dict:
                 costate_dict['p_' + str(k)] = self._costate_initializer.create_parameters_like(state_dict[k])
+                self._overall_number_of_state_parameters += state_dict[k].numel()
 
             return costate_dict
 
@@ -531,6 +541,7 @@ class ShootingIntegrandBase(nn.Module):
 
         return output
 
+
 class AutogradShootingIntegrandBase(ShootingIntegrandBase):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False,
                  concatenate_parameters=True,
@@ -555,8 +566,12 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
         # form a tuple of all the state variables (because this is what we take the derivative of)
         state_tuple = scd_utils.compute_tuple_from_generic_dict_of_dicts(state_dict_of_dicts)
 
+        # we use self._overall_number_of_state_parameters here (instead of 1) as the rhs of the state evolution equation is
+        # added via mean (and not sum). As the control Lagrangian does not include p_i\dot{q_i}, we need to make sure that it is correctly scaled.
+        # and using fill with self._overall_number_of_state_parameters does this
+
         dot_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
-                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1),
+                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(self._overall_number_of_state_parameters),
                                           create_graph=True,
                                           retain_graph=True,
                                           allow_unused=True)
@@ -632,7 +647,7 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
         nr_of_fixed_point_iterations = 5
 
         for n in range(nr_of_fixed_point_iterations):
-            current_lagrangian, current_kinectic_energy, current_potential_energy = \
+            current_lagrangian, current_kinetic_energy, current_potential_energy = \
                 self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
 
             parameter_tuple = scd_utils.compute_tuple_from_parameter_objects(parameter_objects)
@@ -652,7 +667,7 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
             self.add_multiple_to_parameter_objects(parameter_objects=parameter_objects,
                                                    pd_from=parameter_grad_dict, multiplier=-learning_rate)
 
-        return current_kinectic_energy
+        return current_kinetic_energy
 
     def compute_parameters(self,t, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
         return self.compute_parameters_iteratively(t=t, parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
@@ -789,3 +804,123 @@ class ShootingNonlinearInParameterConvolutionIntegrand(NonlinearInParameterAutog
 
         self.concatenation_dim = 1
         self.data_concatenation_dim = self.concatenation_dim
+
+
+class OptimalTransportNonLinearInParameter(NonlinearInParameterAutogradShootingIntegrand):
+    def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2,
+                 parameter_weight=None,
+                 state_initializer=None, costate_initializer=None,
+                 *args, **kwargs):
+        super(OptimalTransportNonLinearInParameter, self).__init__(in_features=in_features,
+                                                                   nonlinearity=nonlinearity,
+                                                                   transpose_state_when_forward=transpose_state_when_forward,
+                                                                   concatenate_parameters=concatenate_parameters,
+                                                                   nr_of_particles=nr_of_particles,
+                                                                   particle_dimension=particle_dimension,
+                                                                   particle_size=particle_size,
+                                                                   parameter_weight=parameter_weight,
+                                                                   *args, **kwargs)
+
+        if state_initializer is not None:
+            self._state_initializer = state_initializer
+        else:
+            self._state_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
+
+        if costate_initializer is not None:
+            self._costate_initializer = costate_initializer
+        else:
+            self._costate_initializer = parameter_initialization.VectorEvolutionParameterInitializer()
+
+        self.concatenation_dim = 2
+        self.data_concatenation_dim = self.concatenation_dim
+        self.enlargement_dimensions = None
+
+    def compute_kinetic_energy(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+        """
+        Computes the potential energy for the Lagrangian. I.e., it pairs the costates with the right hand sides of the
+        state evolution equations. This method is typically not called manually. Everything should happen automatically here.
+
+        :param t: current time-point
+        :param state_dict_of_dicts: SortedDict of SortedDicts holding the states
+        :param costate_dict_of_dicts: SortedDict of SortedDicts holding the costates
+        :param parameter_objects: parameters to compute the current right hand sides, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer).
+        :return: returns the potential energy (as a pytorch variable)
+        """
+
+        # this is really only how one propagates through the system given the parameterization
+
+        kinetic_energy = 0
+        rhs_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                                      parameter_objects=parameter_objects,
+                                                                      concatenation_dim=self.concatenation_dim)
+
+        for d_ks in rhs_state_dict_of_dicts:
+            c_rhs_state_dict = rhs_state_dict_of_dicts[d_ks]
+            for ks in c_rhs_state_dict:
+                kinetic_energy += torch.sum(c_rhs_state_dict[ks]**2)
+        #todo : introduce a penalty parameter.
+        kinetic_energy = 0.5 * self.parameter_weight * kinetic_energy
+        return kinetic_energy
+
+    def compute_parameters_iteratively(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
+
+        learning_rate = 0.5
+        nr_of_fixed_point_iterations = 10
+
+        for n in range(nr_of_fixed_point_iterations):
+            current_lagrangian, current_kinetic_energy, current_potential_energy = \
+                self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
+
+            parameter_tuple = scd_utils.compute_tuple_from_parameter_objects(parameter_objects)
+
+            parameter_grad_tuple = autograd.grad(current_lagrangian,
+                                                 parameter_tuple,
+                                                 grad_outputs=current_lagrangian.data.new(
+                                                     current_lagrangian.shape).fill_(1),
+                                                 create_graph=True,
+                                                 retain_graph=True,
+                                                 allow_unused=True)
+
+            parameter_grad_dict = scd_utils.extract_dict_from_tuple_based_on_parameter_objects(data_tuple=parameter_grad_tuple,
+                                                                                     parameter_objects=parameter_objects,
+                                                                                     prefix='grad_')
+
+            self.add_multiple_to_parameter_objects(parameter_objects=parameter_objects,
+                                                   pd_from=parameter_grad_dict, multiplier=-learning_rate)
+
+        return current_kinetic_energy
+
+    def compute_lagrangian(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+        """
+        Computes the lagrangian. Note that this is the Lagrangian in the sense of optimal control, i.e.,
+
+        L = T - U,
+
+        where T is the kinetic energy (here some norm on the parameters governing the state propagation/advection) and
+        U is the potential energy (which amounts to the costates paired with the right hand sides of the state advection equations),
+        i,e. <p,dot_x>
+
+        Returns a triple of scalars. The value of the Lagrangian as well as of the kinetic and the potential energies.
+
+        :param t: current timepoint
+        :param state_dict_of_dicts: SortedDict of SortedDict's containing the states
+        :param costate_dict_of_dicts: SortedDict of SortedDict's containing the costates
+        :param parameter_objects: SortedDict with all the parameters for the advection equation, stored as a SortedDict of instances which compute data transformations (for example linear layer or convolutional layer)
+        :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
+        """
+
+        # make sure that we do not deal with some lingering dependencies here
+        # TODO: check this. This is newly introduced! Where do we need to detach?
+        self.detach_and_require_gradients_for_parameter_objects(self._parameter_objects)
+
+        kinetic_energy = self.compute_kinetic_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                         costate_dict_of_dicts=costate_dict_of_dicts,
+                                                         parameter_objects=parameter_objects)
+        potential_energy = self.compute_potential_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                         costate_dict_of_dicts=costate_dict_of_dicts,
+                                                         parameter_objects=parameter_objects)
+
+        lagrangian = kinetic_energy-potential_energy
+
+        return lagrangian, kinetic_energy, potential_energy

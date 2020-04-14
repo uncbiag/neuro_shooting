@@ -56,16 +56,20 @@ torch.manual_seed(args.seed)
 integrator_options = dict()
 
 # default tolerance settings
-# rtol=1e-6
-# atol=1e-12
+rtol=1e-6
+atol=1e-12
 
-rtol = 1e-8
-atol = 1e-10
+#rtol = 1e-8
+#atol = 1e-10
 
 integrator_options = {'step_size': args.stepsize}
 
-integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
+#integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
+#                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
+
+integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'dopri5',
                                                   use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
+
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
@@ -73,6 +77,7 @@ t_max = 100
 true_y0 = torch.tensor([[0.6, 0.3]]).to(device)
 t = torch.linspace(0., t_max, args.data_size).to(device)
 true_A = torch.tensor([[-0.1, -1.0], [1.0, -0.1]]).to(device)
+
 
 # true_y0 = torch.tensor([[2., 0.]]).to(device)
 # true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
@@ -409,6 +414,9 @@ if __name__ == '__main__':
         # shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
         pw = 0.5 # TODO: understand what this weight really is
         shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=args.nonlinearity, nr_of_particles=args.nr_of_particles, parameter_weight=pw)
+        # shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
+        # shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
+        # shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity,parameter_weight=1.0)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
         shooting_block = shooting_block.to(device)
@@ -417,9 +425,12 @@ if __name__ == '__main__':
         _,_,sample_batch = get_batch()
         shooting_block(x=sample_batch)
 
-        #optimizer = optim.RMSprop(shooting.parameters(), lr=5e-3)
+        #optimizer = optim.RMSprop(shooting_block.parameters(), lr=5e-3)
+
         optimizer = optim.Adam(shooting_block.parameters(), lr=2e-2)
-        #optimizer = optim.SGD(shooting.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
+
+
+        #optimizer = optim.SGD(shooting_block.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
         #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
 
     all_thetas = None
