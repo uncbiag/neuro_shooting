@@ -1,3 +1,5 @@
+# modeled after torchdiffeq's ode_demo.py
+
 import os
 import argparse
 import time
@@ -6,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import random
+import matplotlib.cm as cm
+
 
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
@@ -18,10 +22,10 @@ parser = argparse.ArgumentParser('ODE demo')
 parser.add_argument('--network', type=str, choices=['odenet', 'shooting'], default='shooting', help='Sets the network training appproach.')
 parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
 parser.add_argument('--stepsize', type=float, default=0.5, help='Step size for the integrator (if not adaptive).')
-parser.add_argument('--data_size', type=int, default=250, help='Length of the simulated data that should be matched.')
-parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
-parser.add_argument('--batch_size', type=int, default=10, help='Number of training samples.')
-parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
+parser.add_argument('--data_size', type=int, default=250, help='number of time points on the simulated ODE.')
+parser.add_argument('--batch_time', type=int, default=100, help='Length of the training trajectories.')
+parser.add_argument('--batch_size', type=int, default=10, help='Number of training trajectories.')
+parser.add_argument('--niters', type=int, default=10000, help='Maximum number of iterations.')
 parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
 parser.add_argument('--seed', required=False, type=int, default=1234,
                     help='Sets the random seed which affects data shuffling')
@@ -30,14 +34,14 @@ parser.add_argument('--linear', action='store_true', help='If specified the grou
 
 parser.add_argument('--test_freq', type=int, default=20, help='Frequency with which the validation measures are to be computed.')
 parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
-
+parser.add_argument('--saveimgname',type=str, default='spiral', help='any images will be saved with this name')
+# should not use this flag because the validation contains trajectories of different time length from training
 parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
 parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
 parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
 parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
 parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
-
 
 parser.add_argument('--viz', action='store_true', help='Enable visualization.')
 parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
@@ -52,27 +56,29 @@ torch.manual_seed(args.seed)
 integrator_options = dict()
 
 # default tolerance settings
-#rtol=1e-6
-#atol=1e-12
+# rtol=1e-6
+# atol=1e-12
 
 rtol = 1e-8
 atol = 1e-10
 
-integrator_options  = {'step_size': args.stepsize}
+integrator_options = {'step_size': args.stepsize}
 
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                   use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-true_y0 = torch.tensor([[2., 0.]]).to(device)
-t = torch.linspace(0., 25., args.data_size).to(device)
-#true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
-#true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
-#true_A = torch.tensor([[-0.05, 2.0], [-2.0, -0.05]]).to(device)
-true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
+t_max = 100
+true_y0 = torch.tensor([[0.6, 0.3]]).to(device)
+t = torch.linspace(0., t_max, args.data_size).to(device)
+true_A = torch.tensor([[-0.1, -1.0], [1.0, -0.1]]).to(device)
 
-
+# true_y0 = torch.tensor([[2., 0.]]).to(device)
+# true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+# true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
+# true_A = torch.tensor([[-0.05, 2.0], [-2.0, -0.05]]).to(device)
+# true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
 
 
 class Lambda(nn.Module):
@@ -82,6 +88,7 @@ class Lambda(nn.Module):
             return torch.mm(y, true_A)
         else:
             return torch.mm(y**3, true_A)
+
 
 with torch.no_grad():
     true_y = integrator.integrate(func=Lambda(), x0=true_y0, t=t)
@@ -96,6 +103,8 @@ def get_batch(batch_size=None):
     batch_y = torch.stack([true_y[s + i] for i in range(args.batch_time)], dim=0)  # (T, M, D)
     return batch_y0, batch_t, batch_y
 
+
+# TODO: this is no longer used, deprecate?
 def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
 
     # convention for batch_t: t x B x (row-vector)
@@ -163,14 +172,44 @@ def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
         plt.show()
 
 
+def to_np(x):
+    return x.detach().cpu().numpy()
+
+
 def makedirs(dirname):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
 
 if args.viz:
-    makedirs('png')
+    makedirs('png/{}'.format(args.saveimgname))
     import matplotlib.pyplot as plt
+
+
+def plot_trajectories(true_y, pred_y, sim_time, save=None, figsize=(16, 8)):
+
+    plt.figure(figsize=figsize)
+
+    if true_y is not None:
+        if sim_time is None:
+            sim_time = [None] * len(true_y)
+        for o, t in zip(true_y, sim_time):
+            o, t = to_np(o), to_np(t)
+            plt.scatter(o[:, :, 0], o[:, :, 1], c=t, cmap=cm.plasma,label='observations (colored by time)')
+
+    if pred_y is not None:
+        for z in pred_y:
+            z = to_np(z)
+            plt.plot(z[:, :, 0], z[:, :, 1], lw=1.5, label="prediction")
+        if save is not None:
+            plt.savefig(save)
+
+    plt.legend()
+    plt.title('Trajectory: observed versus predicted')
+    plt.xlabel('y_1')
+    plt.ylabel('y_2')
+    plt.show()
+
 
 def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher_order_model=False):
 
@@ -185,9 +224,11 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
 
         ax_traj.cla()
         ax_traj.set_title('Trajectories')
-        ax_traj.set_xlabel('t')
-        ax_traj.set_ylabel('x,y')
+        ax_traj.set_xlabel('y_1')
+        ax_traj.set_ylabel('y_2')
 
+        # true_y and pred_y: [time points, sample size, 1, dimension of y]
+        # this graphic is unintelligible, too much overcrowding
         for n in range(true_y.size()[1]):
             ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
                      'g-')
@@ -195,14 +236,15 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
                      pred_y.detach().numpy()[:, n, 0, 1],
                      'b--')
 
+
         ax_traj.set_xlim(sim_time.min(), sim_time.max())
         ax_traj.set_ylim(-2, 2)
-        ax_traj.legend()
+        # ax_traj.legend()
 
         ax_phase.cla()
         ax_phase.set_title('Phase Portrait')
-        ax_phase.set_xlabel('x')
-        ax_phase.set_ylabel('y')
+        ax_phase.set_xlabel('y_1')
+        ax_phase.set_ylabel('y_2')
 
         for n in range(true_y.size()[1]):
             ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
@@ -298,6 +340,7 @@ class ODEFunc(nn.Module):
     def forward(self, t, y):
         return self.net(y)
 
+
 class ODESimpleFunc(nn.Module):
 
     def __init__(self):
@@ -315,6 +358,7 @@ class ODESimpleFunc(nn.Module):
 
     def forward(self, t, y):
         return self.net(y)
+
 
 class ODESimpleFuncWithIssue(nn.Module):
 # order matters. If linear transform comes after the tanh it cannot move the nonlinearity to a point where it does not matter
@@ -338,7 +382,6 @@ class ODESimpleFuncWithIssue(nn.Module):
 
 
 
-
 if __name__ == '__main__':
 
     t_0 = time.time()
@@ -357,13 +400,15 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        K = args.nr_of_particles
+        # TODO: it looks like nr_of_particles is directly passed into the shooting models AutoShooting*, can deprecate below
+        # K = args.nr_of_particles
+        #
+        # batch_y0, batch_t, batch_y = get_batch(K)
 
-        batch_y0, batch_t, batch_y = get_batch(K)
-
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
-        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity)
+        # shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,
+        # shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
+        pw = 0.5 # TODO: understand what this weight really is
+        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=args.nonlinearity, nr_of_particles=args.nr_of_particles, parameter_weight=pw)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
         shooting_block = shooting_block.to(device)
@@ -398,34 +443,6 @@ if __name__ == '__main__':
         optimizer.zero_grad()
         batch_y0, batch_t, batch_y = get_batch()
 
-        # if itr % args.test_freq == 0:
-        #     if itr % args.viz_freq == 0:
-        #
-        #         try:
-        #             if not is_odenet:
-        #                 theta_np = (shooting.compute_theta(q=shooting.q_params.transpose(1,2),p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
-        #                 bias_np = (shooting.compute_bias(p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
-        #
-        #                 if all_thetas is None:
-        #                     all_thetas = theta_np
-        #                 else:
-        #                     all_thetas = np.append(all_thetas,theta_np,axis=0)
-        #
-        #                 c_true_A = true_A.view(1,-1).detach().cpu().numpy()
-        #                 if all_real_thetas is None:
-        #                     all_real_thetas = c_true_A
-        #                 else:
-        #                     all_real_thetas = np.append(all_real_thetas,c_true_A,axis=0)
-        #
-        #                 if all_bs is None:
-        #                     all_bs = bias_np
-        #                 else:
-        #                     all_bs = np.append(all_bs,bias_np,axis=0)
-        #
-        #             visualize_batch(batch_t,batch_y,thetas=all_thetas,real_thetas=all_real_thetas,bias=all_bs)
-        #         except:
-        #             pass
-
         if is_odenet:
             pred_y = integrator.integrate(func=func, x0=batch_y0, t=batch_t)
         else:
@@ -440,11 +457,11 @@ if __name__ == '__main__':
             # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
             #shooting_hook.remove()
 
-        # todo: figure out wht the norm penality does not work
+        # TODO: figure out wht the norm penality does not work
         if args.sim_norm == 'l1':
             loss = torch.mean(torch.abs(pred_y - batch_y))
         elif args.sim_norm == 'l2':
-            loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
+            loss = torch.mean(torch.norm(pred_y - batch_y, dim=3))
         else:
             raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
@@ -452,7 +469,6 @@ if __name__ == '__main__':
             loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
 
         loss.backward()
-
         optimizer.step()
 
         if itr % args.test_freq == 0:
@@ -466,6 +482,7 @@ if __name__ == '__main__':
                 val_t = val_batch_t
                 val_y = val_batch_y
             else:
+                # TODO: it's weird that this validation set has time length much longer than what is trained
                 val_y0 = true_y0.unsqueeze(dim=0)
                 val_t = t
                 val_y = true_y.unsqueeze(dim=1)
@@ -508,7 +525,14 @@ if __name__ == '__main__':
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
                 if itr % args.viz_freq == 0:
-                    visualize(val_y, val_pred_y, val_t, shooting_block, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
+                    # visualize(val_y, val_pred_y, val_t, shooting_block, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
+
+                    # pick one trajectory in validation batch to visualize
+                    viz_index = 0
+                    plot_trajectories([val_y[:,viz_index,:,:]],
+                                      [val_pred_y[:,viz_index,:,:]],
+                                      [val_t],
+                                      save="./png/{}/{}.png".format(args.saveimgname,ii), figsize=(16, 8))
                     ii += 1
 
 
