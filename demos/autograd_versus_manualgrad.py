@@ -77,7 +77,7 @@ shooting_integrand = shooting_models.AutoShootingIntegrandModelSimple(
             nonlinearity='tanh',
             nr_of_particles=nr_of_particles,
             parameter_weight=parameter_weight,
-            use_analytic_solution=True)
+            use_analytic_solution=False)
 
 keep_state_parameters_at_zero = False
 

@@ -61,6 +61,9 @@ class ShootingIntegrandBase(nn.Module):
         self._overall_number_of_state_parameters = None
         """Will hold the number of parameters (i.e. number of entries) over; this number is needed to get an appropriate co-state as we add the rhs via mean to the Lagrangian """
 
+        self._check_for_availability_of_analytic_shooting_equations = True
+        """If called with autodiff option, i.e., use_analytic_solution=False, checks upon first call if an analytic solution has been specified"""
+
         self.transpose_state_when_forward = transpose_state_when_forward
 
         # norm penalty
@@ -591,6 +594,13 @@ class ShootingIntegrandBase(nn.Module):
             return self.compute_gradients_analytic(t,state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts)
 
         else:
+            if self._check_for_availability_of_analytic_shooting_equations:
+                if (type(self).optional_compute_parameters_analytic is not ShootingIntegrandBase.optional_compute_parameters_analytic) and \
+                    (type(self).optional_rhs_advect_costate_analytic is not ShootingIntegrandBase.optional_rhs_advect_costate_analytic):
+                    print('Analytic shooting equations appear to be defined. You can turn them on by instantiating the class with option use_analytic_solution=True')
+                    print('Shooting equations will be computed via autodiff')
+                    self._check_for_availability_of_analytic_shooting_equations = False
+
             return self.compute_gradients_autodiff(t,state_dict_of_dicts,costate_dict_of_dicts,data_dict_of_dicts)
 
         # run the hooks so we can get parameters, states, etc.; for example, to create tensorboard output
