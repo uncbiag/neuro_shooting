@@ -104,6 +104,7 @@ initial_conditions, assembly_plans = _get_initial_conditions_from_data_dict_of_d
 
 # need to let the integrand know how to go from the vector to the data stuctures
 shooting_integrand.set_auto_assembly_plans(assembly_plans=assembly_plans)
+
 nl = shooting_integrand.nl
 dnl = shooting_integrand.dnl
 
@@ -167,6 +168,12 @@ print('dot_qt-as_dot_qt = {}'.format(dot_qt-as_dot_qt))
 # check dotpt
 print('dot_pt-as_dot_pt = {}'.format(dot_pt-as_dot_pt))
 
+# print dot_pt
+print('dot_pt = {}'.format(dot_pt))
+
+# print as_dot_pt
+print('as_dot_pt = {}'.format(as_dot_pt))
+
 # check A
 print('At.t()-as_A = {}'.format(At.t()-as_A))
 
@@ -178,6 +185,12 @@ print('At.t()/as_A = {}'.format(At.t()/as_A))
 
 # check b
 print('bt/as_bt = {}'.format(bt/as_bt))
+
+# check dot_qt
+print('dot_qt/as_dot_qt = {}'.format(dot_qt/as_dot_qt))
+
+# check_dot_pt
+print('dot_pt/as_dot_pt = {}'.format(dot_pt/as_dot_pt))
 
 print('Hello world')
 
