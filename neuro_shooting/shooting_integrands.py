@@ -517,6 +517,7 @@ class ShootingIntegrandBase(nn.Module):
             for k in current_pars:
                 current_pars[k] = current_pars[k].detach().requires_grad_(True)
 
+
     def compute_gradients_analytic(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts):
 
         # here we compute the rhs of the equations via their analytic solutions
