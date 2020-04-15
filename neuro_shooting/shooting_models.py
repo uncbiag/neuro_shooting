@@ -179,6 +179,8 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
 
     def create_default_parameter_objects(self):
 
+        # TODO: make sure parameter objects are created on the right device
+
         parameter_objects = SortedDict()
 
         # todo: make this more generic again
@@ -239,7 +241,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         return rhs
 
 
-    def optional_compute_parameters_analytic(self,t,parameter_objects,state_dict,costate_dict):
+    def optional_compute_parameters_analytic(self,t,state_dict, costate_dict):
         """
         This is optional. We can prescribe an analytic computation of the parameters (where we do not need to do this via autodiff).
         This is optional, but can be used for testing.
@@ -253,7 +255,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
 
         s = state_dict
         c = costate_dict
-        p = parameter_objects
+        p = self.create_default_parameter_objects()
 
         # now compute the parameters
         qi = s['q1']
@@ -270,6 +272,8 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         par_dict = p['l1'].get_parameter_dict()
         par_dict['weight'] = At.t()
         par_dict['bias'] = bt
+
+        return p
 
 
     def get_initial_data_dict_from_data_tensor(self, x):

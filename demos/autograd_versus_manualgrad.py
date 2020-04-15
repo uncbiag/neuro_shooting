@@ -152,7 +152,10 @@ rhs = shooting_integrand(initial_time,initial_conditions)
 rhs_state_dict, rhs_costate_dict, rhs_data_dict = shooting_integrand.disassemble_tensor(rhs)
 
 # these are the current parameters (we can compare them to what we get by manually computing them below)
-parameter_objects = shooting_integrand._parameter_objects
+#parameter_objects = shooting_integrand._parameter_objects
+parameter_objects = shooting_integrand.compute_parameters(t=0,
+                                                          state_dict_of_dicts=t_state_dict,
+                                                          costate_dict_of_dicts=t_costate_dict)
 p = parameter_objects
 
 # extracting the auto-shooting quantities
