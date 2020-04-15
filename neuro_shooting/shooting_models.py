@@ -264,9 +264,9 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         # particles are saved as rows
         At = torch.zeros(self.in_features, self.in_features)
         for i in range(self.nr_of_particles):
-            At = At - (pi[i, ...].t() * self.nl(qi[i, ...])).t()
+            At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
         At = 1 / self._overall_number_of_state_parameters * At  # because of the mean in the Lagrangian multiplier
-        bt = -1 / self._overall_number_of_state_parameters * pi.sum(dim=0)  # -\sum_i q_i
+        bt = 1 / self._overall_number_of_state_parameters * pi.sum(dim=0)  # -\sum_i q_i
 
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()

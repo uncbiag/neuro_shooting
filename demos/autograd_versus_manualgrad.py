@@ -63,8 +63,8 @@ def _get_initial_conditions_from_data_dict_of_dicts(state_parameter_dict, costat
 # create a shooting integrand
 
 parameter_weight = 1.0
-in_features = 1
-nr_of_particles = 1
+in_features = 3
+nr_of_particles = 4
 
 # this is neeeded to determine how many Lagrangian multipliers there are
 # as we add them via their mean
@@ -133,9 +133,9 @@ pi = c['p_q1']
 #particles are saved as rows
 At = torch.zeros(in_features,in_features)
 for i in range(nr_of_particles):
-    At = At -(pi[i,...].t()*nl(qi[i,...])).t()
+    At = At +(pi[i,...].t()*nl(qi[i,...])).t()
 At = 1/nr_of_particle_parameters*At # because of the mean in the Lagrangian multiplier
-bt = -1/nr_of_particle_parameters*pi.sum(dim=0)  # -\sum_i q_i
+bt = 1/nr_of_particle_parameters*pi.sum(dim=0)  # -\sum_i q_i
 
 # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
 dot_qt = torch.matmul(nl(qi),At) + bt

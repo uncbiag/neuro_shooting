@@ -498,7 +498,7 @@ class ShootingIntegrandBase(nn.Module):
                 current_pars[p] = current_pars[p]+multiplier*current_from_pars[p_from]
 
 
-    def negate_divide_and_store_in_parameter_objects(self,parameter_objects,generic_dict):
+    def divide_and_store_in_parameter_objects(self,parameter_objects,generic_dict):
 
         for o in parameter_objects:
             if o not in generic_dict:
@@ -510,9 +510,9 @@ class ShootingIntegrandBase(nn.Module):
 
             for k,f in zip(current_pars,current_pars_from):
                 if k not in current_weights:
-                    current_pars[k] = -current_pars_from[f]
+                    current_pars[k] = current_pars_from[f]
                 else:
-                    current_pars[k] = -current_pars_from[f]/current_weights[k]
+                    current_pars[k] = current_pars_from[f]/current_weights[k]
 
         return parameter_objects
 
@@ -539,13 +539,13 @@ class ShootingIntegrandBase(nn.Module):
         print('To use this functionality, overwrite optional_compute_parameters_analytic and optional_rhs_advect_costate_analytic in your model.')
         raise ValueError('Not implemented.')
 
-    # def detach_and_require_gradients_for_parameter_objects(self,parameter_objects):
-    #
-    #     # TODO: check if this method is really needed
-    #     for o in parameter_objects:
-    #         current_pars = parameter_objects[o].get_parameter_dict()
-    #         for k in current_pars:
-    #             current_pars[k] = current_pars[k].detach().requires_grad_(True)
+    def detach_and_require_gradients_for_parameter_objects(self,parameter_objects):
+
+        # TODO: check if this method is really needed
+        for o in parameter_objects:
+            current_pars = parameter_objects[o].get_parameter_dict()
+            for k in current_pars:
+                current_pars[k] = current_pars[k].detach().requires_grad_(True)
 
     def compute_gradients_analytic(self, t, state_dict_of_dicts, costate_dict_of_dicts, data_dict_of_dicts):
 
@@ -578,7 +578,6 @@ class ShootingIntegrandBase(nn.Module):
         dot_data_dict_of_dicts = self.rhs_advect_data_dict_of_dicts(t=t, data_dict_of_dicts=data_dict_of_dicts,
                                                                     parameter_objects=parameter_objects)
 
-
         # costate evolution is automatically obtained in the autodiff solution, but here specified explicitly
         dot_costate_dict_of_dicts = self.optional_rhs_advect_costate_dict_of_dicts_analytic(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                                                             costate_dict_of_dicts=costate_dict_of_dicts,
@@ -594,6 +593,8 @@ class ShootingIntegrandBase(nn.Module):
         # current parameters are computed via autodiff
         parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                     costate_dict_of_dicts=costate_dict_of_dicts)
+
+
 
         if t == 0:
             # we only want it at the initial condition
@@ -714,8 +715,7 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
         # and using fill with self._overall_number_of_state_parameters does this
 
         dot_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
-                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1./3*self._overall_number_of_state_parameters),
-                                              #self._overall_number_of_state_parameters),
+                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(self._overall_number_of_state_parameters),
                                           create_graph=True,
                                           retain_graph=True,
                                           allow_unused=True)
@@ -765,7 +765,7 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
                                                                                  parameter_objects=parameter_objects,
                                                                                  prefix='grad_')
 
-        parameter_objects = self.negate_divide_and_store_in_parameter_objects(parameter_objects=parameter_objects,generic_dict=parameter_grad_dict)
+        parameter_objects = self.divide_and_store_in_parameter_objects(parameter_objects=parameter_objects,generic_dict=parameter_grad_dict)
 
         return parameter_objects
 
