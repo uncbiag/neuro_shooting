@@ -63,8 +63,8 @@ def _get_initial_conditions_from_data_dict_of_dicts(state_parameter_dict, costat
 # create a shooting integrand
 
 parameter_weight = 1.0
-in_features = 3
-nr_of_particles = 2
+in_features = 1
+nr_of_particles = 1
 
 # this is neeeded to determine how many Lagrangian multipliers there are
 # as we add them via their mean
@@ -86,7 +86,7 @@ state_dict = shooting_integrand.create_initial_state_parameters_if_needed(set_to
 costate_dict = shooting_integrand.create_initial_costate_parameters(state_dict=state_dict)
 
 # create some initial data
-x = torch.randn([10,1,3])
+x = torch.randn([10,1,in_features])
 block_name = 'test_block'
 effective_data_dict = shooting_integrand.get_initial_data_dict_from_data_tensor(x)
 effective_data_dict_of_dicts = SortedDict({block_name: effective_data_dict})

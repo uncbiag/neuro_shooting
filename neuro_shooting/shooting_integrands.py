@@ -554,16 +554,6 @@ class ShootingIntegrandBase(nn.Module):
         # here we compute the rhs of the equations via their analytic solutions
         # assumes that optional_rhs_advect_costate_analytic and optimal_compute_parameters_analytic have been defined in the model
 
-        # potential_energy = 0
-        #
-        # for d_ks, d_kcs in zip(rhs_state_dict_of_dicts, costate_dict_of_dicts):
-        #     c_rhs_state_dict = rhs_state_dict_of_dicts[d_ks]
-        #     c_costate_dict = costate_dict_of_dicts[d_kcs]
-        #     for ks, kcs in zip(c_rhs_state_dict, c_costate_dict):
-        #         potential_energy = potential_energy + torch.mean(c_costate_dict[kcs] * c_rhs_state_dict[ks])
-
-        # current parameters are computed via autodiff
-
         if len(state_dict_of_dicts)!=1 or len(costate_dict_of_dicts)!=1:
             raise ValueError('Analytic computation does not currently support multiple blocks.')
 
@@ -724,7 +714,7 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
         # and using fill with self._overall_number_of_state_parameters does this
 
         dot_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
-                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1),
+                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1./3*self._overall_number_of_state_parameters),
                                               #self._overall_number_of_state_parameters),
                                           create_graph=True,
                                           retain_graph=True,

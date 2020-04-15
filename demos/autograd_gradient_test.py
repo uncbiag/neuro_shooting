@@ -27,7 +27,7 @@ nr_of_particles = 3
 parameter_weight = 1.0
 
 # create a simple integrator
-stepsize = 0.5
+stepsize = 0.1
 integrator_options = {'step_size': stepsize}
 
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',

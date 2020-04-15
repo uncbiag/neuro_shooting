@@ -140,7 +140,7 @@ p0 = torch.randn([1], requires_grad=True)
 
 # if_reduced == True then use the reduced lagrangian computation
 # if_reduced == False then use Marc's trick
-if_reduced = False
+if_reduced = True
 number_of_time_steps = 8
 # first try to compute the rhs analytically and via autograd
 rhs_analytic = rhs_shooting_analytic(q=q0, p=p0)
