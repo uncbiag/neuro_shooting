@@ -140,8 +140,8 @@ p0 = torch.randn([1], requires_grad=True)
 
 # if_reduced == True then use the reduced lagrangian computation
 # if_reduced == False then use Marc's trick
-if_reduced = True
-
+if_reduced = False
+number_of_time_steps = 8
 # first try to compute the rhs analytically and via autograd
 rhs_analytic = rhs_shooting_analytic(q=q0, p=p0)
 rhs_autograd = rhs_shooting_autograd(q=q0, p=p0,if_reduced=if_reduced)
@@ -153,7 +153,7 @@ print('analytic/autograd: rhs_q={}, rhs_p={}\n'.format(rhs_analytic['q']/rhs_aut
 # now do to some simple euler-forward integration
 
 # do it for the analytic version first
-res_analytic_q, res_analytic_p = euler_forward(rhs_fcn=rhs_shooting_analytic, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=2,if_reduced = if_reduced)
+res_analytic_q, res_analytic_p = euler_forward(rhs_fcn=rhs_shooting_analytic, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=number_of_time_steps,if_reduced = if_reduced)
 loss_analytic = res_analytic_q**2 + res_analytic_p**2
 loss_analytic.backward()
 
@@ -168,7 +168,7 @@ print('loss_analytic_grad_p0={}'.format(loss_analytic_grad_p0))
 zero_grad(q0)
 zero_grad(p0)
 
-res_autograd_q, res_autograd_p = euler_forward(rhs_fcn=rhs_shooting_autograd, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=2,if_reduced = if_reduced)
+res_autograd_q, res_autograd_p = euler_forward(rhs_fcn=rhs_shooting_autograd, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=number_of_time_steps,if_reduced = if_reduced)
 loss_autograd = res_autograd_q**2 + res_autograd_p**2
 loss_autograd.backward()
 
@@ -181,5 +181,4 @@ print('loss_autograd_grad_p0={}'.format(loss_autograd_grad_p0))
 # and now print out the ratio
 print('loss_analytic/autograd_grad_q0={}'.format(loss_analytic_grad_q0/loss_autograd_grad_q0))
 print('loss_analytic/autograd_grad_p0={}\n'.format(loss_autograd_grad_p0/loss_autograd_grad_p0))
-
 print('Should all be the same if it works!')

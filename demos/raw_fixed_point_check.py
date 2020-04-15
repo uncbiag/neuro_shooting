@@ -58,7 +58,7 @@ def rhs_costate(q,p,theta):
 
 def compute_parameter(q,p):
     theta = p*nl(q)
-    return theta
+    return 3./4.*theta
 
 def rhs_shooting_analytic(q,p,if_reduced = True):
     theta = compute_parameter(q=q,p=p)
@@ -70,7 +70,7 @@ def rhs_shooting_analytic(q,p,if_reduced = True):
 
 def compute_parameter_autograd(q,p):
     learning_rate = 1.0
-    nr_of_fixed_point_iterations = 1
+    nr_of_fixed_point_iterations = 2
     theta_var = torch.zeros([1], requires_grad=True)
     for n in range(nr_of_fixed_point_iterations):
 
@@ -83,6 +83,7 @@ def compute_parameter_autograd(q,p):
                                          allow_unused=True)
 
         theta_var = -learning_rate * theta_grad_potential[0]
+        #print("theta_var ",theta_var)
     return theta_var
 
 def rhs_shooting_autograd(q,p):
@@ -113,7 +114,7 @@ q0 = torch.randn([1], requires_grad=True)
 p0 = torch.randn([1], requires_grad=True)
 
 
-
+number_of_time_steps = 3
 # first try to compute the rhs analytically and via autograd
 rhs_analytic = rhs_shooting_analytic(q=q0, p=p0)
 rhs_autograd = rhs_shooting_autograd(q=q0, p=p0)
@@ -125,7 +126,7 @@ print('analytic/autograd: rhs_q={}, rhs_p={}\n'.format(rhs_analytic['q']/rhs_aut
 # now do to some simple euler-forward integration
 
 # do it for the analytic version first
-res_analytic_q, res_analytic_p = euler_forward(rhs_fcn=rhs_shooting_analytic, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=2)
+res_analytic_q, res_analytic_p = euler_forward(rhs_fcn=rhs_shooting_analytic, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=number_of_time_steps)
 loss_analytic = res_analytic_q**2 + res_analytic_p**2
 loss_analytic.backward()
 
@@ -140,7 +141,7 @@ print('loss_analytic_grad_p0={}'.format(loss_analytic_grad_p0))
 zero_grad(q0)
 zero_grad(p0)
 
-res_autograd_q, res_autograd_p = euler_forward(rhs_fcn=rhs_shooting_autograd, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=2)
+res_autograd_q, res_autograd_p = euler_forward(rhs_fcn=rhs_shooting_autograd, q0=q0,p0=p0,dt=0.1,nr_of_time_steps=number_of_time_steps)
 loss_autograd = res_autograd_q**2 + res_autograd_p**2
 loss_autograd.backward()
 
