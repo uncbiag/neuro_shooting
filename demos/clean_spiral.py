@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import random
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+import sys
 
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
@@ -51,10 +51,24 @@ parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrat
 
 args = parser.parse_args()
 
+saveresultspath = '{}/shootingmodel{}/numparticles{}/pw{}/nonlinearity{}'.format(args.saveimgname,
+                                                                                 args.shooting_model,
+                                                                                 args.nr_of_particles,
+                                                                                 args.pw,
+                                                                                 args.nonlinearity)
+def makedirs(dirname):
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+makedirs(saveresultspath)
+stdoutOrigin=sys.stdout
+sys.stdout = open("{}/log.txt".format(saveresultspath), "w")
+
+print(args)
+
 print('Setting the random seed to {:}'.format(args.seed))
 random.seed(args.seed)
 torch.manual_seed(args.seed)
-
 
 # default tolerance settings
 rtol=1e-6
@@ -70,15 +84,18 @@ integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint',
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
 t_max = 25
+print('tmax: {}'.format(t_max))
 t = torch.linspace(0., t_max, args.data_size).to(device)
 true_y0 = torch.tensor([[2., 0.]]).to(device)
+print('true_y0: {}'.format(true_y0))
 true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+print('true_A: {}'.format(true_A))
+
 # true_y0 = torch.tensor([[0.6, 0.3]]).to(device)
 # true_A = torch.tensor([[-0.1, -1.0], [1.0, -0.1]]).to(device)
 # true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
 # true_A = torch.tensor([[-0.05, 2.0], [-2.0, -0.05]]).to(device)
 # true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
-
 
 class Lambda(nn.Module):
 
@@ -92,7 +109,6 @@ class Lambda(nn.Module):
 with torch.no_grad():
     true_y = integrator.integrate(func=Lambda(), x0=true_y0, t=t)
 
-
 def get_batch(batch_size=None):
     if batch_size is None:
         batch_size = args.batch_size
@@ -102,16 +118,8 @@ def get_batch(batch_size=None):
     batch_y = torch.stack([true_y[s + i] for i in range(args.batch_time)], dim=0)  # (T, M, D)
     return batch_y0, batch_t, batch_y
 
-
-
-
 def to_np(x):
     return x.detach().cpu().numpy()
-
-
-def makedirs(dirname):
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
 
 def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher_order_model=False, savepath=None):
 
@@ -140,7 +148,7 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
 
         ax_traj.set_xlim(sim_time.min(), sim_time.max())
         ax_traj.set_ylim(-2, 2)
-        ax_traj.legend()
+        # ax_traj.legend()
 
         ax_phase.cla()
         ax_phase.set_title('Phase Portrait')
@@ -288,11 +296,6 @@ if __name__ == '__main__':
     t_0 = time.time()
     ii = 0
 
-    if args.viz:
-        saveimgpath = 'png/{}/shootingmodel{}/numparticles{}/pw{}/use_analytic{}'.format(args.saveimgname,args.shooting_model,args.nr_of_particles,args.pw,args.use_analytic_solution)
-        makedirs(saveimgpath)
-        import matplotlib.pyplot as plt
-
     is_odenet = args.network == 'odenet'
 
     is_higher_order_model = True
@@ -363,6 +366,8 @@ if __name__ == '__main__':
 
             shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
             pred_y,_,_,_ = shooting_block(x=batch_y0)
+            # TODO: do we need to reset integration time?
+            # shooting_block.set_integration_time(t_max)
 
             # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
             #shooting_hook.remove()
@@ -408,7 +413,7 @@ if __name__ == '__main__':
 
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-                if args.viz & itr % args.viz_freq == 0:
+                if args.viz & (itr % args.viz_freq == 0):
                     visualize(val_y, val_pred_y, val_t, func, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
                     ii += 1
 
@@ -419,8 +424,11 @@ if __name__ == '__main__':
                 print("time",t_1 - t_0)
                 t_0 = t_1
 
+                # TODO: if val_y0 is the entire trajectory then val_pred_y will eventually have nan's
                 shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
                 val_pred_y,_,_,_ = shooting_block(x=val_y0)
+                # TODO: do we need to reset integration time?
+                # shooting_block.set_integration_time(t_max)
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))
@@ -433,8 +441,8 @@ if __name__ == '__main__':
 
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-                if args.viz & itr % args.viz_freq == 0:
-                    visualize(val_y, val_pred_y, val_t, shooting_block, itr, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model, savepath = saveimgpath)
+                if args.viz & (itr % args.viz_freq == 0):
+                    visualize(val_y, val_pred_y, val_t, shooting_block, itr, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model, savepath = saveresultspath)
 
         end = time.time()
 
@@ -471,7 +479,7 @@ def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
 
         ax_traj.set_xlim(batch_t.min(), batch_t.max())
         ax_traj.set_ylim(-2, 2)
-        ax_traj.legend()
+        # ax_traj.legend()
 
         ax_phase.cla()
         ax_phase.set_title('Phase Portrait')
@@ -505,3 +513,6 @@ def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
 
         print('Plotting')
         plt.show()
+
+sys.stdout.close()
+sys.stdout=stdoutOrigin
