@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 import matplotlib.cm as cm
-
+import matplotlib.pyplot as plt
 
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
@@ -23,26 +23,28 @@ parser.add_argument('--network', type=str, choices=['odenet', 'shooting'], defau
 parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
 parser.add_argument('--stepsize', type=float, default=0.5, help='Step size for the integrator (if not adaptive).')
 parser.add_argument('--data_size', type=int, default=250, help='number of time points on the simulated ODE.')
-parser.add_argument('--batch_time', type=int, default=100, help='Length of the training trajectories.')
+parser.add_argument('--batch_time', type=int, default=25, help='Length of the training trajectories.')
 parser.add_argument('--batch_size', type=int, default=10, help='Number of training trajectories.')
 parser.add_argument('--niters', type=int, default=10000, help='Maximum number of iterations.')
-parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
+parser.add_argument('--batch_validation_size', type=int, default=100, help='number of validation trajectories (each of time length batch_time).')
 parser.add_argument('--seed', required=False, type=int, default=1234,
                     help='Sets the random seed which affects data shuffling')
 
 parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
-parser.add_argument('--test_freq', type=int, default=20, help='Frequency with which the validation measures are to be computed.')
+parser.add_argument('--test_freq', type=int, default=100, help='Frequency with which the validation measures are to be computed.')
 parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 parser.add_argument('--saveimgname',type=str, default='spiral', help='any images will be saved with this name')
-# should not use this flag because the validation contains trajectories of different time length from training
 parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
+parser.add_argument('--shooting_model',type=str,default='simple',choices=['simple','2nd_order','updown'])
+parser.add_argument('--pw',type=float,default=0.5,help='parameter weight')
 parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
 parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
 parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
 parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
 
+parser.add_argument('--use_analytic_solution',action='store_true',help='Enable analytic solution in shooting model')
 parser.add_argument('--viz', action='store_true', help='Enable visualization.')
 parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
 parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
@@ -53,34 +55,26 @@ print('Setting the random seed to {:}'.format(args.seed))
 random.seed(args.seed)
 torch.manual_seed(args.seed)
 
-integrator_options = dict()
 
 # default tolerance settings
 rtol=1e-6
 atol=1e-12
 
-#rtol = 1e-8
-#atol = 1e-10
-
+integrator_options = dict()
 integrator_options = {'step_size': args.stepsize}
 
-#integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
-#                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
-
-integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'dopri5',
+integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = args.method,
                                                   use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
 
 device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-t_max = 100
-true_y0 = torch.tensor([[0.6, 0.3]]).to(device)
+t_max = 25
 t = torch.linspace(0., t_max, args.data_size).to(device)
-true_A = torch.tensor([[-0.1, -1.0], [1.0, -0.1]]).to(device)
-
-
-# true_y0 = torch.tensor([[2., 0.]]).to(device)
-# true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+true_y0 = torch.tensor([[2., 0.]]).to(device)
+true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+# true_y0 = torch.tensor([[0.6, 0.3]]).to(device)
+# true_A = torch.tensor([[-0.1, -1.0], [1.0, -0.1]]).to(device)
 # true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
 # true_A = torch.tensor([[-0.05, 2.0], [-2.0, -0.05]]).to(device)
 # true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
@@ -94,7 +88,7 @@ class Lambda(nn.Module):
         else:
             return torch.mm(y**3, true_A)
 
-
+# TODO: if integrated with rk4, true_y will contain nan's
 with torch.no_grad():
     true_y = integrator.integrate(func=Lambda(), x0=true_y0, t=t)
 
@@ -109,72 +103,6 @@ def get_batch(batch_size=None):
     return batch_y0, batch_t, batch_y
 
 
-# TODO: this is no longer used, deprecate?
-def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
-
-    # convention for batch_t: t x B x (row-vector)
-
-    if args.viz:
-
-        batch_size = batch_y.size()[1]
-
-        if (thetas is None) or (bias is None) or (real_thetas is None):
-            fig = plt.figure(figsize=(8, 4), facecolor='white')
-            ax_traj = fig.add_subplot(121, frameon=False)
-            ax_phase = fig.add_subplot(122, frameon=False)
-        else:
-            fig = plt.figure(figsize=(8, 8), facecolor='white')
-            ax_traj = fig.add_subplot(221, frameon=False)
-            ax_phase = fig.add_subplot(222, frameon=False)
-            ax_thetas = fig.add_subplot(223, frameon=False)
-            ax_bias = fig.add_subplot(224, frameon=False)
-
-        ax_traj.cla()
-        ax_traj.set_title('Trajectories')
-        ax_traj.set_xlabel('t')
-        ax_traj.set_ylabel('x,y')
-
-        for b in range(batch_size):
-            c_values = batch_y[:,b,0,:]
-
-            ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
-
-        ax_traj.set_xlim(batch_t.min(), batch_t.max())
-        ax_traj.set_ylim(-2, 2)
-        ax_traj.legend()
-
-        ax_phase.cla()
-        ax_phase.set_title('Phase Portrait')
-        ax_phase.set_xlabel('x')
-        ax_phase.set_ylabel('y')
-
-        for b in range(batch_size):
-            c_values = batch_y[:,b,0,:]
-
-            ax_phase.plot(c_values.numpy()[:, 0], c_values.numpy()[:, 1], 'g-')
-
-        ax_phase.set_xlim(-2, 2)
-        ax_phase.set_ylim(-2, 2)
-
-        if (thetas is not None) and (bias is not None) and (real_thetas is not None):
-            ax_thetas.cla()
-            ax_thetas.set_title('theta elements over time')
-            nr_t_el = thetas.shape[1]
-            colors = ['r','b','c','k']
-            for n in range(nr_t_el):
-                ax_thetas.plot(thetas[:,n],color=colors[n])
-                ax_thetas.plot(real_thetas[:,n],'--', color=colors[n])
-
-            ax_bias.cla()
-            ax_bias.set_title('bias elements over time')
-            nr_b_el = bias.shape[1]
-            for n in range(nr_b_el):
-                ax_bias.plot(bias[:,n])
-
-        fig.tight_layout()
-
-        print('Plotting')
-        plt.show()
 
 
 def to_np(x):
@@ -185,38 +113,7 @@ def makedirs(dirname):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
-
-if args.viz:
-    makedirs('png/{}'.format(args.saveimgname))
-    import matplotlib.pyplot as plt
-
-
-def plot_trajectories(true_y, pred_y, sim_time, save=None, figsize=(16, 8)):
-
-    plt.figure(figsize=figsize)
-
-    if true_y is not None:
-        if sim_time is None:
-            sim_time = [None] * len(true_y)
-        for o, t in zip(true_y, sim_time):
-            o, t = to_np(o), to_np(t)
-            plt.scatter(o[:, :, 0], o[:, :, 1], c=t, cmap=cm.plasma,label='observations (colored by time)')
-
-    if pred_y is not None:
-        for z in pred_y:
-            z = to_np(z)
-            plt.plot(z[:, :, 0], z[:, :, 1], lw=1.5, label="prediction")
-        if save is not None:
-            plt.savefig(save)
-
-    plt.legend()
-    plt.title('Trajectory: observed versus predicted')
-    plt.xlabel('y_1')
-    plt.ylabel('y_2')
-    plt.show()
-
-
-def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher_order_model=False):
+def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher_order_model=False, savepath=None):
 
     if args.viz:
 
@@ -229,27 +126,26 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
 
         ax_traj.cla()
         ax_traj.set_title('Trajectories')
-        ax_traj.set_xlabel('y_1')
-        ax_traj.set_ylabel('y_2')
+        ax_traj.set_xlabel('t')
+        ax_traj.set_ylabel('y1,y2')
 
         # true_y and pred_y: [time points, sample size, 1, dimension of y]
         # this graphic is unintelligible, too much overcrowding
         for n in range(true_y.size()[1]):
-            ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
-                     'g-')
-            ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
-                     pred_y.detach().numpy()[:, n, 0, 1],
-                     'b--')
+            ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], 'g-',
+                         sim_time.numpy(), true_y.numpy()[:, n, 0, 1], 'b-')
+            ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], 'g--',
+                         sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 1],'b--')
 
 
         ax_traj.set_xlim(sim_time.min(), sim_time.max())
         ax_traj.set_ylim(-2, 2)
-        # ax_traj.legend()
+        ax_traj.legend()
 
         ax_phase.cla()
         ax_phase.set_title('Phase Portrait')
-        ax_phase.set_xlabel('y_1')
-        ax_phase.set_ylabel('y_2')
+        ax_phase.set_xlabel('y1')
+        ax_phase.set_ylabel('y2')
 
         for n in range(true_y.size()[1]):
             ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
@@ -275,8 +171,8 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
 
         ax_vecfield.cla()
         ax_vecfield.set_title('Learned Vector Field')
-        ax_vecfield.set_xlabel('x')
-        ax_vecfield.set_ylabel('y')
+        ax_vecfield.set_xlabel('y1')
+        ax_vecfield.set_ylabel('y2')
 
         y, x = np.mgrid[-2:2:21j, -2:2:21j]
 
@@ -320,9 +216,9 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher
         fig.tight_layout()
 
         print('Plotting')
-        # plt.savefig('png/{:03d}'.format(itr))
-        # plt.draw()
-        # plt.pause(0.001)
+        plt.savefig('{}/itr{}.png'.format(savepath,itr))
+        plt.draw()
+        plt.pause(0.001)
         plt.show()
 
 
@@ -392,6 +288,11 @@ if __name__ == '__main__':
     t_0 = time.time()
     ii = 0
 
+    if args.viz:
+        saveimgpath = 'png/{}/shootingmodel{}/numparticles{}/pw{}/use_analytic{}'.format(args.saveimgname,args.shooting_model,args.nr_of_particles,args.pw,args.use_analytic_solution)
+        makedirs(saveimgpath)
+        import matplotlib.pyplot as plt
+
     is_odenet = args.network == 'odenet'
 
     is_higher_order_model = True
@@ -405,18 +306,19 @@ if __name__ == '__main__':
     else:
 
         # parameters to play with for shooting
-        # TODO: it looks like nr_of_particles is directly passed into the shooting models AutoShooting*, can deprecate below
-        # K = args.nr_of_particles
-        #
-        # batch_y0, batch_t, batch_y = get_batch(K)
+        shootingintegrand_kwargs = {'in_features': 2,
+                                    'nonlinearity': args.nonlinearity,
+                                    'nr_of_particles': args.nr_of_particles,
+                                    'parameter_weight': args.pw}
+        if args.use_analytic_solution:
+            shootingintegrand_kwargs.update({'use_analytic_solution': args.use_analytic_solution})
 
-        # shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,
-        # shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
-        pw = 0.5 # TODO: understand what this weight really is
-        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=args.nonlinearity, nr_of_particles=args.nr_of_particles, parameter_weight=pw)
-        # shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
-        # shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
-        # shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity,parameter_weight=1.0)
+        if args.shooting_model =='simple':
+            shooting_model = shooting_models.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs)
+        elif args.shooting_model == '2nd_order':
+            shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
+        elif args.shooting_model == 'updown':
+            shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
         shooting_block = shooting_block.to(device)
@@ -425,13 +327,10 @@ if __name__ == '__main__':
         _,_,sample_batch = get_batch()
         shooting_block(x=sample_batch)
 
-        #optimizer = optim.RMSprop(shooting_block.parameters(), lr=5e-3)
-
         optimizer = optim.Adam(shooting_block.parameters(), lr=2e-2)
-
-
+        #optimizer = optim.RMSprop(shooting_block.parameters(), lr=5e-3)
         #optimizer = optim.SGD(shooting_block.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
-        #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
+        # optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
 
     all_thetas = None
     all_real_thetas = None
@@ -459,9 +358,9 @@ if __name__ == '__main__':
         else:
 
             # register a hook so we can log via tensorboard
-            #shooting_hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
+            # shooting_hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
+            # shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
-            #shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
             shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
             pred_y,_,_,_ = shooting_block(x=batch_y0)
 
@@ -493,7 +392,6 @@ if __name__ == '__main__':
                 val_t = val_batch_t
                 val_y = val_batch_y
             else:
-                # TODO: it's weird that this validation set has time length much longer than what is trained
                 val_y0 = true_y0.unsqueeze(dim=0)
                 val_t = t
                 val_y = true_y.unsqueeze(dim=1)
@@ -510,7 +408,7 @@ if __name__ == '__main__':
 
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-                if itr % args.viz_freq == 0:
+                if args.viz & itr % args.viz_freq == 0:
                     visualize(val_y, val_pred_y, val_t, func, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
                     ii += 1
 
@@ -535,16 +433,75 @@ if __name__ == '__main__':
 
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-                if itr % args.viz_freq == 0:
-                    # visualize(val_y, val_pred_y, val_t, shooting_block, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
-
-                    # pick one trajectory in validation batch to visualize
-                    viz_index = 0
-                    plot_trajectories([val_y[:,viz_index,:,:]],
-                                      [val_pred_y[:,viz_index,:,:]],
-                                      [val_t],
-                                      save="./png/{}/{}.png".format(args.saveimgname,ii), figsize=(16, 8))
-                    ii += 1
-
+                if args.viz & itr % args.viz_freq == 0:
+                    visualize(val_y, val_pred_y, val_t, shooting_block, itr, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model, savepath = saveimgpath)
 
         end = time.time()
+
+
+# TODO: this is no longer used, deprecate?
+def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
+
+    # convention for batch_t: t x B x (row-vector)
+
+    if args.viz:
+
+        batch_size = batch_y.size()[1]
+
+        if (thetas is None) or (bias is None) or (real_thetas is None):
+            fig = plt.figure(figsize=(8, 4), facecolor='white')
+            ax_traj = fig.add_subplot(121, frameon=False)
+            ax_phase = fig.add_subplot(122, frameon=False)
+        else:
+            fig = plt.figure(figsize=(8, 8), facecolor='white')
+            ax_traj = fig.add_subplot(221, frameon=False)
+            ax_phase = fig.add_subplot(222, frameon=False)
+            ax_thetas = fig.add_subplot(223, frameon=False)
+            ax_bias = fig.add_subplot(224, frameon=False)
+
+        ax_traj.cla()
+        ax_traj.set_title('Trajectories')
+        ax_traj.set_xlabel('t')
+        ax_traj.set_ylabel('y1,y2')
+
+        for b in range(batch_size):
+            c_values = batch_y[:,b,0,:]
+
+            ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
+
+        ax_traj.set_xlim(batch_t.min(), batch_t.max())
+        ax_traj.set_ylim(-2, 2)
+        ax_traj.legend()
+
+        ax_phase.cla()
+        ax_phase.set_title('Phase Portrait')
+        ax_phase.set_xlabel('y1')
+        ax_phase.set_ylabel('y2')
+
+        for b in range(batch_size):
+            c_values = batch_y[:,b,0,:]
+
+            ax_phase.plot(c_values.numpy()[:, 0], c_values.numpy()[:, 1], 'g-')
+
+        ax_phase.set_xlim(-2, 2)
+        ax_phase.set_ylim(-2, 2)
+
+        if (thetas is not None) and (bias is not None) and (real_thetas is not None):
+            ax_thetas.cla()
+            ax_thetas.set_title('theta elements over time')
+            nr_t_el = thetas.shape[1]
+            colors = ['r','b','c','k']
+            for n in range(nr_t_el):
+                ax_thetas.plot(thetas[:,n],color=colors[n])
+                ax_thetas.plot(real_thetas[:,n],'--', color=colors[n])
+
+            ax_bias.cla()
+            ax_bias.set_title('bias elements over time')
+            nr_b_el = bias.shape[1]
+            for n in range(nr_b_el):
+                ax_bias.plot(bias[:,n])
+
+        fig.tight_layout()
+
+        print('Plotting')
+        plt.show()
