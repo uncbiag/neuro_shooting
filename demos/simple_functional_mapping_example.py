@@ -10,6 +10,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 import torch.optim as optim
 from torchdiffeq import odeint
 
@@ -47,6 +49,26 @@ def get_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
+class SuperSimpleResNet(nn.Module):
+
+    def __init__(self):
+        super(SuperSimpleResNet, self).__init__()
+
+        self.l1 = nn.Linear(1,1,bias=True)
+        self.l2 = nn.Linear(1,1,bias=True)
+        self.l3 = nn.Linear(1,1,bias=True)
+        self.l4 = nn.Linear(1,1,bias=True)
+        self.l5 = nn.Linear(1,1,bias=True)
+
+    def forward(self, x):
+
+        x = x + self.l1(F.relu(x))
+        x = x + self.l2(F.relu(x))
+        x = x + self.l3(F.relu(x))
+        x = x + self.l4(F.relu(x))
+        x = x + self.l5(F.relu(x))
+
+        return x
 
 if __name__ == '__main__':
 
@@ -82,10 +104,17 @@ if __name__ == '__main__':
         intgrator_options = {'stepsize':0.01}
     )
 
-    sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+    use_simple_resnet = True
 
+    simple_resnet = SuperSimpleResNet()
+
+    sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
     sblock(x=sample_batch_in)
-    optimizer = optim.Adam(sblock.parameters(), lr=1e-4)
+
+    if use_simple_resnet:
+        optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2)
+    else:
+        optimizer = optim.Adam(sblock.parameters(), lr=1e-4)
 
     track_loss = []
     for itr in range(1, args.niters + 1):
@@ -98,7 +127,10 @@ if __name__ == '__main__':
 
         optimizer.zero_grad()
 
-        pred_y, _, _, _ = sblock(x=batch_in)
+        if use_simple_resnet:
+            pred_y = simple_resnet(x=batch_in)
+        else:
+            pred_y, _, _, _ = sblock(x=batch_in)
 
         loss = torch.mean((pred_y - batch_out)**2)  # + 1e-2 * sblock.get_norm_penalty()
         loss.backward()
