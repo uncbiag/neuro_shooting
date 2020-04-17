@@ -45,8 +45,8 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
 
         parameter_objects = SortedDict()
 
-        linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight)
-        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight)
+        linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight,bias=True)
+        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight,bias=True)
 
         parameter_objects['l1'] = linear1
         parameter_objects['l2'] = linear2

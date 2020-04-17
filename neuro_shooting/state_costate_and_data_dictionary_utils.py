@@ -317,7 +317,8 @@ def compute_tuple_from_parameter_objects(parameter_objects):
     for o in parameter_objects:
         current_pars = parameter_objects[o].get_parameter_dict()
         for k in current_pars:
-            sv_list.append((current_pars[k]))
+            if current_pars[k] is not None:
+                sv_list.append((current_pars[k]))
 
     return tuple(sv_list)
 

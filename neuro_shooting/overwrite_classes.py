@@ -25,7 +25,8 @@ class RemoveParameters(object):
         for k in self._parameters:
             #new_parameter_dict[k] = self._parameters[k]
 
-            new_parameter_dict[k] = torch.zeros_like(self._parameters[k],requires_grad=True)
+            if self._parameters[k] is not None:
+                new_parameter_dict[k] = torch.zeros_like(self._parameters[k],requires_grad=True)
 
             # # gets rid of the variables like self.bias or self.weight (so there is no confusion afterwards)
             # setattr(self,k,None)
@@ -96,7 +97,10 @@ class SNN_Linear(nn.Linear,RemoveParameters):
         return self
 
     def forward(self, input):
-        return F.linear(input, self._parameter_dict['weight'], self._parameter_dict['bias'])
+        if 'bias' in self._parameter_dict:
+            return F.linear(input, self._parameter_dict['weight'], self._parameter_dict['bias'])
+        else:
+            return F.linear(input, self._parameter_dict['weight'])
 
 class SNN_Conv2d(nn.Conv2d,RemoveParameters):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,

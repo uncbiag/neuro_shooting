@@ -35,8 +35,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--data_size', type=int, default=1000)
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=10000)
-    parser.add_argument('--test_freq', type=int, default=1000)
+    parser.add_argument('--niters', type=int, default=5000)
+    parser.add_argument('--test_freq', type=int, default=100)
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--verbose', action='store_true', default=False)
     args = parser.parse_args()
@@ -169,14 +169,14 @@ if __name__ == '__main__':
 
     par_init = pi.VectorEvolutionParameterInitializer(
         only_random_initialization=True,
-        random_initialization_magnitude=1.0)
+        random_initialization_magnitude=0.01)
 
     #    smodel = smodels.AutoShootingIntegrandModelUpDown(
     smodel = smodels.AutoShootingIntegrandModelResNetUpDown(
         in_features=1,
         nonlinearity='tanh',
-        parameter_weight=0.025,
-        nr_of_particles=10,
+        parameter_weight=0.01,
+        nr_of_particles=20,
         particle_dimension=1,
         particle_size=1)
 
@@ -196,10 +196,10 @@ if __name__ == '__main__':
         intgrator_options = {'stepsize':0.1}
     )
 
-    use_simple_resnet = True
+    use_simple_resnet = False
     use_rnn = False
     use_updown = False
-    use_double_resnet = True
+    use_double_resnet = False
 
     if use_rnn:
         weight_decay = 0.0000001
@@ -225,7 +225,14 @@ if __name__ == '__main__':
     if use_simple_resnet:
         optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
     else:
-        optimizer = optim.Adam(sblock.parameters(), lr=1e-4)
+
+        # do some parameter freezing
+        for pn,pp in sblock.named_parameters():
+            if pn=='q1':
+                # freeze the locations
+                pp.requires_grad = False
+
+        optimizer = optim.Adam(sblock.parameters(), lr=1e-5)
 
     track_loss = []
     for itr in range(1, args.niters + 1):
