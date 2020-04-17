@@ -35,8 +35,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--data_size', type=int, default=1000)
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=2000)
-    parser.add_argument('--test_freq', type=int, default=100)
+    parser.add_argument('--niters', type=int, default=10000)
+    parser.add_argument('--test_freq', type=int, default=1000)
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--verbose', action='store_true', default=False)
     args = parser.parse_args()
@@ -67,6 +67,22 @@ class SuperSimpleResNet(nn.Module):
         x = x + self.l3(F.relu(x))
         x = x + self.l4(F.relu(x))
         x = x + self.l5(F.relu(x))
+
+        return x
+
+class SuperSimpleRNNResNet(nn.Module):
+
+    def __init__(self):
+        super(SuperSimpleRNNResNet, self).__init__()
+        self.l1 = nn.Linear(1,1,bias=True)
+
+    def forward(self, x):
+
+        x = x + self.l1(F.relu(x))
+        x = x + self.l1(F.relu(x))
+        x = x + self.l1(F.relu(x))
+        x = x + self.l1(F.relu(x))
+        x = x + self.l1(F.relu(x))
 
         return x
 
@@ -105,14 +121,18 @@ if __name__ == '__main__':
     )
 
     use_simple_resnet = True
+    use_rnn = True
 
-    simple_resnet = SuperSimpleResNet()
+    if use_rnn:
+        simple_resnet = SuperSimpleRNNResNet()
+    else:
+        simple_resnet = SuperSimpleResNet()
 
     sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
     sblock(x=sample_batch_in)
 
     if use_simple_resnet:
-        optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2)
+        optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-3)
     else:
         optimizer = optim.Adam(sblock.parameters(), lr=1e-4)
 
