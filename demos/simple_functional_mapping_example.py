@@ -64,6 +64,45 @@ class UpDownNet(nn.Module):
 
         return x
 
+class UpDownDoubleResNet(nn.Module):
+
+    def __init__(self):
+        super(UpDownDoubleResNet, self).__init__()
+
+        self.l1 = nn.Linear(5,1,bias=True)
+        self.l2 = nn.Linear(1,5,bias=True)
+
+    def forward(self, x1, x2):
+
+        x1 = x1 + self.l1(F.relu(x2))
+        #x2 = x2 + self.l2(F.relu(x1))
+        x2 = self.l2(F.relu(x1))
+
+        return x1, x2
+
+
+class SuperSimpleDoubleResNetUpDown(nn.Module):
+
+    def __init__(self):
+        super(SuperSimpleDoubleResNetUpDown, self).__init__()
+
+        self.l1 = UpDownDoubleResNet()
+        self.l2 = UpDownDoubleResNet()
+        self.l3 = UpDownDoubleResNet()
+        self.l4 = UpDownDoubleResNet()
+        self.l5 = UpDownDoubleResNet()
+
+
+    def forward(self, x1, x2):
+
+        x1,x2 = self.l1(x1,x2)
+        x1,x2 = self.l2(x1,x2)
+        x1,x2 = self.l3(x1,x2)
+        x1,x2 = self.l4(x1,x2)
+        x1,x2 = self.l5(x1,x2)
+
+        return x1,x2
+
 class SuperSimpleResNetUpDown(nn.Module):
 
     def __init__(self):
@@ -132,11 +171,12 @@ if __name__ == '__main__':
         only_random_initialization=True,
         random_initialization_magnitude=1.0)
 
-    smodel = smodels.AutoShootingIntegrandModelUpDown(
+    #    smodel = smodels.AutoShootingIntegrandModelUpDown(
+    smodel = smodels.AutoShootingIntegrandModelResNetUpDown(
         in_features=1,
         nonlinearity='tanh',
-        parameter_weight=0.01,
-        nr_of_particles=50,
+        parameter_weight=0.025,
+        nr_of_particles=10,
         particle_dimension=1,
         particle_size=1)
 
@@ -153,12 +193,13 @@ if __name__ == '__main__':
         shooting_integrand=smodel,
         integrator_name='rk4',
         use_adjoint_integration=False,
-        intgrator_options = {'stepsize':0.01}
+        intgrator_options = {'stepsize':0.1}
     )
 
     use_simple_resnet = True
     use_rnn = False
-    use_updown = True
+    use_updown = False
+    use_double_resnet = True
 
     if use_rnn:
         weight_decay = 0.0000001
@@ -169,10 +210,14 @@ if __name__ == '__main__':
             weight_decay = 0.025
             print('Using SuperSimpleResNetUpDown: weight = {}'.format(weight_decay))
             simple_resnet = SuperSimpleResNetUpDown()
-        else:
+        elif use_updown:
             weight_decay = 0.0000001
             print('Using SuperSimpleResNet: weight = {}'.format(weight_decay))
             simple_resnet = SuperSimpleResNet()
+        else:
+            weight_decay = 0.025
+            print('Using SuperSimpleDoubleResNetUpDown: weight = {}'.format(weight_decay))
+            simple_resnet = SuperSimpleDoubleResNetUpDown()
 
     sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
     sblock(x=sample_batch_in)
@@ -194,7 +239,15 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         if use_simple_resnet:
-            pred_y = simple_resnet(x=batch_in)
+            if use_double_resnet:
+                x20 = torch.zeros_like(batch_in)
+                sz = [1] * len(x20.shape)
+                sz[-1] = 5
+                x20 = x20.repeat(sz)
+
+                pred_y, pred_y2 = simple_resnet(x1=batch_in,x2=x20)
+            else:
+                pred_y,_ = simple_resnet(x=batch_in)
         else:
             pred_y, _, _, _ = sblock(x=batch_in)
 
