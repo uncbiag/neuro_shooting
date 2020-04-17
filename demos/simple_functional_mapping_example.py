@@ -99,7 +99,7 @@ if __name__ == '__main__':
     smodel = smodels.AutoShootingIntegrandModelUpDown(
         in_features=1,
         nonlinearity='tanh',
-        parameter_weight=0.05,
+        parameter_weight=0.01,
         nr_of_particles=50,
         particle_dimension=1,
         particle_size=1)
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     )
 
     use_simple_resnet = True
-    use_rnn = True
+    use_rnn = False
 
     if use_rnn:
         simple_resnet = SuperSimpleRNNResNet()
@@ -132,7 +132,8 @@ if __name__ == '__main__':
     sblock(x=sample_batch_in)
 
     if use_simple_resnet:
-        optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-3)
+        weight_decay = 0.0000001
+        optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
     else:
         optimizer = optim.Adam(sblock.parameters(), lr=1e-4)
 
