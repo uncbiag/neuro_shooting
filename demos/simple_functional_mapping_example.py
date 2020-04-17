@@ -49,6 +49,42 @@ def get_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
+class UpDownNet(nn.Module):
+
+    def __init__(self):
+        super(UpDownNet, self).__init__()
+
+        self.l1 = nn.Linear(1,5,bias=True)
+        self.l2 = nn.Linear(5, 1,bias=True)
+
+    def forward(self, x):
+
+        x = self.l1(F.relu(x))
+        x = self.l2(F.relu(x))
+
+        return x
+
+class SuperSimpleResNetUpDown(nn.Module):
+
+    def __init__(self):
+        super(SuperSimpleResNetUpDown, self).__init__()
+
+        self.l1 = UpDownNet()
+        self.l2 = UpDownNet()
+        self.l3 = UpDownNet()
+        self.l4 = UpDownNet()
+        self.l5 = UpDownNet()
+
+    def forward(self, x):
+
+        x = x + self.l1(F.relu(x))
+        x = x + self.l2(F.relu(x))
+        x = x + self.l3(F.relu(x))
+        x = x + self.l4(F.relu(x))
+        x = x + self.l5(F.relu(x))
+
+        return x
+
 class SuperSimpleResNet(nn.Module):
 
     def __init__(self):
@@ -122,17 +158,26 @@ if __name__ == '__main__':
 
     use_simple_resnet = True
     use_rnn = False
+    use_updown = True
 
     if use_rnn:
+        weight_decay = 0.0000001
+        print('Using SuperSimpleRNNResNet: weight = {}'.format(weight_decay))
         simple_resnet = SuperSimpleRNNResNet()
     else:
-        simple_resnet = SuperSimpleResNet()
+        if use_updown:
+            weight_decay = 0.025
+            print('Using SuperSimpleResNetUpDown: weight = {}'.format(weight_decay))
+            simple_resnet = SuperSimpleResNetUpDown()
+        else:
+            weight_decay = 0.0000001
+            print('Using SuperSimpleResNet: weight = {}'.format(weight_decay))
+            simple_resnet = SuperSimpleResNet()
 
     sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
     sblock(x=sample_batch_in)
 
     if use_simple_resnet:
-        weight_decay = 0.0000001
         optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
     else:
         optimizer = optim.Adam(sblock.parameters(), lr=1e-4)
