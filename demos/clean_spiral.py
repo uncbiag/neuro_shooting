@@ -513,6 +513,7 @@ def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
 
         print('Plotting')
         plt.show()
+        plt.close("all")
 
 sys.stdout.close()
 sys.stdout=stdoutOrigin

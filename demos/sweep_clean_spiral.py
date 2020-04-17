@@ -3,8 +3,9 @@ import os
 import itertools
 
 
-def main(taskid):
+for taskid in range(108):
 
+    print('taskid: {}'.format(taskid))
 
     hyperparameter_config = {
         'shooting_model': ['simple','2nd_order','updown'],
@@ -15,10 +16,11 @@ def main(taskid):
 
     keys, values = zip(*hyperparameter_config.items())
     hyperparameter_experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
-    taskid = int(taskid[0])
+    # taskid = int(taskid[0])
 
     os.system("python clean_spiral.py "
               "--viz "
+              "--niters 1000 "
               "--method dopri5 "
               "--shooting_model %s "
               "--nr_of_particles %s "
@@ -29,5 +31,3 @@ def main(taskid):
                hyperparameter_experiments[taskid]['pw'],
                hyperparameter_experiments[taskid]['nonlinearity']))
 
-if __name__ == "__main__":
-    main(sys.argv[1:])
