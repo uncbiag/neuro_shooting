@@ -48,6 +48,8 @@ parser.add_argument('--use_analytic_solution',action='store_true',help='Enable a
 parser.add_argument('--viz', action='store_true', help='Enable visualization.')
 parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
 parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
+parser.add_argument('--log_to_file', action='store_true',
+                    help='If selected, all things printed on screen are saved in file and not displayed on screen')
 
 args = parser.parse_args()
 
@@ -61,8 +63,10 @@ def makedirs(dirname):
         os.makedirs(dirname)
 
 makedirs(saveresultspath)
-stdoutOrigin=sys.stdout
-sys.stdout = open("{}/log.txt".format(saveresultspath), "w")
+
+if args.log_to_file:
+    stdoutOrigin=sys.stdout
+    sys.stdout = open("{}/log.txt".format(saveresultspath), "w")
 
 print(args)
 
@@ -446,74 +450,76 @@ if __name__ == '__main__':
 
         end = time.time()
 
+    if args.log_to_file:
+        sys.stdout.close()
+        sys.stdout = stdoutOrigin
+
 
 # TODO: this is no longer used, deprecate?
-def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
+# def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
+#
+#     # convention for batch_t: t x B x (row-vector)
+#
+#     if args.viz:
+#
+#         batch_size = batch_y.size()[1]
+#
+#         if (thetas is None) or (bias is None) or (real_thetas is None):
+#             fig = plt.figure(figsize=(8, 4), facecolor='white')
+#             ax_traj = fig.add_subplot(121, frameon=False)
+#             ax_phase = fig.add_subplot(122, frameon=False)
+#         else:
+#             fig = plt.figure(figsize=(8, 8), facecolor='white')
+#             ax_traj = fig.add_subplot(221, frameon=False)
+#             ax_phase = fig.add_subplot(222, frameon=False)
+#             ax_thetas = fig.add_subplot(223, frameon=False)
+#             ax_bias = fig.add_subplot(224, frameon=False)
+#
+#         ax_traj.cla()
+#         ax_traj.set_title('Trajectories')
+#         ax_traj.set_xlabel('t')
+#         ax_traj.set_ylabel('y1,y2')
+#
+#         for b in range(batch_size):
+#             c_values = batch_y[:,b,0,:]
+#
+#             ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
+#
+#         ax_traj.set_xlim(batch_t.min(), batch_t.max())
+#         ax_traj.set_ylim(-2, 2)
+#         # ax_traj.legend()
+#
+#         ax_phase.cla()
+#         ax_phase.set_title('Phase Portrait')
+#         ax_phase.set_xlabel('y1')
+#         ax_phase.set_ylabel('y2')
+#
+#         for b in range(batch_size):
+#             c_values = batch_y[:,b,0,:]
+#
+#             ax_phase.plot(c_values.numpy()[:, 0], c_values.numpy()[:, 1], 'g-')
+#
+#         ax_phase.set_xlim(-2, 2)
+#         ax_phase.set_ylim(-2, 2)
+#
+#         if (thetas is not None) and (bias is not None) and (real_thetas is not None):
+#             ax_thetas.cla()
+#             ax_thetas.set_title('theta elements over time')
+#             nr_t_el = thetas.shape[1]
+#             colors = ['r','b','c','k']
+#             for n in range(nr_t_el):
+#                 ax_thetas.plot(thetas[:,n],color=colors[n])
+#                 ax_thetas.plot(real_thetas[:,n],'--', color=colors[n])
+#
+#             ax_bias.cla()
+#             ax_bias.set_title('bias elements over time')
+#             nr_b_el = bias.shape[1]
+#             for n in range(nr_b_el):
+#                 ax_bias.plot(bias[:,n])
+#
+#         fig.tight_layout()
+#
+#         print('Plotting')
+#         plt.show()
+#         plt.close("all")
 
-    # convention for batch_t: t x B x (row-vector)
-
-    if args.viz:
-
-        batch_size = batch_y.size()[1]
-
-        if (thetas is None) or (bias is None) or (real_thetas is None):
-            fig = plt.figure(figsize=(8, 4), facecolor='white')
-            ax_traj = fig.add_subplot(121, frameon=False)
-            ax_phase = fig.add_subplot(122, frameon=False)
-        else:
-            fig = plt.figure(figsize=(8, 8), facecolor='white')
-            ax_traj = fig.add_subplot(221, frameon=False)
-            ax_phase = fig.add_subplot(222, frameon=False)
-            ax_thetas = fig.add_subplot(223, frameon=False)
-            ax_bias = fig.add_subplot(224, frameon=False)
-
-        ax_traj.cla()
-        ax_traj.set_title('Trajectories')
-        ax_traj.set_xlabel('t')
-        ax_traj.set_ylabel('y1,y2')
-
-        for b in range(batch_size):
-            c_values = batch_y[:,b,0,:]
-
-            ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
-
-        ax_traj.set_xlim(batch_t.min(), batch_t.max())
-        ax_traj.set_ylim(-2, 2)
-        # ax_traj.legend()
-
-        ax_phase.cla()
-        ax_phase.set_title('Phase Portrait')
-        ax_phase.set_xlabel('y1')
-        ax_phase.set_ylabel('y2')
-
-        for b in range(batch_size):
-            c_values = batch_y[:,b,0,:]
-
-            ax_phase.plot(c_values.numpy()[:, 0], c_values.numpy()[:, 1], 'g-')
-
-        ax_phase.set_xlim(-2, 2)
-        ax_phase.set_ylim(-2, 2)
-
-        if (thetas is not None) and (bias is not None) and (real_thetas is not None):
-            ax_thetas.cla()
-            ax_thetas.set_title('theta elements over time')
-            nr_t_el = thetas.shape[1]
-            colors = ['r','b','c','k']
-            for n in range(nr_t_el):
-                ax_thetas.plot(thetas[:,n],color=colors[n])
-                ax_thetas.plot(real_thetas[:,n],'--', color=colors[n])
-
-            ax_bias.cla()
-            ax_bias.set_title('bias elements over time')
-            nr_b_el = bias.shape[1]
-            for n in range(nr_b_el):
-                ax_bias.plot(bias[:,n])
-
-        fig.tight_layout()
-
-        print('Plotting')
-        plt.show()
-        plt.close("all")
-
-sys.stdout.close()
-sys.stdout=stdoutOrigin

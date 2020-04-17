@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import random
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import sys
 
 import neuro_shooting.generic_integrator as generic_integrator
 from neuro_shooting.shooting_models import AutoShootingIntegrandModelSimple as Simple
@@ -42,6 +43,10 @@ def setup_cmdline_parsing():
     parser.add_argument('--niters', type=int, default=500)
     parser.add_argument('--print_freq', type=int, default=10)
     parser.add_argument('--validate_with_long_range',action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
+    parser.add_argument('--batch_validation_size', type=int, default=100,
+                        help='number of validation trajectories (each of time length batch_time).')
+    parser.add_argument('--log_to_file',action='store_true',help='If selected, all things printed on screen are saved in file and not displayed on screen')
+
     args = parser.parse_args()
     return args
 
@@ -106,8 +111,6 @@ def makedirs(dirname):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
-
-
 def plot_trajectories(true_y, pred_y=None, sim_time=None, save=None, figsize=(16, 8)):
     # plt.figure(figsize=figsize)
     plt.subplot(122)
@@ -133,33 +136,10 @@ def plot_trajectories(true_y, pred_y=None, sim_time=None, save=None, figsize=(16
     plt.show()
 
 
-# class Model(nn.Module):
-#     def __init__(self, in_features, nr_of_particles=5, pw=1.0):
-#         super(Model, self).__init__()
-#
-#         self.int = Simple(in_features, 'tanh', nr_of_particles=nr_of_particles, parameter_weight=pw)
-#         self.blk = Base('shooting_block', shooting_integrand=self.int)
-#
-#     def trajectory(self, batch_y0, batch_t):
-#
-#         # batch_t defines time steps for trajectory
-#         # set time steps
-#         self.blk.set_integration_time_vector(batch_t, suppress_warning=True)
-#         # run through shooting block
-#         out = self.blk(batch_y0)
-#         # reset integration time
-#         self.blk.set_integration_time(1)
-#
-#         return out
-#
-#     def forward(self, batch_y0, batch_t=None):
-#         if batch_t is not None:
-#             self.blk.set_integration_time_vector(batch_t, suppress_warning=True)
-#         pred_y, _, _, _ = self.blk(batch_y0)
-#         return pred_y
+def visualize(true_y, pred_y, sim_time, odefunc, is_odenet=False, is_higher_order_model=False, savepath=None):
 
-# TODO: debug through visualize, not working currently
-def visualize(true_y, pred_y, t, odefunc):
+
+    quiver_scale = 2.5 # to scale the magnitude of the quiver vectors for visualization
 
     fig = plt.figure(figsize=(12, 4), facecolor='white')
     ax_traj = fig.add_subplot(131, frameon=False)
@@ -169,82 +149,148 @@ def visualize(true_y, pred_y, t, odefunc):
     ax_traj.cla()
     ax_traj.set_title('Trajectories')
     ax_traj.set_xlabel('t')
-    ax_traj.set_ylabel('x,y')
+    ax_traj.set_ylabel('y1,y2')
 
-    # plot checked
-    ax_traj.plot(t.numpy(), true_y.numpy()[:, 0, 0], t.numpy(), true_y.numpy()[:, 0, 1], 'g-')
-    ax_traj.plot(t.numpy(), pred_y.numpy()[:, 0, 0], '--', t.numpy(), pred_y.numpy()[:, 0, 1], 'b--')
-    ax_traj.set_xlim(t.min(), t.max())
+    # true_y and pred_y: [time points, sample size, 1, dimension of y]
+    # this graphic is unintelligible, too much overcrowding
+    for n in range(true_y.size()[1]):
+        ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], 'g-',
+                     sim_time.numpy(), true_y.numpy()[:, n, 0, 1], 'b-')
+        ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], 'g--',
+                     sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 1],'b--')
+
+
+    ax_traj.set_xlim(sim_time.min(), sim_time.max())
     ax_traj.set_ylim(-2, 2)
-    ax_traj.legend()
+    # ax_traj.legend()
 
-    # plot checked
     ax_phase.cla()
     ax_phase.set_title('Phase Portrait')
-    ax_phase.set_xlabel('x')
-    ax_phase.set_ylabel('y')
-    ax_phase.plot(true_y.numpy()[:, 0, 0], true_y.numpy()[:, 0, 1], 'g-')
-    ax_phase.plot(pred_y.numpy()[:, 0, 0], pred_y.numpy()[:, 0, 1], 'b--')
-    ax_phase.set_xlim(-3, 3)
-    ax_phase.set_ylim(-3, 3)
+    ax_phase.set_xlabel('y1')
+    ax_phase.set_ylabel('y2')
 
-    # vector field
+    xlim_min, xlim_max, ylim_min, ylim_max = [], [], [], []
+    for n in range(true_y.size()[1]):
+        ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
+        ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
+        xlim_min += [np.min([np.min(true_y.detach().numpy()[:, n, 0, 0]),np.min(pred_y.detach().numpy()[:, n, 0, 0])])]
+        xlim_max += [np.max([np.max(true_y.detach().numpy()[:, n, 0, 0]),np.max(pred_y.detach().numpy()[:, n, 0, 0])])]
+        ylim_min += [np.min([np.min(true_y.detach().numpy()[:, n, 0, 1]),np.min(pred_y.detach().numpy()[:, n, 0, 1])])]
+        ylim_max += [np.max([np.max(true_y.detach().numpy()[:, n, 0, 1]),np.max(pred_y.detach().numpy()[:, n, 0, 1])])]
+
+    if not is_odenet:
+
+        try:
+            q = (odefunc.q_params)
+            p = (odefunc.p_params)
+
+            q_np = q.cpu().detach().squeeze(dim=1).numpy()
+            p_np = p.cpu().detach().squeeze(dim=1).numpy()
+
+            ax_phase.scatter(q_np[:,0],q_np[:,1],marker='+')
+            ax_phase.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
+        except:
+            pass
+
+
+    ax_phase.set_xlim(min(xlim_min),max(xlim_max))
+    ax_phase.set_ylim(min(ylim_min),max(ylim_max))
+
+
     ax_vecfield.cla()
     ax_vecfield.set_title('Learned Vector Field')
-    ax_vecfield.set_xlabel('x')
-    ax_vecfield.set_ylabel('y')
+    ax_vecfield.set_xlabel('y1')
+    ax_vecfield.set_ylabel('y2')
 
     y, x = np.mgrid[-2:2:21j, -2:2:21j]
-    viz_time = t[:10]
-    odefunc.set_integration_time_vector(
-        integration_time_vector=viz_time,
-        suppress_warning=True
-    )
-    x_0 = torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2)).unsqueeze(dim=1)
-    dydt_pred_y,_,_,_ = odefunc(x=x_0)
-    dydt = dydt_pred_y[-1,:,0,:].cpu().detach().numpy()
+
+    current_y = torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2))
+
+    # print("q_params",q_params.size())
+
+    if not is_odenet:
+        x_0 = current_y.unsqueeze(dim=1)
+
+        viz_time = sim_time[:5] # just 5 timesteps ahead
+
+        odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=True)
+        dydt_pred_y,_,_,_ = odefunc(x=x_0)
+
+        if is_higher_order_model:
+            dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
+            dydt = dydt[:,0,...]
+        else:
+            dydt = dydt_pred_y[-1,0,...]
+
+    else:
+        dydt = odefunc(0, current_y).cpu().detach().numpy()
 
     mag = np.sqrt(dydt[:, 0]**2 + dydt[:, 1]**2).reshape(-1, 1)
     dydt = (dydt / mag)
     dydt = dydt.reshape(21, 21, 2)
 
     ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
+
+    if not is_odenet:
+        try:
+            ax_vecfield.scatter(q_np[:, 0], q_np[:, 1], marker='+')
+            ax_vecfield.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
+        except:
+            pass
+
     ax_vecfield.set_xlim(-2, 2)
     ax_vecfield.set_ylim(-2, 2)
 
     fig.tight_layout()
+
+    print('Plotting')
+    plt.savefig('{}/traj_phase_vf.png'.format(savepath))
     plt.draw()
-    plt.savefig('affinelayer.png')
     plt.pause(0.001)
     plt.show()
+
 
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
+
+    saveresultspath = \
+        'sanity_check_results/t_max{}/numparticles{}/pw{}/true_nonlinearity{}/assumed_nonlinearity{}'.\
+            format(args.t_max,
+                   args.nr_of_particles,
+                   args.pw,
+                   args.true_nonlinearity,
+                   args.assumed_nonlinearity)
+
+
+    def makedirs(dirname):
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
+
+    makedirs(saveresultspath)
+
+    if args.log_to_file:
+        stdoutOrigin = sys.stdout
+        sys.stdout = open("{}/log.txt".format(saveresultspath), "w")
+
+
     print(args)
 
+
     true_y0, true_t, true_A, true_b, true_y = setup_problem(args)
+    print('true_y0: {}'.format(true_y0))
+    print('true_t: {}'.format(true_t))
+    print('true_A: {}'.format(true_A))
+    print('true_A: {}'.format(true_b))
+    print('true_y: {}'.format(true_y))
+
     assert true_y.size() == torch.Size([args.data_size, 1, 2])
 
     sample_batch_y0, sample_batch_t, sample_batch_y = get_batch(args.batch_size,args.batch_time)
     assert sample_batch_t.size() == torch.Size([args.batch_time])
     assert sample_batch_y0.size() == torch.Size([args.batch_size, 1, 2])
     assert sample_batch_y.size() == torch.Size([args.batch_time, args.batch_size, 1, 2])
-
-    fig = plt.figure(figsize=(16, 8), facecolor='white')
-    ax_truetraj = fig.add_subplot(121, frameon=False)
-    ax_trueversuspred_batch = fig.add_subplot(122, frameon=False)
-
-    ax_truetraj.scatter(true_y[:,:,0].numpy().squeeze(),true_y[:,:,1].numpy().squeeze(),c=true_t.numpy(), cmap=cm.plasma, label='observations (colored by time)')
-    ax_truetraj.scatter(true_y0[:,0].numpy().squeeze(),true_y0[:,1].numpy().squeeze(),marker="x", s= 160, label='initial condition')
-    ax_truetraj.set_xlabel('y_1')
-    ax_truetraj.set_xlabel('y_2')
-    ax_truetraj.legend()
-    ax_truetraj.set_title('true dynamics')
-
-    saveimgname = 'affinelayer_sanitycheck'
-    makedirs('{}'.format(saveimgname))
-
 
     # model = Model(in_features=args.in_features, pw=args.pw, nr_of_particles=args.nr_of_particles)
 
@@ -321,19 +367,13 @@ if __name__ == '__main__':
 
             pred_y_trajectory, _, _, _ = sblock(true_y0)
 
-            # visualize(true_y,
-            #           pred_y_trajectory[:, 0, :, :],
-            #           true_t,
-            #           sblock)
-
-            plot_trajectories([true_y],
-                              [pred_y_trajectory[:, 0, :, :]],
-                              [batch_t],
-                              figsize=(8, 8))
+            visualize(true_y, pred_y_trajectory, true_t, sblock, is_odenet=False,
+                      is_higher_order_model=True, savepath=saveresultspath)
 
         else:
-            print('Pick a random trajectory of length {}: visualizing actual versus predicted'.format(args.batch_time))
-            batch_y0, batch_t, batch_y = get_batch(batch_size=1, batch_time=args.batch_time)
+            print('Pick {} random trajectories of length {}: visualizing actual versus predicted'
+                  .format(args.batch_validation_size,args.batch_time))
+            batch_y0, batch_t, batch_y = get_batch(batch_size=args.batch_validation_size, batch_time=args.batch_time)
 
             sblock.set_integration_time_vector(
                 integration_time_vector=batch_t,
@@ -341,15 +381,9 @@ if __name__ == '__main__':
 
             pred_batch_trajectory,_,_,_ = sblock(batch_y0)
 
-            # visualize(batch_y[:, 0, :, :],
-            #           pred_batch_trajectory[:, 0, :, :],
-            #           batch_t,
-            #           sblock)
+            visualize(batch_y, pred_batch_trajectory, batch_t, sblock, is_odenet=False,
+                      is_higher_order_model=True, savepath=saveresultspath)
 
-            plot_trajectories([batch_y[:, 0, :, :]],
-                              [pred_batch_trajectory[:, 0, :, :]],
-                              [batch_t],
-                              figsize=(8, 8))
-
-
-
+    if args.log_to_file:
+        sys.stdout.close()
+        sys.stdout=stdoutOrigin
