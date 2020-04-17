@@ -32,17 +32,16 @@ def setup_cmdline_parsing():
     parser.add_argument('--data_size', type=int, default=250)
     parser.add_argument('--t_max', type=int, default=10)
     parser.add_argument('--loss_terminal_only',action='store_true', help='If selected, loss only penalizes terminal prediction')
-    parser.add_argument('--batch_time', type=int, default=20)
-    parser.add_argument('--batch_size', type=int, default=20)
+    parser.add_argument('--batch_time', type=int, default=25)
+    parser.add_argument('--batch_size', type=int, default=10)
+    parser.add_argument('--true_nonlinearity', type=str, default='tanh', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity that generates the data.')
+    parser.add_argument('--assumed_nonlinearity', type=str, default='tanh', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=0.5, help='parameter weight')
     parser.add_argument('--nr_of_particles', type=int, default=10,
                         help='Number of particles to parameterize the initial condition')
     parser.add_argument('--niters', type=int, default=500)
-    parser.add_argument('--test_freq', type=int, default=10)
     parser.add_argument('--print_freq', type=int, default=10)
-    parser.add_argument('--viz', action='store_true')
     parser.add_argument('--validate_with_long_range',action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
-    parser.add_argument('--verbose', action='store_true', default=False)
     args = parser.parse_args()
     return args
 
@@ -64,7 +63,14 @@ def setup_problem(args):
     ## where f(t,y(t))  = true_A \sigma(y(t)) + true_b
     class Lambda(nn.Module):
         def forward(self, t, y):
-            return torch.mm(F.tanh(y), true_A) + true_b
+            if args.true_nonlinearity == 'tanh':
+                return torch.mm(torch.tanh(y), true_A) + true_b
+            elif args.true_nonlinearity == 'relu':
+                return torch.mm(torch.relu(y), true_A) + true_b
+            if args.true_nonlinearity == 'sigmoid':
+                return torch.mm(torch.sigmoid(y), true_A) + true_b
+            if args.true_nonlinearity == 'identity':
+                return torch.mm(y, true_A) + true_b
 
     stepsize = 0.5
     integrator_options = {'step_size': stepsize}
@@ -248,7 +254,7 @@ if __name__ == '__main__':
 
     smodel = smodels.AutoShootingIntegrandModelSimple(
         in_features=args.in_features,
-        nonlinearity='tanh',
+        nonlinearity=args.assumed_nonlinearity,
         parameter_weight=args.pw,
         nr_of_particles=args.nr_of_particles,
         particle_dimension=1,
@@ -300,12 +306,10 @@ if __name__ == '__main__':
         # take gradient step
         opt.step()
 
-        sblock.set_integration_time_vector(
-                    integration_time_vector=true_t,
-                    suppress_warning=True)
 
     print('Finished training on trajectories of length {}'.format(args.batch_time))
 
+    # evaluate
     with torch.no_grad():
 
         if args.validate_with_long_range:
@@ -325,7 +329,6 @@ if __name__ == '__main__':
             plot_trajectories([true_y],
                               [pred_y_trajectory[:, 0, :, :]],
                               [batch_t],
-                              save='png/affinelayer_sanitycheck/seed{}'.format(random_seed),
                               figsize=(8, 8))
 
         else:
@@ -346,7 +349,6 @@ if __name__ == '__main__':
             plot_trajectories([batch_y[:, 0, :, :]],
                               [pred_batch_trajectory[:, 0, :, :]],
                               [batch_t],
-                              save='png/affinelayer_sanitycheck/seed{}'.format(random_seed),
                               figsize=(8, 8))
 
 
