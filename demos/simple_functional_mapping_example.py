@@ -38,7 +38,7 @@ def setup_cmdline_parsing():
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='resnet_updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
-    parser.add_argument('--nonlinearity', type=str, default='tanh', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity for shooting.')
+    parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=0.01, help='parameter weight')
     parser.add_argument('--nr_of_particles', type=int, default=20, help='Number of particles to parameterize the initial condition')
 
@@ -47,6 +47,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_double_resnet',action='store_true')
     parser.add_argument('--use_rnn',action='store_true')
     parser.add_argument('--use_simple_resnet',action='store_true')
+    parser.add_argument('--use_neural_ode',action='store_true')
 
     parser.add_argument('--test_freq', type=int, default=100)
     parser.add_argument('--viz', action='store_true')
@@ -135,7 +136,7 @@ class SuperSimpleResNetUpDown(nn.Module):
 
         return x
 
-class SuperSimpleResNet(nn.Module):
+class SuperSimpleResNet(nn.Module): # corresponds to our simple shooting model
 
     def __init__(self):
         super(SuperSimpleResNet, self).__init__()
@@ -172,6 +173,23 @@ class SuperSimpleRNNResNet(nn.Module):
 
         return x
 
+class ODESimpleFunc(nn.Module):
+
+    def __init__(self):
+        super(ODESimpleFunc, self).__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(1, 1),
+            nn.Tanh(),
+        )
+
+        for m in self.net.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0, std=0.1)
+                nn.init.constant_(m.bias, val=0)
+
+    def forward(self, t, y):
+        return self.net(y)
 
 if __name__ == '__main__':
 
@@ -192,7 +210,7 @@ if __name__ == '__main__':
                                 'particle_size': 1}
 
     if args.shooting_model == 'simple':
-        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs)
+        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)
     elif args.shooting_model == '2nd_order':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
     elif args.shooting_model == 'updown':
@@ -205,7 +223,7 @@ if __name__ == '__main__':
         shooting_integrand=smodel,
         integrator_name='rk4',
         use_adjoint_integration=False,
-        intgrator_options = {'stepsize':0.1}
+        intgrator_options = {'stepsize':0.5}
     )
 
     use_shooting = False
@@ -225,13 +243,25 @@ if __name__ == '__main__':
         weight_decay = 0.025
         print('Using SuperSimpleDoubleResNetUpDown: weight = {}'.format(weight_decay))
         simple_resnet = SuperSimpleDoubleResNetUpDown()
+    elif args.use_neural_ode:
+        print('Using neural ode')
+        func = ODESimpleFunc()
+        optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
+        integrator = gi.GenericIntegrator(integrator_library='odeint',
+                                                          integrator_name=args.method,
+                                                          use_adjoint_integration=False,
+                                                          rtol=1e-8, atol=1e-12)
+
     else:
         use_shooting = True
         print('Using shooting')
 
 
     if not use_shooting:
-        optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
+        if args.use_neural_ode:
+            optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
+        else:
+            optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
     else:
 
         sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
@@ -254,7 +284,12 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         if not use_shooting:
-            if args.use_double_resnet:
+            if args.use_neural_ode:
+
+                pred_y = integrator.integrate(func=func, x0=batch_in, t=torch.tensor([0, 1]).float())
+                pred_y = pred_y[1, :, :, :] # need prediction at time 1
+
+            elif args.use_double_resnet:
                 x20 = torch.zeros_like(batch_in)
                 sz = [1] * len(x20.shape)
                 sz[-1] = 5
@@ -267,6 +302,7 @@ if __name__ == '__main__':
             # set integration time
             # sblock.set_integration_time(time_to=1.0) # try to do this mapping in unit time
             pred_y, _, _, _ = sblock(x=batch_in)
+
 
         loss = torch.mean((pred_y - batch_out)**2)  # + 1e-2 * sblock.get_norm_penalty()
         loss.backward()
