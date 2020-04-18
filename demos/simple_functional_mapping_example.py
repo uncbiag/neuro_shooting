@@ -209,6 +209,12 @@ class ODESimpleFunc(nn.Module):
     def forward(self, t, y):
         return self.net(y)
 
+def print_all_parameters(model):
+
+    print('\n Model parameters:\n')
+    for pn,pv in model.named_parameters():
+        print('{} = {}\n'.format(pn, pv))
+
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
@@ -345,3 +351,12 @@ if __name__ == '__main__':
             plt.show()
 
             print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+
+    # now print the paramerers
+    if not use_shooting:
+        if args.use_neural_ode:
+            print_all_parameters(func)
+        else:
+            print_all_parameters(simple_resnet)
+    else:
+        print_all_parameters(sblock)
