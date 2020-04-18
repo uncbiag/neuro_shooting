@@ -46,6 +46,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_updown',action='store_true')
     parser.add_argument('--use_double_resnet',action='store_true')
     parser.add_argument('--use_rnn',action='store_true')
+    parser.add_argument('--use_double_resnet_rnn',action='store_true')
     parser.add_argument('--use_simple_resnet',action='store_true')
     parser.add_argument('--use_neural_ode',action='store_true')
 
@@ -62,13 +63,13 @@ def get_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
-class UpDownNet(nn.Module):
+class UpDownNetBlock(nn.Module):
 
     def __init__(self):
-        super(UpDownNet, self).__init__()
+        super(UpDownNetBlock, self).__init__()
 
         self.l1 = nn.Linear(1,5,bias=True)
-        self.l2 = nn.Linear(5, 1,bias=True)
+        self.l2 = nn.Linear(5,1,bias=True)
 
     def forward(self, x):
 
@@ -77,10 +78,10 @@ class UpDownNet(nn.Module):
 
         return x
 
-class UpDownDoubleResNet(nn.Module):
+class UpDownDoubleResNetBlock(nn.Module):
 
     def __init__(self):
-        super(UpDownDoubleResNet, self).__init__()
+        super(UpDownDoubleResNetBlock, self).__init__()
 
         self.l1 = nn.Linear(5,1,bias=True)
         self.l2 = nn.Linear(1,5,bias=True)
@@ -88,21 +89,21 @@ class UpDownDoubleResNet(nn.Module):
     def forward(self, x1, x2):
 
         x1 = x1 + self.l1(F.relu(x2))
-        #x2 = x2 + self.l2(F.relu(x1))
+        #x2 = x2 + self.l2(F.relu(x1)) # this is what an integrator would typically do
         x2 = self.l2(F.relu(x1))
 
         return x1, x2
 
-class SuperSimpleDoubleResNetUpDown(nn.Module):
+class DoubleResNetUpDown(nn.Module):
 
     def __init__(self):
-        super(SuperSimpleDoubleResNetUpDown, self).__init__()
+        super(DoubleResNetUpDown, self).__init__()
 
-        self.l1 = UpDownDoubleResNet()
-        self.l2 = UpDownDoubleResNet()
-        self.l3 = UpDownDoubleResNet()
-        self.l4 = UpDownDoubleResNet()
-        self.l5 = UpDownDoubleResNet()
+        self.l1 = UpDownDoubleResNetBlock()
+        self.l2 = UpDownDoubleResNetBlock()
+        self.l3 = UpDownDoubleResNetBlock()
+        self.l4 = UpDownDoubleResNetBlock()
+        self.l5 = UpDownDoubleResNetBlock()
 
 
     def forward(self, x1, x2):
@@ -115,16 +116,16 @@ class SuperSimpleDoubleResNetUpDown(nn.Module):
 
         return x1,x2
 
-class SuperSimpleResNetUpDown(nn.Module):
+class ResNetUpDown(nn.Module):
 
     def __init__(self):
-        super(SuperSimpleResNetUpDown, self).__init__()
+        super(ResNetUpDown, self).__init__()
 
-        self.l1 = UpDownNet()
-        self.l2 = UpDownNet()
-        self.l3 = UpDownNet()
-        self.l4 = UpDownNet()
-        self.l5 = UpDownNet()
+        self.l1 = UpDownNetBlock()
+        self.l2 = UpDownNetBlock()
+        self.l3 = UpDownNetBlock()
+        self.l4 = UpDownNetBlock()
+        self.l5 = UpDownNetBlock()
 
     def forward(self, x):
 
@@ -136,10 +137,10 @@ class SuperSimpleResNetUpDown(nn.Module):
 
         return x
 
-class SuperSimpleResNet(nn.Module): # corresponds to our simple shooting model
+class ResNet(nn.Module): # corresponds to our simple shooting model
 
     def __init__(self):
-        super(SuperSimpleResNet, self).__init__()
+        super(ResNet, self).__init__()
 
         self.l1 = nn.Linear(1,1,bias=True)
         self.l2 = nn.Linear(1,1,bias=True)
@@ -157,10 +158,27 @@ class SuperSimpleResNet(nn.Module): # corresponds to our simple shooting model
 
         return x
 
-class SuperSimpleRNNResNet(nn.Module):
+class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting model
 
     def __init__(self):
-        super(SuperSimpleRNNResNet, self).__init__()
+        super(DoubleResNetUpDownRNN, self).__init__()
+
+        self.l1 = UpDownDoubleResNetBlock()
+
+    def forward(self, x1, x2):
+
+        x1, x2 = self.l1(x1, x2)
+        x1, x2 = self.l1(x1, x2)
+        x1, x2 = self.l1(x1, x2)
+        x1, x2 = self.l1(x1, x2)
+        x1, x2 = self.l1(x1, x2)
+
+        return x1, x2
+
+class ResNetRNN(nn.Module):
+
+    def __init__(self):
+        super(ResNetRNN, self).__init__()
         self.l1 = nn.Linear(1,1,bias=True)
 
     def forward(self, x):
@@ -228,21 +246,30 @@ if __name__ == '__main__':
 
     use_shooting = False
     if args.use_rnn:
-        weight_decay = 0.0000001
-        print('Using SuperSimpleRNNResNet: weight = {}'.format(weight_decay))
-        simple_resnet = SuperSimpleRNNResNet()
+        weight_decay = 0.0001
+        lr = 1e-2
+        print('Using ResNetRNN: weight = {}'.format(weight_decay))
+        simple_resnet = ResNetRNN()
+    elif args.use_double_resnet_rnn:
+        weight_decay = 0
+        lr = 1e-2
+        print('Using DoubleResNetRNN: weight = {}'.format(weight_decay))
+        simple_resnet = DoubleResNetUpDownRNN()
     elif args.use_updown:
         weight_decay = 0.025
-        print('Using SuperSimpleResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = SuperSimpleResNetUpDown()
+        lr = 1e-2
+        print('Using ResNetUpDown: weight = {}'.format(weight_decay))
+        simple_resnet = ResNetUpDown()
     elif args.use_simple_resnet:
-        weight_decay = 0.0000001
-        print('Using SuperSimpleResNet: weight = {}'.format(weight_decay))
-        simple_resnet = SuperSimpleResNet()
+        weight_decay = 0.0001
+        lr = 1e-2
+        print('Using ResNet: weight = {}'.format(weight_decay))
+        simple_resnet = ResNet()
     elif args.use_double_resnet:
         weight_decay = 0.025
-        print('Using SuperSimpleDoubleResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = SuperSimpleDoubleResNetUpDown()
+        lr = 1e-2
+        print('Using DoubleResNetUpDown: weight = {}'.format(weight_decay))
+        simple_resnet = DoubleResNetUpDown()
     elif args.use_neural_ode:
         print('Using neural ode')
         func = ODESimpleFunc()
@@ -261,7 +288,7 @@ if __name__ == '__main__':
         if args.use_neural_ode:
             optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
         else:
-            optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
+            optimizer = optim.Adam(simple_resnet.parameters(), lr=lr, weight_decay=weight_decay)
     else:
 
         sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
@@ -289,7 +316,7 @@ if __name__ == '__main__':
                 pred_y = integrator.integrate(func=func, x0=batch_in, t=torch.tensor([0, 1]).float())
                 pred_y = pred_y[1, :, :, :] # need prediction at time 1
 
-            elif args.use_double_resnet:
+            elif args.use_double_resnet or args.use_double_resnet_rnn:
                 x20 = torch.zeros_like(batch_in)
                 sz = [1] * len(x20.shape)
                 sz[-1] = 5
