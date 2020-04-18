@@ -280,10 +280,8 @@ if __name__ == '__main__':
 
     true_y0, true_t, true_A, true_b, true_y = setup_problem(args)
     print('true_y0: {}'.format(true_y0))
-    print('true_t: {}'.format(true_t))
     print('true_A: {}'.format(true_A))
-    print('true_A: {}'.format(true_b))
-    print('true_y: {}'.format(true_y))
+    print('true_b: {}'.format(true_b))
 
     assert true_y.size() == torch.Size([args.data_size, 1, 2])
 

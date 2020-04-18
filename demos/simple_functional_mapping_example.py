@@ -33,9 +33,21 @@ import neuro_shooting.parameter_initialization as pi
 def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
-    parser.add_argument('--data_size', type=int, default=1000)
     parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--niters', type=int, default=5000)
+
+    # shooting model parameters
+    parser.add_argument('--shooting_model', type=str, default='resnet_updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
+    parser.add_argument('--nonlinearity', type=str, default='tanh', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity for shooting.')
+    parser.add_argument('--pw', type=float, default=0.01, help='parameter weight')
+    parser.add_argument('--nr_of_particles', type=int, default=20, help='Number of particles to parameterize the initial condition')
+
+    # non-shooting networks implemented
+    parser.add_argument('--use_updown',action='store_true')
+    parser.add_argument('--use_double_resnet',action='store_true')
+    parser.add_argument('--use_rnn',action='store_true')
+    parser.add_argument('--use_simple_resnet',action='store_true')
+
     parser.add_argument('--test_freq', type=int, default=100)
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--verbose', action='store_true', default=False)
@@ -79,7 +91,6 @@ class UpDownDoubleResNet(nn.Module):
         x2 = self.l2(F.relu(x1))
 
         return x1, x2
-
 
 class SuperSimpleDoubleResNetUpDown(nn.Module):
 
@@ -161,6 +172,7 @@ class SuperSimpleRNNResNet(nn.Module):
 
         return x
 
+
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
@@ -171,22 +183,22 @@ if __name__ == '__main__':
         only_random_initialization=True,
         random_initialization_magnitude=0.01)
 
-    #    smodel = smodels.AutoShootingIntegrandModelUpDown(
-    smodel = smodels.AutoShootingIntegrandModelResNetUpDown(
-        in_features=1,
-        nonlinearity='tanh',
-        parameter_weight=0.01,
-        nr_of_particles=20,
-        particle_dimension=1,
-        particle_size=1)
 
-    # smodel = smodels.AutoShootingIntegrandModelSimple(
-    #     in_features=1,
-    #     nonlinearity='tanh',
-    #     parameter_weight=0.05,
-    #     nr_of_particles=50,
-    #     particle_dimension=1,
-    #     particle_size=1)
+    shootingintegrand_kwargs = {'in_features': 1,
+                                'nonlinearity': args.nonlinearity,
+                                'nr_of_particles': args.nr_of_particles,
+                                'parameter_weight': args.pw,
+                                'particle_dimension': 1,
+                                'particle_size': 1}
+
+    if args.shooting_model == 'simple':
+        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs)
+    elif args.shooting_model == '2nd_order':
+        smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
+    elif args.shooting_model == 'updown':
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs)
+    elif args.shooting_model == 'resnet_updown':
+        smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs)
 
     sblock = sblocks.ShootingBlockBase(
         name='simple',
@@ -196,35 +208,34 @@ if __name__ == '__main__':
         intgrator_options = {'stepsize':0.1}
     )
 
-    use_simple_resnet = False
-    use_rnn = False
-    use_updown = False
-    use_double_resnet = False
-
-    if use_rnn:
+    use_shooting = False
+    if args.use_rnn:
         weight_decay = 0.0000001
         print('Using SuperSimpleRNNResNet: weight = {}'.format(weight_decay))
         simple_resnet = SuperSimpleRNNResNet()
+    elif args.use_updown:
+        weight_decay = 0.025
+        print('Using SuperSimpleResNetUpDown: weight = {}'.format(weight_decay))
+        simple_resnet = SuperSimpleResNetUpDown()
+    elif args.use_simple_resnet:
+        weight_decay = 0.0000001
+        print('Using SuperSimpleResNet: weight = {}'.format(weight_decay))
+        simple_resnet = SuperSimpleResNet()
+    elif args.use_double_resnet:
+        weight_decay = 0.025
+        print('Using SuperSimpleDoubleResNetUpDown: weight = {}'.format(weight_decay))
+        simple_resnet = SuperSimpleDoubleResNetUpDown()
     else:
-        if use_updown:
-            weight_decay = 0.025
-            print('Using SuperSimpleResNetUpDown: weight = {}'.format(weight_decay))
-            simple_resnet = SuperSimpleResNetUpDown()
-        elif use_updown:
-            weight_decay = 0.0000001
-            print('Using SuperSimpleResNet: weight = {}'.format(weight_decay))
-            simple_resnet = SuperSimpleResNet()
-        else:
-            weight_decay = 0.025
-            print('Using SuperSimpleDoubleResNetUpDown: weight = {}'.format(weight_decay))
-            simple_resnet = SuperSimpleDoubleResNetUpDown()
+        use_shooting = True
+        print('Using shooting')
 
-    sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
-    sblock(x=sample_batch_in)
 
-    if use_simple_resnet:
+    if not use_shooting:
         optimizer = optim.Adam(simple_resnet.parameters(), lr=1e-2, weight_decay=weight_decay)
     else:
+
+        sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+        sblock(x=sample_batch_in)
 
         # do some parameter freezing
         for pn,pp in sblock.named_parameters():
@@ -240,22 +251,21 @@ if __name__ == '__main__':
         # get current batch data
         batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
 
-        # set integration time
-        #sblock.set_integration_time(time_to=1.0) # try to do this mapping in unit time
-
         optimizer.zero_grad()
 
-        if use_simple_resnet:
-            if use_double_resnet:
+        if not use_shooting:
+            if args.use_double_resnet:
                 x20 = torch.zeros_like(batch_in)
                 sz = [1] * len(x20.shape)
                 sz[-1] = 5
                 x20 = x20.repeat(sz)
 
-                pred_y, pred_y2 = simple_resnet(x1=batch_in,x2=x20)
+                pred_y, pred_y2 = simple_resnet(x1=batch_in, x2=x20)
             else:
-                pred_y,_ = simple_resnet(x=batch_in)
+                pred_y = simple_resnet(x=batch_in)
         else:
+            # set integration time
+            # sblock.set_integration_time(time_to=1.0) # try to do this mapping in unit time
             pred_y, _, _, _ = sblock(x=batch_in)
 
         loss = torch.mean((pred_y - batch_out)**2)  # + 1e-2 * sblock.get_norm_penalty()
