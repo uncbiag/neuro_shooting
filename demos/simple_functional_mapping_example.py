@@ -8,6 +8,8 @@ import random
 import argparse
 import numpy as np
 
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -43,6 +45,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--nr_of_particles', type=int, default=20, help='Number of particles to parameterize the initial condition')
 
     # non-shooting networks implemented
+    parser.add_argument('--nr_of_layers', type=int, default=10, help='Number of layers for the non-shooting networks')
     parser.add_argument('--use_updown',action='store_true')
     parser.add_argument('--use_double_resnet',action='store_true')
     parser.add_argument('--use_rnn',action='store_true')
@@ -63,20 +66,38 @@ def get_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
-class UpDownNetBlock(nn.Module):
+def replicate_modules(module,nr_of_layers):
+    modules = OrderedDict()
+    for i in range(nr_of_layers):
+        modules['l{}'.format(i)] = module()
+
+    return modules
+
+class SimpleResNetBlock(nn.Module):
 
     def __init__(self):
-        super(UpDownNetBlock, self).__init__()
+        super(SimpleResNetBlock, self).__init__()
+
+        self.l1 = nn.Linear(1,1,bias=True)
+
+    def forward(self, x):
+        x = x + self.l1(F.relu(x))
+
+        return x
+
+class UpDownResNetBlock(nn.Module):
+
+    def __init__(self):
+        super(UpDownResNetBlock, self).__init__()
 
         self.l1 = nn.Linear(1,5,bias=True)
         self.l2 = nn.Linear(5,1,bias=True)
 
     def forward(self, x):
+        y = self.l1(F.relu(x))
+        z = self.l2(F.relu(y))
 
-        x = self.l1(F.relu(x))
-        x = self.l2(F.relu(x))
-
-        return x
+        return x + z
 
 class UpDownDoubleResNetBlock(nn.Module):
 
@@ -86,7 +107,9 @@ class UpDownDoubleResNetBlock(nn.Module):
         self.l1 = nn.Linear(5,1,bias=True)
         self.l2 = nn.Linear(1,5,bias=True)
 
-    def forward(self, x1, x2):
+    def forward(self, x1x2):
+        x1 = x1x2[0]
+        x2 = x1x2[1]
 
         x1 = x1 + self.l1(F.relu(x2))
         #x2 = x2 + self.l2(F.relu(x1)) # this is what an integrator would typically do
@@ -96,98 +119,65 @@ class UpDownDoubleResNetBlock(nn.Module):
 
 class DoubleResNetUpDown(nn.Module):
 
-    def __init__(self):
+    def __init__(self, nr_of_layers=10):
         super(DoubleResNetUpDown, self).__init__()
 
-        self.l1 = UpDownDoubleResNetBlock()
-        self.l2 = UpDownDoubleResNetBlock()
-        self.l3 = UpDownDoubleResNetBlock()
-        self.l4 = UpDownDoubleResNetBlock()
-        self.l5 = UpDownDoubleResNetBlock()
+        modules = replicate_modules(module=UpDownDoubleResNetBlock,nr_of_layers=nr_of_layers)
+        self.model = nn.Sequential(modules)
 
-
-    def forward(self, x1, x2):
-
-        x1,x2 = self.l1(x1,x2)
-        x1,x2 = self.l2(x1,x2)
-        x1,x2 = self.l3(x1,x2)
-        x1,x2 = self.l4(x1,x2)
-        x1,x2 = self.l5(x1,x2)
-
-        return x1,x2
+    def forward(self, x1x2):
+        return self.model(x1x2)
 
 class ResNetUpDown(nn.Module):
 
-    def __init__(self):
+    def __init__(self, nr_of_layers=10):
         super(ResNetUpDown, self).__init__()
 
-        self.l1 = UpDownNetBlock()
-        self.l2 = UpDownNetBlock()
-        self.l3 = UpDownNetBlock()
-        self.l4 = UpDownNetBlock()
-        self.l5 = UpDownNetBlock()
+        modules = replicate_modules(module=UpDownResNetBlock, nr_of_layers=nr_of_layers)
+        self.model = nn.Sequential(modules)
 
     def forward(self, x):
-
-        x = x + self.l1(F.relu(x))
-        x = x + self.l2(F.relu(x))
-        x = x + self.l3(F.relu(x))
-        x = x + self.l4(F.relu(x))
-        x = x + self.l5(F.relu(x))
-
-        return x
+        return self.model(x)
 
 class ResNet(nn.Module): # corresponds to our simple shooting model
 
-    def __init__(self):
+    def __init__(self, nr_of_layers=10):
         super(ResNet, self).__init__()
 
-        self.l1 = nn.Linear(1,1,bias=True)
-        self.l2 = nn.Linear(1,1,bias=True)
-        self.l3 = nn.Linear(1,1,bias=True)
-        self.l4 = nn.Linear(1,1,bias=True)
-        self.l5 = nn.Linear(1,1,bias=True)
+        modules = replicate_modules(module=SimpleResNetBlock, nr_of_layers=nr_of_layers)
+        self.model = nn.Sequential(modules)
 
     def forward(self, x):
-
-        x = x + self.l1(F.relu(x))
-        x = x + self.l2(F.relu(x))
-        x = x + self.l3(F.relu(x))
-        x = x + self.l4(F.relu(x))
-        x = x + self.l5(F.relu(x))
-
-        return x
+        return self.model(x)
 
 class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting model
 
-    def __init__(self):
+    def __init__(self, nr_of_layers=10):
         super(DoubleResNetUpDownRNN, self).__init__()
 
+        self.nr_of_layers = nr_of_layers
         self.l1 = UpDownDoubleResNetBlock()
 
-    def forward(self, x1, x2):
+    def forward(self, x1x2):
+        x1 = x1x2[0]
+        x2 = x1x2[1]
 
-        x1, x2 = self.l1(x1, x2)
-        x1, x2 = self.l1(x1, x2)
-        x1, x2 = self.l1(x1, x2)
-        x1, x2 = self.l1(x1, x2)
-        x1, x2 = self.l1(x1, x2)
+        for i in range(self.nr_of_layers):
+            x1, x2 = self.l1(x1, x2)
 
         return x1, x2
 
 class ResNetRNN(nn.Module):
 
-    def __init__(self):
+    def __init__(self, nr_of_layers=10):
         super(ResNetRNN, self).__init__()
+
+        self.nr_of_layers = nr_of_layers
         self.l1 = nn.Linear(1,1,bias=True)
 
     def forward(self, x):
-
-        x = x + self.l1(F.relu(x))
-        x = x + self.l1(F.relu(x))
-        x = x + self.l1(F.relu(x))
-        x = x + self.l1(F.relu(x))
-        x = x + self.l1(F.relu(x))
+        for i in range(self.nr_of_layers):
+            x = x + self.l1(F.relu(x))
 
         return x
 
@@ -214,6 +204,67 @@ def print_all_parameters(model):
     print('\n Model parameters:\n')
     for pn,pv in model.named_parameters():
         print('{} = {}\n'.format(pn, pv))
+
+def collect_and_sort_parameter_values_across_layers(model):
+
+    # TODO: in principle I would like to extend this so that we sort the states so it is possible
+    # to follow how they change over the layers; this should happen automatically for the continuous
+    # models, but states can swap arbitrarily for the resnet models
+
+    print('\n Collecting and sorting parameter values across layers')
+    named_pars = list(model.named_parameters())
+
+    nr_of_pars= len(named_pars)
+
+    par_names_per_block = []
+    par_size_per_block = []
+
+    # first get the
+    for i in range(nr_of_pars):
+        cur_par_name = named_pars[i][0]
+        cur_par_val = named_pars[i][1]
+        names = cur_par_name.split('.')
+
+        if i==0:
+            first_layer_name = names[1]
+
+        if first_layer_name==names[1]:
+            par_names_per_block.append('.'.join(names[2:]))
+            par_size_per_block.append(cur_par_val.size())
+        else:
+            break
+
+    # nr of pars per block
+    nr_of_pars_per_block = len(par_names_per_block)
+
+    # nr of layers
+    nr_of_layers = nr_of_pars//nr_of_pars_per_block
+
+    # create the torch arrays where we will store the variables as they change over the layers
+    layer_pars = dict()
+    for pn,ps in zip(par_names_per_block,par_size_per_block):
+        layer_pars[pn] = torch.zeros([nr_of_layers] + list(ps))
+
+    # now we can put the values in these arrays
+    layer_nr = 0
+    current_layer_name = first_layer_name
+
+    for i in range(nr_of_pars):
+        cur_par_name = named_pars[i][0]
+        cur_par_val = named_pars[i][1]
+        names = cur_par_name.split('.')
+
+        if current_layer_name != names[1]:
+            current_layer_name = names[1]
+            layer_nr+=1
+
+        layer_par_name = '.'.join(names[2:])
+        layer_pars[layer_par_name][layer_nr,...] = cur_par_val
+
+    print('\nCollected (not yet sorted: TODO) block parameters across layers:\n')
+    for k in layer_pars:
+        print('{} = {}'.format(k,layer_pars[k]))
+
 
 if __name__ == '__main__':
 
@@ -255,27 +306,28 @@ if __name__ == '__main__':
         weight_decay = 0.0001
         lr = 1e-2
         print('Using ResNetRNN: weight = {}'.format(weight_decay))
-        simple_resnet = ResNetRNN()
+        simple_resnet = ResNetRNN(nr_of_layers=args.nr_of_layers)
     elif args.use_double_resnet_rnn:
         weight_decay = 0
         lr = 1e-2
         print('Using DoubleResNetRNN: weight = {}'.format(weight_decay))
-        simple_resnet = DoubleResNetUpDownRNN()
+        simple_resnet = DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers)
     elif args.use_updown:
         weight_decay = 0.025
         lr = 1e-2
         print('Using ResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = ResNetUpDown()
+        simple_resnet = ResNetUpDown(nr_of_layers=args.nr_of_layers)
     elif args.use_simple_resnet:
         weight_decay = 0.0001
         lr = 1e-2
         print('Using ResNet: weight = {}'.format(weight_decay))
-        simple_resnet = ResNet()
+        simple_resnet = ResNet(nr_of_layers=args.nr_of_layers)
     elif args.use_double_resnet:
-        weight_decay = 0.025
+        #weight_decay = 0.025
+        weight_decay = 0.01
         lr = 1e-2
         print('Using DoubleResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = DoubleResNetUpDown()
+        simple_resnet = DoubleResNetUpDown(nr_of_layers=args.nr_of_layers)
     elif args.use_neural_ode:
         print('Using neural ode')
         func = ODESimpleFunc()
@@ -328,7 +380,7 @@ if __name__ == '__main__':
                 sz[-1] = 5
                 x20 = x20.repeat(sz)
 
-                pred_y, pred_y2 = simple_resnet(x1=batch_in, x2=x20)
+                pred_y, pred_y2 = simple_resnet(x1x2=(batch_in, x20))
             else:
                 pred_y = simple_resnet(x=batch_in)
         else:
@@ -358,5 +410,6 @@ if __name__ == '__main__':
             print_all_parameters(func)
         else:
             print_all_parameters(simple_resnet)
+            collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
         print_all_parameters(sblock)
