@@ -365,7 +365,7 @@ if __name__ == '__main__':
     use_shooting = False
     if args.use_rnn:
         weight_decay = 0.0001
-        lr = 1e-2
+        lr = 1e-3
         print('Using ResNetRNN: weight = {}'.format(weight_decay))
         simple_resnet = ResNetRNN(nr_of_layers=args.nr_of_layers)
     elif args.use_double_resnet_rnn:
@@ -471,6 +471,7 @@ if __name__ == '__main__':
             print_all_parameters(func)
         else:
             print_all_parameters(simple_resnet)
-            collect_and_sort_parameter_values_across_layers(simple_resnet)
+            if args.use_double_resnet:
+                collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
         print_all_parameters(sblock)
