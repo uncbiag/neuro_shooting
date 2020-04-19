@@ -58,7 +58,10 @@ def rhs_costate(q,p,theta):
 
 def compute_parameter(q,p):
     theta = p*nl(q)
-    return 3./4.*theta
+    ## parameter in front of theta should be 15/16 if learning_rate = 0.5 and iterations =2
+    ## should be 1 if learning rate is 1 and iterations is any positive integer.
+    theta = 15. / 16. * theta
+    return theta
 
 def rhs_shooting_analytic(q,p,if_reduced = True):
     theta = compute_parameter(q=q,p=p)
@@ -69,7 +72,8 @@ def rhs_shooting_analytic(q,p,if_reduced = True):
 
 
 def compute_parameter_autograd(q,p):
-    learning_rate = 1.0
+    ## set learinngg rate and iteraitons accordingly to what expected.
+    learning_rate = 0.5
     nr_of_fixed_point_iterations = 2
     theta_var = torch.zeros([1], requires_grad=True)
     for n in range(nr_of_fixed_point_iterations):
@@ -82,13 +86,13 @@ def compute_parameter_autograd(q,p):
                                          retain_graph=True,
                                          allow_unused=True)
 
-        theta_var = -learning_rate * theta_grad_potential[0]
-        #print("theta_var ",theta_var)
+        theta_var =theta_var -learning_rate * theta_grad_potential[0]
     return theta_var
 
 def rhs_shooting_autograd(q,p):
 
     theta = compute_parameter_autograd(q=q,p=p)
+    print("theta_auto ",theta)
     # don't want to carry around any additional depdendencies when computing the costate via autograd
 
     # Change from previous version: I removed the detach here
