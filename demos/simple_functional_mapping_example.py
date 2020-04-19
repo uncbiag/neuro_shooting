@@ -266,12 +266,13 @@ def collect_and_sort_parameter_values_across_layers(model):
         print('{} = {}'.format(k,layer_pars[k]))
 
     import matplotlib.pyplot as plt
+    import matplotlib
     from mpl_toolkits.axes_grid1 import make_axes_locatable
 
     from matplotlib import gridspec
 
     spec = gridspec.GridSpec(ncols=1, nrows=4,
-                             width_ratios=[1], height_ratios=[5,1,5,5])
+                             width_ratios=[4], height_ratios=[5,1,5,5])
 
     fig = plt.figure() #(figsize=(12, 4), facecolor='white')
     l1w = fig.add_subplot(spec[0])
@@ -282,7 +283,9 @@ def collect_and_sort_parameter_values_across_layers(model):
     l1w.cla()
     l1w.set_title('l1-weight')
     #l1w.set_xlabel('layers')
-    im1 = l1w.imshow(layer_pars['l1.weight'].detach().numpy().squeeze().transpose())
+    im1 = l1w.imshow(layer_pars['l1.weight'].detach().numpy().squeeze().transpose(),
+                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
+                     aspect='auto')
 
     divider = make_axes_locatable(l1w)
     cax = divider.append_axes('bottom', size='20%', pad=0.25)
@@ -291,7 +294,9 @@ def collect_and_sort_parameter_values_across_layers(model):
     l1b.cla()
     l1b.set_title('l1-bias')
     #l1b.set_xlabel('layers')
-    im2 = l1b.imshow(layer_pars['l1.bias'].detach().numpy().transpose())
+    im2 = l1b.imshow(layer_pars['l1.bias'].detach().numpy().transpose(),
+                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
+                     aspect='auto')
 
     divider = make_axes_locatable(l1b)
     cax = divider.append_axes('bottom', size='50%', pad=0.25)
@@ -300,7 +305,9 @@ def collect_and_sort_parameter_values_across_layers(model):
     l2w.cla()
     l2w.set_title('l2-weight')
     #l2w.set_xlabel('layers')
-    im3 = l2w.imshow(layer_pars['l2.weight'].detach().numpy().squeeze().transpose())
+    im3 = l2w.imshow(layer_pars['l2.weight'].detach().numpy().squeeze().transpose(),
+                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
+                     aspect='auto')
 
     divider = make_axes_locatable(l2w)
     cax = divider.append_axes('bottom', size='20%', pad=0.25)
@@ -309,7 +316,9 @@ def collect_and_sort_parameter_values_across_layers(model):
     l2b.cla()
     l2b.set_title('l2-bias')
     #l2b.set_xlabel('layers')
-    im4 = l2b.imshow(layer_pars['l2.bias'].detach().numpy().squeeze().transpose())
+    im4 = l2b.imshow(layer_pars['l2.bias'].detach().numpy().squeeze().transpose(),
+                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
+                     aspect='auto')
 
     divider = make_axes_locatable(l2b)
     cax = divider.append_axes('bottom', size='20%', pad=0.25)
