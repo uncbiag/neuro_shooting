@@ -36,7 +36,7 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=100)
+    parser.add_argument('--niters', type=int, default=5000)
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
