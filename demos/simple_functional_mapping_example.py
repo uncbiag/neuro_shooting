@@ -345,13 +345,14 @@ if __name__ == '__main__':
         with torch.no_grad():
             custom_hook_data['parameters'].append(
                 (
-                    t,parameter_objects["l2"]._parameter_dict["weight"]
+                    t, parameter_objects["l2"]._parameter_dict["weight"]
                 ))
         return None
 
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
-        random_initialization_magnitude=0.01,sample_batch = torch.linspace(0,1,args.nr_of_particles))
+        random_initialization_magnitude=0.1, 
+        sample_batch = torch.linspace(0,1,args.nr_of_particles))
 
 
     shootingintegrand_kwargs = {'in_features': 1,
@@ -376,7 +377,7 @@ if __name__ == '__main__':
         shooting_integrand=smodel,
         integrator_name='euler',
         use_adjoint_integration=False,
-        integrator_options = {'stepsize':0.1}
+        #integrator_options = {'stepsize':0.1}
     )
 
     use_shooting = False
@@ -438,6 +439,10 @@ if __name__ == '__main__':
                 pass
         optimizer = optim.Adam(sblock.parameters(), lr=1e-2)
 
+    fig = plt.figure(figsize=(12, 4), facecolor='white')
+    ax = fig.add_subplot(111, frameon=False)
+    plt.show(block=False)
+
     track_loss = []
     for itr in range(1, args.niters + 1):
 
@@ -475,10 +480,13 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
 
-            fig = plt.figure()
-            plt.plot(batch_in.detach().numpy().squeeze(),batch_out.detach().numpy().squeeze(),'g+')
-            plt.plot(batch_in.detach().numpy().squeeze(),pred_y.detach().numpy().squeeze(),'r*')
-            plt.show()
+            ax.cla()
+            ax.plot(batch_in.detach().numpy().squeeze(),batch_out.detach().numpy().squeeze(),'g+')
+            ax.plot(batch_in.detach().numpy().squeeze(),pred_y.detach().numpy().squeeze(),'r*')
+            ax.set_xlim(-2, 2)
+            ax.set_ylim(-8, 8)
+            plt.draw()
+            plt.pause(0.001)
 
             print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
@@ -507,5 +515,5 @@ if __name__ == '__main__':
         data = np.asarray([d.detach().numpy() for (t,d) in custom_hook_data["parameters"]])
         plt.figure()
         for i in range(np.shape(data)[1]):
-            plt.plot(times,data[:,i,:])
+            plt.plot(times, data[:,i,:])
         plt.show()
