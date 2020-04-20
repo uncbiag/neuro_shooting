@@ -36,13 +36,13 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=5000)
+    parser.add_argument('--niters', type=int, default=2000)
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
-    parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity for shooting.')
-    parser.add_argument('--pw', type=float, default=0.01, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
+    parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
+    parser.add_argument('--nr_of_particles', type=int, default=30, help='Number of particles to parameterize the initial condition')
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -338,16 +338,17 @@ if __name__ == '__main__':
         print(args)
 
 
-    # def parameters_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
-    #                           dot_state_dicts, dot_costate_dicts, dot_data_dict_of_dicts, parameter_objects,
-    #                           custom_hook_data):
-    #
-    #     with torch.no_grad():
-    #         custom_hook_data['state_dicts'].append(
-    #             (
-    #                 t.item(),
-    #                 state_dicts['shooting_block']['q1'].detach()
-    #             ))
+    def parameters_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
+                              dot_state_dicts, dot_costate_dicts, dot_data_dict_of_dicts, parameter_objects,
+                              custom_hook_data):
+
+        with torch.no_grad():
+            custom_hook_data['parameters'].append(
+                (
+                    t,parameter_objects["l2"]._parameter_dict["weight"]
+                ))
+        return None
+
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
         random_initialization_magnitude=0.01,sample_batch = torch.linspace(0,1,args.nr_of_particles))
@@ -375,7 +376,7 @@ if __name__ == '__main__':
         shooting_integrand=smodel,
         integrator_name='euler',
         use_adjoint_integration=False,
-        intgrator_options = {'stepsize':0.1}
+        integrator_options = {'stepsize':0.1}
     )
 
     use_shooting = False
@@ -435,7 +436,7 @@ if __name__ == '__main__':
                 # freeze the locations
                 #pp.requires_grad = False
                 pass
-        optimizer = optim.Adam(sblock.parameters(), lr=1e-3)
+        optimizer = optim.Adam(sblock.parameters(), lr=1e-2)
 
     track_loss = []
     for itr in range(1, args.niters + 1):
@@ -493,3 +494,18 @@ if __name__ == '__main__':
         print_all_parameters(sblock)
 
 
+    if use_shooting:
+        custom_hook_data = {'parameters': []}
+        hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(parameters_hook)
+        sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+
+        batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+        pred_y, _, _, _ = sblock(x=batch_in)
+        hook.remove()
+
+        times = np.asarray([t.numpy() for (t,d) in custom_hook_data["parameters"]])
+        data = np.asarray([d.detach().numpy() for (t,d) in custom_hook_data["parameters"]])
+        plt.figure()
+        for i in range(np.shape(data)[1]):
+            plt.plot(times,data[:,i,:])
+        plt.show()
