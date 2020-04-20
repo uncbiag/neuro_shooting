@@ -36,20 +36,20 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=5000)
+    parser.add_argument('--niters', type=int, default=100)
 
     # shooting model parameters
-    parser.add_argument('--shooting_model', type=str, default='resnet_updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid'], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=0.01, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=20, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
 
     # non-shooting networks implemented
-    parser.add_argument('--nr_of_layers', type=int, default=10, help='Number of layers for the non-shooting networks')
+    parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
     parser.add_argument('--use_updown',action='store_true')
     parser.add_argument('--use_double_resnet',action='store_true')
     parser.add_argument('--use_rnn',action='store_true')
-    parser.add_argument('--use_double_resnet_rnn',action='store_true')
+    parser.add_argument('--use_double_resnet_rnn',action="store_true")
     parser.add_argument('--use_simple_resnet',action='store_true')
     parser.add_argument('--use_neural_ode',action='store_true')
 
@@ -90,8 +90,8 @@ class UpDownResNetBlock(nn.Module):
     def __init__(self):
         super(UpDownResNetBlock, self).__init__()
 
-        self.l1 = nn.Linear(1,5,bias=True)
-        self.l2 = nn.Linear(5,1,bias=True)
+        self.l1 = nn.Linear(1,20,bias=True)
+        self.l2 = nn.Linear(20,1,bias=True)
 
     def forward(self, x):
         y = self.l1(F.relu(x))
@@ -105,23 +105,23 @@ class UpDownDoubleResNetBlock(nn.Module):
         super(UpDownDoubleResNetBlock, self).__init__()
 
         self.l1 = nn.Linear(5,1,bias=True)
-        self.l2 = nn.Linear(1,5,bias=True)
+        self.l2 = nn.Linear(1,5,bias=False)
 
     def forward(self, x1x2):
         x1 = x1x2[0]
         x2 = x1x2[1]
 
         x1 = x1 + self.l1(F.relu(x2))
-        #x2 = x2 + self.l2(F.relu(x1)) # this is what an integrator would typically do
-        x2 = self.l2(F.relu(x1))
+        x2 = x2 + self.l2(F.relu(x1)) # this is what an integrator would typically do
+        #x2 = self.l2(F.relu(x1))
 
         return x1, x2
 
 class DoubleResNetUpDown(nn.Module):
 
-    def __init__(self, nr_of_layers=10):
+    def __init__(self, nr_of_layers=30):
         super(DoubleResNetUpDown, self).__init__()
-
+        print("nr_of_layers ",nr_of_layers)
         modules = replicate_modules(module=UpDownDoubleResNetBlock,nr_of_layers=nr_of_layers)
         self.model = nn.Sequential(modules)
 
@@ -132,7 +132,6 @@ class ResNetUpDown(nn.Module):
 
     def __init__(self, nr_of_layers=10):
         super(ResNetUpDown, self).__init__()
-
         modules = replicate_modules(module=UpDownResNetBlock, nr_of_layers=nr_of_layers)
         self.model = nn.Sequential(modules)
 
@@ -156,6 +155,7 @@ class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting mod
         super(DoubleResNetUpDownRNN, self).__init__()
 
         self.nr_of_layers = nr_of_layers
+
         self.l1 = UpDownDoubleResNetBlock()
 
     def forward(self, x1x2):
@@ -163,7 +163,7 @@ class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting mod
         x2 = x1x2[1]
 
         for i in range(self.nr_of_layers):
-            x1, x2 = self.l1(x1, x2)
+            x1, x2 = self.l1((x1, x2))
 
         return x1, x2
 
@@ -283,7 +283,9 @@ def collect_and_sort_parameter_values_across_layers(model):
     l1w.cla()
     l1w.set_title('l1-weight')
     #l1w.set_xlabel('layers')
-    im1 = l1w.imshow(layer_pars['l1.weight'].detach().numpy().squeeze().transpose(),
+    A = layer_pars['l1.weight'].detach().numpy().squeeze()
+    A.sort()
+    im1 = l1w.imshow(A.transpose(),
                      norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
                      aspect='auto')
 
@@ -293,10 +295,10 @@ def collect_and_sort_parameter_values_across_layers(model):
 
     l1b.cla()
     l1b.set_title('l1-bias')
-    #l1b.set_xlabel('layers')
+    l1b.set_xlabel('layers')
     im2 = l1b.imshow(layer_pars['l1.bias'].detach().numpy().transpose(),
-                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
-                     aspect='auto')
+                    norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
+                    aspect='auto')
 
     divider = make_axes_locatable(l1b)
     cax = divider.append_axes('bottom', size='50%', pad=0.25)
@@ -305,24 +307,26 @@ def collect_and_sort_parameter_values_across_layers(model):
     l2w.cla()
     l2w.set_title('l2-weight')
     #l2w.set_xlabel('layers')
-    im3 = l2w.imshow(layer_pars['l2.weight'].detach().numpy().squeeze().transpose(),
-                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
+    B = layer_pars['l2.weight'].detach().numpy().squeeze()
+    B.sort()
+    im3 = l2w.imshow(B.transpose(),
+                     #norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
                      aspect='auto')
 
     divider = make_axes_locatable(l2w)
     cax = divider.append_axes('bottom', size='20%', pad=0.25)
     fig.colorbar(im3, cax=cax, orientation='horizontal')
 
-    l2b.cla()
-    l2b.set_title('l2-bias')
-    #l2b.set_xlabel('layers')
-    im4 = l2b.imshow(layer_pars['l2.bias'].detach().numpy().squeeze().transpose(),
-                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
-                     aspect='auto')
-
-    divider = make_axes_locatable(l2b)
-    cax = divider.append_axes('bottom', size='20%', pad=0.25)
-    fig.colorbar(im4, cax=cax, orientation='horizontal')
+    # l2b.cla()
+    # l2b.set_title('l2-bias')
+    # #l2b.set_xlabel('layers')
+    # im4 = l2b.imshow(layer_pars['l2.bias'].detach().numpy().squeeze().transpose(),
+    #                  norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
+    #                  aspect='auto')
+    #
+    # divider = make_axes_locatable(l2b)
+    # cax = divider.append_axes('bottom', size='20%', pad=0.25)
+    # fig.colorbar(im4, cax=cax, orientation='horizontal')
 
     fig.show()
 
@@ -333,9 +337,20 @@ if __name__ == '__main__':
     if args.verbose:
         print(args)
 
-    par_init = pi.VectorEvolutionParameterInitializer(
+
+    # def parameters_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
+    #                           dot_state_dicts, dot_costate_dicts, dot_data_dict_of_dicts, parameter_objects,
+    #                           custom_hook_data):
+    #
+    #     with torch.no_grad():
+    #         custom_hook_data['state_dicts'].append(
+    #             (
+    #                 t.item(),
+    #                 state_dicts['shooting_block']['q1'].detach()
+    #             ))
+    par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
-        random_initialization_magnitude=0.01)
+        random_initialization_magnitude=0.01,sample_batch = torch.linspace(0,1,args.nr_of_particles))
 
 
     shootingintegrand_kwargs = {'in_features': 1,
@@ -343,7 +358,8 @@ if __name__ == '__main__':
                                 'nr_of_particles': args.nr_of_particles,
                                 'parameter_weight': args.pw,
                                 'particle_dimension': 1,
-                                'particle_size': 1}
+                                'particle_size': 1,
+                                "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)
@@ -357,9 +373,9 @@ if __name__ == '__main__':
     sblock = sblocks.ShootingBlockBase(
         name='simple',
         shooting_integrand=smodel,
-        integrator_name='rk4',
+        integrator_name='euler',
         use_adjoint_integration=False,
-        intgrator_options = {'stepsize':0.5}
+        intgrator_options = {'stepsize':0.1}
     )
 
     use_shooting = False
@@ -369,12 +385,12 @@ if __name__ == '__main__':
         print('Using ResNetRNN: weight = {}'.format(weight_decay))
         simple_resnet = ResNetRNN(nr_of_layers=args.nr_of_layers)
     elif args.use_double_resnet_rnn:
-        weight_decay = 0
+        weight_decay = 0.025
         lr = 1e-2
         print('Using DoubleResNetRNN: weight = {}'.format(weight_decay))
         simple_resnet = DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers)
     elif args.use_updown:
-        weight_decay = 0.025
+        weight_decay = 0.01
         lr = 1e-2
         print('Using ResNetUpDown: weight = {}'.format(weight_decay))
         simple_resnet = ResNetUpDown(nr_of_layers=args.nr_of_layers)
@@ -405,7 +421,7 @@ if __name__ == '__main__':
 
     if not use_shooting:
         if args.use_neural_ode:
-            optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
+            optimizer = optim.RMSprop(func.parameters(), lr=1e-2)
         else:
             optimizer = optim.Adam(simple_resnet.parameters(), lr=lr, weight_decay=weight_decay)
     else:
@@ -417,9 +433,9 @@ if __name__ == '__main__':
         for pn,pp in sblock.named_parameters():
             if pn=='q1':
                 # freeze the locations
-                pp.requires_grad = False
-
-        optimizer = optim.Adam(sblock.parameters(), lr=1e-5)
+                #pp.requires_grad = False
+                pass
+        optimizer = optim.Adam(sblock.parameters(), lr=1e-3)
 
     track_loss = []
     for itr in range(1, args.niters + 1):
@@ -440,8 +456,8 @@ if __name__ == '__main__':
                 sz = [1] * len(x20.shape)
                 sz[-1] = 5
                 x20 = x20.repeat(sz)
-
-                pred_y, pred_y2 = simple_resnet(x1x2=(batch_in, x20))
+                x1x2 = (batch_in, x20)
+                pred_y, pred_y2 = simple_resnet(x1x2)
             else:
                 pred_y = simple_resnet(x=batch_in)
         else:
@@ -475,3 +491,5 @@ if __name__ == '__main__':
                 collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
         print_all_parameters(sblock)
+
+
