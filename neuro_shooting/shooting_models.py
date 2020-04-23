@@ -227,6 +227,99 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
+    def optional_rhs_advect_costate_analytic(self, t, state_dict_or_dict_of_dicts, costate_dict_or_dict_of_dicts, parameter_objects):
+        """
+        This is optional. We do not need to define this. But if we do, we can sidestep computing the co-state evolution via
+        auto-diff. We can use this for example to test if the autodiff shooting approach properly recovers the analytic evolution equations.
+
+        :param t:
+        :param state_dict_of_dicts:
+        :param costate_dict_of_dicts:
+        :param parameter_objects:
+        :return:
+        """
+
+        rhs = SortedDict()
+
+        s = state_dict_or_dict_of_dicts
+        c = costate_dict_or_dict_of_dicts
+        p = parameter_objects
+
+        par_dict1 = p['l1'].get_parameter_dict()
+        par_dict2 = p['l2'].get_parameter_dict()
+        l1 = par_dict1['weight']
+        l2 = par_dict2['weight']
+
+
+        # now compute the parameters
+
+        q2i = s['q2']
+        p1i = c['p_q1']
+        p2i = c['p_q2']
+
+        # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
+        #dot_qt = torch.matmul(self.nl(qi), A.t()) + bt
+
+        # now we can also compute the rhs of the costate (based on the manually computed shooting equations)
+        # for i in range(self.nr_of_particles):
+        #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
+        dot_p2t = - self.dnl(q2i) * torch.matmul(p1i,l1)
+        dot_p1t = - torch.matmul(p2i,l2)
+        rhs['dot_p_q1'] = dot_p1t
+        rhs['dot_p_q2'] = dot_p2t
+
+        return rhs
+
+
+    def optional_compute_parameters_analytic(self,t,state_dict, costate_dict):
+        """
+        This is optional. We can prescribe an analytic computation of the parameters (where we do not need to do this via autodiff).
+        This is optional, but can be used for testing.
+
+        :param t:
+        :param parameter_objects:
+        :param state_dict:
+        :param costate_dict:
+        :return:
+        """
+
+        s = state_dict
+        c = costate_dict
+        p = self.create_default_parameter_objects()
+
+        # now compute the parameters
+        q1i = s['q1']
+        p1i = c['p_q1']
+        q2i = s['q2'].transpose(1,2)
+        p2i = c['p_q2'].transpose(1,2)
+
+        temp = torch.matmul(self.nl(q2i),p1i)
+        l1 = torch.sum(temp,axis = 0).t()
+
+        temp2 = torch.matmul(p2i,q1i)
+        l2 = torch.sum(temp2,dim = 0)
+        # particles are saved as rows
+        #At = torch.zeros(self.in_features, self.in_features)
+        #for i in range(self.nr_of_particles):
+        #    At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
+        #At = 1 / self._overall_number_of_state_parameters * At  # because of the mean in the Lagrangian multiplier
+        #bt = 1 / self._overall_number_of_state_parameters * pi.sum(dim=0)  # -\sum_i q_i
+
+        # results need to be written in the respective parameter variables
+        par_dict = p['l1'].get_parameter_dict()
+        par_dict['weight'] = l1 / self._overall_number_of_state_parameters
+        par_dict['bias'] = torch.sum(p1i,dim = 0) / self._overall_number_of_state_parameters
+
+        par_dict2 = p['l2'].get_parameter_dict()
+        par_dict2['weight'] = l2 / self._overall_number_of_state_parameters
+        par_dict2['bias'] = torch.sum(p2i,dim = 0).t() / self._overall_number_of_state_parameters
+
+        return p
+
+
+
+
+
 class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
