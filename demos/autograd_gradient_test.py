@@ -34,14 +34,15 @@ integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint',
                                                   use_adjoint_integration=False,
                                                   integrator_options=integrator_options)
 
-shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
-                                                                  nr_of_particles=nr_of_particles,
+in_features_size = 5
+shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=in_features_size, nonlinearity=nonlinearity,
+                                                                  nr_of_particles=nr_of_particles,particle_dimension = 1,particle_size = in_features_size,
                                                                   parameter_weight=parameter_weight)
 
-shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
+shooting_block = shooting_blocks.ShootingBlockBase(name='updown', shooting_integrand=shooting_model)
 
 # create some sample data
-sample_data = torch.randn([20,1,2])
+sample_data = torch.randn([20,1,in_features_size])
 
 # run through the shooting block once to get the necessary parameters
 shooting_block(x=sample_data)
@@ -49,7 +50,7 @@ shooting_block(x=sample_data)
 autodiff_gradient_results = dict()
 analytic_gradient_results = dict()
 
-for use_analytic_solution in (False,True):
+for use_analytic_solution in (True,False):
     shooting_model.use_analytic_solution = use_analytic_solution
 
     # zero gradients
