@@ -29,59 +29,76 @@ parameter_weight = 1.0
 # create a simple integrator
 stepsize = 0.1
 integrator_options = {'step_size': stepsize}
+in_features_size = 5
+
+check_models = ['simple', 'updown']
 
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
-                                                  use_adjoint_integration=False,
-                                                  integrator_options=integrator_options)
+                                                          use_adjoint_integration=False,
+                                                          integrator_options=integrator_options)
 
-in_features_size = 5
-shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=in_features_size, nonlinearity=nonlinearity,
-                                                                  nr_of_particles=nr_of_particles,particle_dimension = 1,particle_size = in_features_size,
-                                                                  parameter_weight=parameter_weight)
+for current_model in check_models:
 
-shooting_block = shooting_blocks.ShootingBlockBase(name='updown', shooting_integrand=shooting_model)
+    if current_model=='simple':
+        shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=in_features_size,
+                                                                          nonlinearity=nonlinearity,
+                                                                          nr_of_particles=nr_of_particles,
+                                                                          particle_dimension=1,
+                                                                          particle_size=in_features_size,
+                                                                          parameter_weight=parameter_weight)
+    elif current_model=='updown':
+        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=in_features_size, nonlinearity=nonlinearity,
+                                                                          nr_of_particles=nr_of_particles,particle_dimension = 1,particle_size = in_features_size,
+                                                                          parameter_weight=parameter_weight)
+    else:
+        raise ValueError('Unknown model to check: {}'.format( current_model ))
 
-# create some sample data
-sample_data = torch.randn([20,1,in_features_size])
+    shooting_block = shooting_blocks.ShootingBlockBase(name='updown', shooting_integrand=shooting_model)
 
-# run through the shooting block once to get the necessary parameters
-shooting_block(x=sample_data)
+    print('\n\nChecking model: {}'.format(current_model))
+    print('-------------------------------------\n')
 
-autodiff_gradient_results = dict()
-analytic_gradient_results = dict()
+    # create some sample data
+    sample_data = torch.randn([20,1,in_features_size])
 
-for use_analytic_solution in (True,False):
-    shooting_model.use_analytic_solution = use_analytic_solution
+    # run through the shooting block once to get the necessary parameters
+    shooting_block(x=sample_data)
 
-    # zero gradients
-    zero_grads(shooting_block.parameters())
+    autodiff_gradient_results = dict()
+    analytic_gradient_results = dict()
 
-    # now run the data through
-    pred,_,_,_ = shooting_block(x=sample_data)
+    for use_analytic_solution in (True,False):
+        shooting_model.use_analytic_solution = use_analytic_solution
 
-    # create a loss
-    loss = torch.mean(pred) + shooting_block.get_norm_penalty()
+        # zero gradients
+        zero_grads(shooting_block.parameters())
 
-    # compute gradient
-    loss.backward()
+        # now run the data through
+        pred,_,_,_ = shooting_block(x=sample_data)
 
-    # now output the gradients with respect to the parameters
-    pars = shooting_block.named_parameters()
-    for par_name,par_value in pars:
-        print('Using analytic solution: {}'.format( use_analytic_solution ))
-        print('Name: {}'.format(par_name))
-        print('Gradient: {}'.format(par_value.grad))
+        # create a loss
+        loss = torch.mean(pred) + shooting_block.get_norm_penalty()
 
-        if use_analytic_solution:
-            analytic_gradient_results[par_name] = par_value.grad.clone().detach()
-        else:
-            autodiff_gradient_results[par_name] = par_value.grad.clone().detach()
+        # compute gradient
+        loss.backward()
 
-# now compare them
-for par_name in autodiff_gradient_results:
-    autodiff_gradient = autodiff_gradient_results[par_name]
-    analytic_gradient = analytic_gradient_results[par_name]
-    print('Gradient ratio autodiff/analytic for parameter {}:'.format(par_name))
-    print('{}'.format(autodiff_gradient/analytic_gradient))
+        # now output the gradients with respect to the parameters
+        pars = shooting_block.named_parameters()
+        for par_name,par_value in pars:
+            print('Using analytic solution: {}'.format( use_analytic_solution ))
+            print('Name: {}'.format(par_name))
+            print('Gradient: {}'.format(par_value.grad))
 
-print('Hello world')
+            if use_analytic_solution:
+                analytic_gradient_results[par_name] = par_value.grad.clone().detach()
+            else:
+                autodiff_gradient_results[par_name] = par_value.grad.clone().detach()
+
+    # now compare them
+    for par_name in autodiff_gradient_results:
+        autodiff_gradient = autodiff_gradient_results[par_name]
+        analytic_gradient = analytic_gradient_results[par_name]
+        print('Gradient ratio autodiff/analytic for parameter {}:'.format(par_name))
+        print('{}'.format(autodiff_gradient/analytic_gradient))
+
+    print('Hello world')
