@@ -31,7 +31,8 @@ stepsize = 0.1
 integrator_options = {'step_size': stepsize}
 in_features_size = 5
 
-check_models = ['simple', 'updown']
+#check_models = ['simple', 'updown']
+check_models = ['DEBUG']
 
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                           use_adjoint_integration=False,
@@ -49,6 +50,13 @@ for current_model in check_models:
     elif current_model=='updown':
         shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=in_features_size, nonlinearity=nonlinearity,
                                                                           nr_of_particles=nr_of_particles,particle_dimension = 1,particle_size = in_features_size,
+                                                                          parameter_weight=parameter_weight)
+    elif current_model == 'DEBUG':
+        shooting_model = shooting_models.DEBUGAutoShootingIntegrandModelSimple(in_features=in_features_size,
+                                                                          nonlinearity=nonlinearity,
+                                                                          nr_of_particles=nr_of_particles,
+                                                                          particle_dimension=1,
+                                                                          particle_size=in_features_size,
                                                                           parameter_weight=parameter_weight)
     else:
         raise ValueError('Unknown model to check: {}'.format( current_model ))
