@@ -70,7 +70,8 @@ class GenericIntegrator(object):
         if step_size is not None:
             if self.integrator_library == 'odeint':
                 if self.integrator_name not in ['dopri5', 'adams']:
-                    self.integrator_options['step_size'] = step_size
+                    if 'step_size' not in self.integrator_options:
+                        self.integrator_options['step_size'] = step_size
 
         # if max_num_steps is not None:
         #     self.integrator_options['max_num_steps'] = max_num_steps
