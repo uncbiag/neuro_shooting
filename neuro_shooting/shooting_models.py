@@ -83,7 +83,6 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
-
 class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVectorIntegrand):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                 nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
@@ -294,10 +293,10 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         p2i = c['p_q2'].transpose(1,2)
 
         temp = torch.matmul(self.nl(q2i),p1i)
-        l1 = torch.sum(temp,axis = 0).t()
+        l1 = torch.mean(temp,dim = 0).t()
 
         temp2 = torch.matmul(p2i,q1i)
-        l2 = torch.sum(temp2,dim = 0)
+        l2 = torch.mean(temp2,dim = 0)
         # particles are saved as rows
         #At = torch.zeros(self.in_features, self.in_features)
         #for i in range(self.nr_of_particles):
@@ -307,12 +306,12 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
-        par_dict['weight'] = l1 / self._overall_number_of_state_parameters
-        par_dict['bias'] = torch.sum(p1i,dim = 0) / self._overall_number_of_state_parameters
+        par_dict['weight'] = l1
+        par_dict['bias'] = torch.mean(p1i,dim = 0)
 
         par_dict2 = p['l2'].get_parameter_dict()
-        par_dict2['weight'] = l2 / self._overall_number_of_state_parameters
-        par_dict2['bias'] = torch.sum(p2i,dim = 0).t() / self._overall_number_of_state_parameters
+        par_dict2['weight'] = l2
+        par_dict2['bias'] = torch.mean(p2i,dim = 0).t()
 
         return p
 
