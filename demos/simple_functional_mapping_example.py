@@ -60,6 +60,8 @@ def setup_cmdline_parsing():
     args = parser.parse_args()
     return args
 
+# --shooting_model updown --nr_of_particles 5 --pw 0.1 --viz --niters 100 --nonlinearity relu
+
 def get_sample_batch(nr_of_samples=10):
 
     sample_batch_in = 4*torch.rand([nr_of_samples,1,1])-2 # creates uniform samples in [-2,2]
@@ -67,10 +69,10 @@ def get_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
-def replicate_modules(module,nr_of_layers):
+def replicate_modules(module,nr_of_layers, **kwargs):
     modules = OrderedDict()
     for i in range(nr_of_layers):
-        modules['l{}'.format(i)] = module()
+        modules['l{}'.format(i)] = module(**kwargs)
 
     return modules
 
@@ -88,11 +90,11 @@ class SimpleResNetBlock(nn.Module):
 
 class UpDownResNetBlock(nn.Module):
 
-    def __init__(self):
+    def __init__(self, inflation_factor=5):
         super(UpDownResNetBlock, self).__init__()
 
-        self.l1 = nn.Linear(1,20,bias=True)
-        self.l2 = nn.Linear(20,1,bias=True)
+        self.l1 = nn.Linear(1,inflation_factor,bias=True)
+        self.l2 = nn.Linear(inflation_factor,1,bias=True)
 
     def forward(self, x):
         y = self.l1(F.relu(x))
@@ -102,11 +104,11 @@ class UpDownResNetBlock(nn.Module):
 
 class UpDownDoubleResNetBlock(nn.Module):
 
-    def __init__(self):
+    def __init__(self, inflation_factor=5):
         super(UpDownDoubleResNetBlock, self).__init__()
 
-        self.l1 = nn.Linear(5,1,bias=True)
-        self.l2 = nn.Linear(1,5,bias=False)
+        self.l1 = nn.Linear(inflation_factor,1,bias=True)
+        self.l2 = nn.Linear(1,inflation_factor,bias=False)
 
     def forward(self, x1x2):
         x1 = x1x2[0]
@@ -120,10 +122,10 @@ class UpDownDoubleResNetBlock(nn.Module):
 
 class DoubleResNetUpDown(nn.Module):
 
-    def __init__(self, nr_of_layers=30):
+    def __init__(self, nr_of_layers=30, inflation_factor=5):
         super(DoubleResNetUpDown, self).__init__()
         print("nr_of_layers ",nr_of_layers)
-        modules = replicate_modules(module=UpDownDoubleResNetBlock,nr_of_layers=nr_of_layers)
+        modules = replicate_modules(module=UpDownDoubleResNetBlock,nr_of_layers=nr_of_layers, inflation_factor=inflation_factor)
         self.model = nn.Sequential(modules)
 
     def forward(self, x1x2):
@@ -131,9 +133,9 @@ class DoubleResNetUpDown(nn.Module):
 
 class ResNetUpDown(nn.Module):
 
-    def __init__(self, nr_of_layers=10):
+    def __init__(self, nr_of_layers=10, inflation_factor=5):
         super(ResNetUpDown, self).__init__()
-        modules = replicate_modules(module=UpDownResNetBlock, nr_of_layers=nr_of_layers)
+        modules = replicate_modules(module=UpDownResNetBlock, nr_of_layers=nr_of_layers, inflation_factor=inflation_factor)
         self.model = nn.Sequential(modules)
 
     def forward(self, x):
@@ -152,12 +154,12 @@ class ResNet(nn.Module): # corresponds to our simple shooting model
 
 class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting model
 
-    def __init__(self, nr_of_layers=10):
+    def __init__(self, nr_of_layers=10, inflation_factor=5):
         super(DoubleResNetUpDownRNN, self).__init__()
 
         self.nr_of_layers = nr_of_layers
         print("use "+str(self) + " with " + str(self.nr_of_layers) + " nr of layers")
-        self.l1 = UpDownDoubleResNetBlock()
+        self.l1 = UpDownDoubleResNetBlock(inflation_factor=inflation_factor)
 
     def forward(self, x1x2):
         x1 = x1x2[0]
@@ -170,13 +172,13 @@ class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting mod
 
 class ResNetRNN(nn.Module):
 
-    def __init__(self, nr_of_layers=10):
+    def __init__(self, nr_of_layers=10, inflation_factor=5):
         super(ResNetRNN, self).__init__()
         self.nr_of_layers = nr_of_layers
         print("use "+ str(self) + " nr of layers " + str(self.nr_of_layers))
 
-        self.l1 = nn.Linear(5,1,bias=True)
-        self.l2 = nn.Linear(1,5,bias=True)
+        self.l1 = nn.Linear(inflation_factor,1,bias=True)
+        self.l2 = nn.Linear(1,inflation_factor,bias=True)
 
     def forward(self, x):
         for i in range(self.nr_of_layers):
@@ -461,7 +463,7 @@ if __name__ == '__main__':
                                 'particle_size': 1,
                                 "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
-    inflation_factor = 2 # for the up-down model (i.e., how much larger is the internal state; default is 5)
+    inflation_factor = 2 # for the up-down models (i.e., how much larger is the internal state; default is 5)
 
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)
@@ -487,17 +489,17 @@ if __name__ == '__main__':
         weight_decay = 0.0001
         lr = 1e-3
         print('Using ResNetRNN: weight = {}'.format(weight_decay))
-        simple_resnet = ResNetRNN(nr_of_layers=args.nr_of_layers)
+        simple_resnet = ResNetRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_double_resnet_rnn:
         weight_decay = 0.025
-        lr = 1e-2
+        lr = 1e-3
         print('Using DoubleResNetRNN: weight = {}'.format(weight_decay))
-        simple_resnet = DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers)
+        simple_resnet = DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_updown:
         weight_decay = 0.01
         lr = 1e-3
         print('Using ResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = ResNetUpDown(nr_of_layers=args.nr_of_layers)
+        simple_resnet = ResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_simple_resnet:
         weight_decay = 0.0001
         lr = 1e-2
@@ -508,7 +510,7 @@ if __name__ == '__main__':
         weight_decay = 0.01
         lr = 1e-2
         print('Using DoubleResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = DoubleResNetUpDown(nr_of_layers=args.nr_of_layers)
+        simple_resnet = DoubleResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_neural_ode:
         print('Using neural ode')
         func = ODESimpleFunc()
@@ -562,7 +564,7 @@ if __name__ == '__main__':
             elif args.use_double_resnet or args.use_double_resnet_rnn:
                 x20 = torch.zeros_like(batch_in)
                 sz = [1] * len(x20.shape)
-                sz[-1] = 5
+                sz[-1] = inflation_factor
                 x20 = x20.repeat(sz)
                 x1x2 = (batch_in, x20)
                 pred_y, pred_y2 = simple_resnet(x1x2)
@@ -596,9 +598,10 @@ if __name__ == '__main__':
     # now print the paramerers
     if not use_shooting:
         if args.use_neural_ode:
-            print_all_parameters(func)
+            compute_number_of_parameters_and_print_all_parameters(func)
         else:
-            print_all_parameters(simple_resnet)
+            compute_number_of_parameters_and_print_all_parameters(simple_resnet)
+
             if args.use_double_resnet:
                 collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
