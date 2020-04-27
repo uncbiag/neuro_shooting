@@ -9,7 +9,7 @@ import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
                 *args, **kwargs):
 
         super(AutoShootingIntegrandModelResNetUpDown, self).__init__(in_features=in_features,
@@ -22,7 +22,7 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
                                                                parameter_weight=parameter_weight,
                                                                *args, **kwargs)
 
-        self.inflation_factor = 5
+        self.inflation_factor = inflation_factor
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -153,7 +153,7 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
 class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
                 *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDown, self).__init__(in_features=in_features,
@@ -166,7 +166,7 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
                                                                parameter_weight=parameter_weight,
                                                                *args, **kwargs)
 
-        self.inflation_factor = 5
+        self.inflation_factor = inflation_factor
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -795,7 +795,7 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
 
 class AutoShootingOptimalTransportSimple(shooting.OptimalTransportNonLinearInParameter):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=1,
                 *args, **kwargs):
 
         super(AutoShootingOptimalTransportSimple, self).__init__(in_features=in_features,
@@ -807,7 +807,7 @@ class AutoShootingOptimalTransportSimple(shooting.OptimalTransportNonLinearInPar
                                                                particle_size=particle_size,
                                                                parameter_weight=parameter_weight,
                                                                *args, **kwargs)
-        self.inflation_factor = 1
+        self.inflation_factor = inflation_factor
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)

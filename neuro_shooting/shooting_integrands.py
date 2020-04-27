@@ -55,9 +55,6 @@ class ShootingIntegrandBase(nn.Module):
         self._custom_hook_data = None
         """Custom data that is passed to a hook (set via set_custom_hook_data)"""
 
-        self._overall_number_of_state_parameters = None
-        """Will hold the number of parameters (i.e. number of entries) over; this number is needed to get an appropriate co-state as we add the rhs via mean to the Lagrangian """
-
         self._check_for_availability_of_analytic_shooting_equations = True
         """If called with autodiff option, i.e., use_analytic_solution=False, checks upon first call if an analytic solution has been specified"""
 
@@ -393,8 +390,6 @@ class ShootingIntegrandBase(nn.Module):
         :return: returns a SortedDict containing the costate.
         """
 
-        self._overall_number_of_state_parameters = 0
-
         if state_dict is None:
             return None
         else:
@@ -402,7 +397,6 @@ class ShootingIntegrandBase(nn.Module):
             costate_dict = SortedDict()
             for k in state_dict:
                 costate_dict['p_' + str(k)] = self._costate_initializer.create_parameters_like(state_dict[k])
-                self._overall_number_of_state_parameters += state_dict[k].numel()
 
             return costate_dict
 
@@ -708,10 +702,6 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
 
         # form a tuple of all the state variables (because this is what we take the derivative of)
         state_tuple = scd_utils.compute_tuple_from_generic_dict_of_dicts(state_dict_of_dicts)
-
-        # we use self._overall_number_of_state_parameters here (instead of 1) as the rhs of the state evolution equation is
-        # added via mean (and not sum). As the control Lagrangian does not include p_i\dot{q_i}, we need to make sure that it is correctly scaled.
-        # and using fill with self._overall_number_of_state_parameters does this
 
         dot_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
                                           grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1.0),

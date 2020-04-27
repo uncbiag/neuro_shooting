@@ -208,6 +208,25 @@ def print_all_parameters(model):
     for pn,pv in model.named_parameters():
         print('{} = {}\n'.format(pn, pv))
 
+def compute_number_of_parameters_and_print_all_parameters(model):
+
+    nr_of_fixed_parameters = 0
+    nr_of_optimized_parameters = 0
+    print('\n Model parameters:\n')
+    for pn, pv in model.named_parameters():
+        print('{} = {}'.format(pn, pv))
+        current_number_of_parameters = np.prod(list(pv.size()))
+        print('# of parameters = {}\n'.format(current_number_of_parameters))
+        if pv.requires_grad:
+            nr_of_optimized_parameters += current_number_of_parameters
+        else:
+            nr_of_fixed_parameters += current_number_of_parameters
+
+    print('\n')
+    print('Number of fixed parameters = {}'.format(nr_of_fixed_parameters))
+    print('Number of optimized parameters = {}'.format(nr_of_optimized_parameters))
+    print('Overall number of parameters = {}'.format(nr_of_fixed_parameters + nr_of_optimized_parameters))
+
 def collect_and_sort_parameter_values_across_layers(model):
 
     # TODO: in principle I would like to extend this so that we sort the states so it is possible
@@ -442,14 +461,16 @@ if __name__ == '__main__':
                                 'particle_size': 1,
                                 "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
+    inflation_factor = 2 # for the up-down model (i.e., how much larger is the internal state; default is 5)
+
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)
     elif args.shooting_model == '2nd_order':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
     elif args.shooting_model == 'updown':
-        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True)
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor)
     elif args.shooting_model == 'resnet_updown':
-        smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs)
+        smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor)
 
     block_name = 'sblock'
 
@@ -520,9 +541,9 @@ if __name__ == '__main__':
                 pass
         optimizer = optim.Adam(sblock.parameters(), lr=1e-2)
 
-    fig = plt.figure(figsize=(12, 4), facecolor='white')
-    ax = fig.add_subplot(111, frameon=False)
-    plt.show(block=False)
+    # fig = plt.figure(figsize=(12, 4), facecolor='white')
+    # ax = fig.add_subplot(111, frameon=False)
+    # plt.show(block=False)
 
     track_loss = []
     for itr in range(1, args.niters + 1):
@@ -581,7 +602,8 @@ if __name__ == '__main__':
             if args.use_double_resnet:
                 collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
-        print_all_parameters(sblock)
+        #print_all_parameters(sblock)
+        compute_number_of_parameters_and_print_all_parameters(sblock)
 
 
     if use_shooting:
