@@ -373,7 +373,7 @@ def plot_temporal_data(data, block_name):
     plt.show()
 
     # exclude list (what not to plot, partial initial match is fine)
-    do_not_plot = ['t', 'energy', 'data','dot_state','dot_costate','dot_data']
+    do_not_plot = ['t', 'energy', 'dot_state','dot_costate','dot_data']
 
     for k in data:
 
