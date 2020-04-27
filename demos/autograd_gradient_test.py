@@ -23,17 +23,17 @@ def zero_grads(pars):
 
 # particle setup
 nonlinearity = 'tanh'
-nr_of_particles = 3
+nr_of_particles = 5
 parameter_weight = 1.0
 
 # create a simple integrator
 stepsize = 0.1
 integrator_options = {'step_size': stepsize}
-in_features_size = 5
+in_features_size = 2
 
-#check_models = ['simple', 'updown']
+#check_models = ['updown']
 check_models = ['DEBUG']
-
+#check_models = ["simple"]
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                           use_adjoint_integration=False,
                                                           integrator_options=integrator_options)

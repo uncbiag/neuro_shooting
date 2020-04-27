@@ -415,6 +415,7 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
             dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
 
         rhs['dot_p_q1'] = dot_pt
+        rhs['dot_p_q1'] = -self.dnl(qi)*torch.matmul(pi,A)
 
         # -----------------------
 
@@ -435,6 +436,7 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
             dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
 
         rhs['dot_p_q2'] = dot_pt
+        rhs['dot_p_q2'] = -self.dnl(qi) * torch.matmul(pi,A)
 
         return rhs
 

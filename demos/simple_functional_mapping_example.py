@@ -36,13 +36,13 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=2000)
+    parser.add_argument('--niters', type=int, default=8000)
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=30, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nr_of_particles', type=int, default=8, help='Number of particles to parameterize the initial condition')
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -368,14 +368,14 @@ if __name__ == '__main__':
     elif args.shooting_model == '2nd_order':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
     elif args.shooting_model == 'updown':
-        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs)
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True)
     elif args.shooting_model == 'resnet_updown':
         smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs)
 
     sblock = sblocks.ShootingBlockBase(
         name='simple',
         shooting_integrand=smodel,
-        integrator_name='euler',
+        integrator_name='rk4',
         use_adjoint_integration=False,
         #integrator_options = {'stepsize':0.1}
     )
@@ -479,15 +479,16 @@ if __name__ == '__main__':
         optimizer.step()
 
         if itr % args.test_freq == 0:
-
-            ax.cla()
+            fig = plt.figure(figsize=(8, 12), facecolor='white')
+            ax = fig.add_subplot(111, frameon=False)
+            #ax.cla()
             ax.plot(batch_in.detach().numpy().squeeze(),batch_out.detach().numpy().squeeze(),'g+')
             ax.plot(batch_in.detach().numpy().squeeze(),pred_y.detach().numpy().squeeze(),'r*')
             ax.set_xlim(-2, 2)
             ax.set_ylim(-8, 8)
             plt.draw()
-            plt.pause(0.001)
-
+            #plt.pause(0.001)
+            plt.show()
             print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
     # now print the paramerers

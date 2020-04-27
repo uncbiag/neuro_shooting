@@ -265,8 +265,7 @@ class ShootingIntegrandBase(nn.Module):
             c_rhs_state_dict = rhs_state_dict_of_dicts[d_ks]
             c_costate_dict = costate_dict_of_dicts[d_kcs]
             for ks,kcs in zip(c_rhs_state_dict,c_costate_dict):
-                potential_energy = potential_energy + torch.mean(c_costate_dict[kcs]*c_rhs_state_dict[ks])
-
+                potential_energy = potential_energy + torch.sum(torch.mean(c_costate_dict[kcs]*c_rhs_state_dict[ks],dim=0))
         return potential_energy
 
     def compute_kinetic_energy(self,t,parameter_objects):
