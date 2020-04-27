@@ -36,7 +36,7 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=8000)
+    parser.add_argument('--niters', type=int, default=4000)
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
@@ -48,7 +48,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
     parser.add_argument('--use_updown',action='store_true')
     parser.add_argument('--use_double_resnet',action='store_true')
-    parser.add_argument('--use_rnn',action='store_true')
+    parser.add_argument('--use_rnn',action='store_true',default = True)
     parser.add_argument('--use_double_resnet_rnn',action="store_true")
     parser.add_argument('--use_simple_resnet',action='store_true')
     parser.add_argument('--use_neural_ode',action='store_true')
@@ -155,7 +155,7 @@ class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting mod
         super(DoubleResNetUpDownRNN, self).__init__()
 
         self.nr_of_layers = nr_of_layers
-
+        print("use "+str(self) + " with " + str(self.nr_of_layers) + " nr of layers")
         self.l1 = UpDownDoubleResNetBlock()
 
     def forward(self, x1x2):
@@ -171,13 +171,15 @@ class ResNetRNN(nn.Module):
 
     def __init__(self, nr_of_layers=10):
         super(ResNetRNN, self).__init__()
-
         self.nr_of_layers = nr_of_layers
-        self.l1 = nn.Linear(1,1,bias=True)
+        print("use "+ str(self) + " nr of layers " + str(self.nr_of_layers))
+
+        self.l1 = nn.Linear(5,1,bias=True)
+        self.l2 = nn.Linear(1,5,bias=True)
 
     def forward(self, x):
         for i in range(self.nr_of_layers):
-            x = x + self.l1(F.relu(x))
+            x = x + 1./self.nr_of_layers * self.l1(F.relu(self.l2(x)))
 
         return x
 
