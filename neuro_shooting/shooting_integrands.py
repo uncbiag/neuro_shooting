@@ -338,7 +338,7 @@ class ShootingIntegrandBase(nn.Module):
 
         lagrangian = kinetic_energy-potential_energy
 
-        return lagrangian, kinetic_energy, potential_energy
+        return self.nr_of_particles * lagrangian,self.nr_of_particles * kinetic_energy, self.nr_of_particles *potential_energy
 
     def compute_lagrangian(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         """
@@ -715,7 +715,7 @@ class AutogradShootingIntegrandBase(ShootingIntegrandBase):
         # and using fill with self._overall_number_of_state_parameters does this
 
         dot_costate_tuple = autograd.grad(current_lagrangian, state_tuple,
-                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(self._overall_number_of_state_parameters),
+                                          grad_outputs=current_lagrangian.data.new(current_lagrangian.shape).fill_(1.0),
                                           create_graph=True,
                                           retain_graph=True,
                                           allow_unused=True)
