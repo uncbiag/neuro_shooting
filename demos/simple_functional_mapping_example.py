@@ -9,6 +9,7 @@ import argparse
 import numpy as np
 
 from collections import OrderedDict
+from collections import defaultdict
 
 import torch
 import torch.nn as nn
@@ -48,7 +49,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
     parser.add_argument('--use_updown',action='store_true')
     parser.add_argument('--use_double_resnet',action='store_true')
-    parser.add_argument('--use_rnn',action='store_true',default = True)
+    parser.add_argument('--use_rnn',action='store_true')
     parser.add_argument('--use_double_resnet_rnn',action="store_true")
     parser.add_argument('--use_simple_resnet',action='store_true')
     parser.add_argument('--use_neural_ode',action='store_true')
@@ -282,55 +283,99 @@ def collect_and_sort_parameter_values_across_layers(model):
     l2w = fig.add_subplot(spec[2])
     l2b = fig.add_subplot(spec[3])
 
-    l1w.cla()
-    l1w.set_title('l1-weight')
-    #l1w.set_xlabel('layers')
-    A = layer_pars['l1.weight'].detach().numpy().squeeze()
-    A.sort()
-    im1 = l1w.imshow(A.transpose(),
-                     norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
-                     aspect='auto')
+    if 'l1.weight' in layer_pars:
+        l1w.cla()
+        l1w.set_title('l1-weight')
+        #l1w.set_xlabel('layers')
+        A = layer_pars['l1.weight'].detach().numpy().squeeze()
+        A.sort()
+        im1 = l1w.imshow(A.transpose(),
+                         norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
+                         aspect='auto')
 
-    divider = make_axes_locatable(l1w)
-    cax = divider.append_axes('bottom', size='20%', pad=0.25)
-    fig.colorbar(im1, cax=cax, orientation='horizontal')
+        divider = make_axes_locatable(l1w)
+        cax = divider.append_axes('bottom', size='20%', pad=0.25)
+        fig.colorbar(im1, cax=cax, orientation='horizontal')
 
-    l1b.cla()
-    l1b.set_title('l1-bias')
-    l1b.set_xlabel('layers')
-    im2 = l1b.imshow(layer_pars['l1.bias'].detach().numpy().transpose(),
-                    norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
-                    aspect='auto')
+    if 'l1.bias' in layer_pars:
+        l1b.cla()
+        l1b.set_title('l1-bias')
+        l1b.set_xlabel('layers')
+        im2 = l1b.imshow(layer_pars['l1.bias'].detach().numpy().transpose(),
+                        norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03,vmin=-1.0, vmax=1.0),
+                        aspect='auto')
 
-    divider = make_axes_locatable(l1b)
-    cax = divider.append_axes('bottom', size='50%', pad=0.25)
-    fig.colorbar(im2, cax=cax, orientation='horizontal')
+        divider = make_axes_locatable(l1b)
+        cax = divider.append_axes('bottom', size='50%', pad=0.25)
+        fig.colorbar(im2, cax=cax, orientation='horizontal')
 
-    l2w.cla()
-    l2w.set_title('l2-weight')
-    #l2w.set_xlabel('layers')
-    B = layer_pars['l2.weight'].detach().numpy().squeeze()
-    B.sort()
-    im3 = l2w.imshow(B.transpose(),
-                     #norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
-                     aspect='auto')
+    if 'l2.weight' in layer_pars:
+        l2w.cla()
+        l2w.set_title('l2-weight')
+        #l2w.set_xlabel('layers')
+        B = layer_pars['l2.weight'].detach().numpy().squeeze()
+        B.sort()
+        im3 = l2w.imshow(B.transpose(),
+                         #norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
+                         aspect='auto')
 
-    divider = make_axes_locatable(l2w)
-    cax = divider.append_axes('bottom', size='20%', pad=0.25)
-    fig.colorbar(im3, cax=cax, orientation='horizontal')
+        divider = make_axes_locatable(l2w)
+        cax = divider.append_axes('bottom', size='20%', pad=0.25)
+        fig.colorbar(im3, cax=cax, orientation='horizontal')
 
-    # l2b.cla()
-    # l2b.set_title('l2-bias')
-    # #l2b.set_xlabel('layers')
-    # im4 = l2b.imshow(layer_pars['l2.bias'].detach().numpy().squeeze().transpose(),
-    #                  norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
-    #                  aspect='auto')
-    #
-    # divider = make_axes_locatable(l2b)
-    # cax = divider.append_axes('bottom', size='20%', pad=0.25)
-    # fig.colorbar(im4, cax=cax, orientation='horizontal')
+    if 'l2.bias' in layer_pars:
+        l2b.cla()
+        l2b.set_title('l2-bias')
+        #l2b.set_xlabel('layers')
+        im4 = l2b.imshow(layer_pars['l2.bias'].detach().numpy().squeeze().transpose(),
+                         norm=matplotlib.colors.SymLogNorm(linthresh=0.01, linscale=0.03, vmin=-1.0, vmax=1.0),
+                         aspect='auto')
+
+        divider = make_axes_locatable(l2b)
+        cax = divider.append_axes('bottom', size='20%', pad=0.25)
+        fig.colorbar(im4, cax=cax, orientation='horizontal')
 
     fig.show()
+
+def plot_temporal_data(data, block_name):
+
+    # time
+    t = np.asarray(data['t'])
+    # energy
+    energy = np.asarray(data['energy'])
+
+    # first plot the energy over time
+    plt.figure()
+    plt.plot(t,energy)
+    plt.xlabel('time')
+    plt.ylabel('energy')
+    plt.show()
+
+    # exclude list (what not to plot, partial initial match is fine)
+    do_not_plot = ['t', 'energy', 'data','dot_state','dot_costate','dot_data']
+
+    for k in data:
+
+        # first check if we should plot this
+        do_plotting = True
+        for dnp in do_not_plot:
+            if k.startswith(dnp) or k.startswith('{}.{}'.format(block_name,dnp)):
+                do_plotting = False
+
+        if do_plotting:
+            plt.figure()
+
+            cur_vals = np.asarray(data[k]).squeeze()
+            cur_shape = cur_vals.shape
+            if len(cur_shape)==3: # multi-dimensional state
+                for cur_dim in range(cur_shape[2]):
+                    plt.plot(t,cur_vals[:,:,cur_dim])
+            else:
+                plt.plot(t,cur_vals)
+
+            plt.xlabel('time')
+            plt.ylabel(k)
+            plt.show()
 
 
 if __name__ == '__main__':
@@ -340,15 +385,47 @@ if __name__ == '__main__':
         print(args)
 
 
+    def record_generic_dict_of_dicts(custom_hook_data, d,d_name):
+        for block_name in d:
+            cur_block = d[block_name]
+            for cur_state_name in cur_block:
+                cur_key = '{}.{}.{}'.format(block_name, d_name, cur_state_name)
+                custom_hook_data[cur_key].append(cur_block[cur_state_name].detach().numpy())
+
     def parameters_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
                               dot_state_dicts, dot_costate_dicts, dot_data_dict_of_dicts, parameter_objects,
                               custom_hook_data):
 
         with torch.no_grad():
-            custom_hook_data['parameters'].append(
-                (
-                    t, parameter_objects["l2"]._parameter_dict["weight"]
-                ))
+
+            # record time
+            custom_hook_data['t'].append(t.item())
+
+            current_energy = torch.zeros(1)
+            # record all parameters
+            for k in parameter_objects:
+                cur_par_dict = parameter_objects[k]._parameter_dict
+                for p in cur_par_dict:
+                    cur_key = '{}.{}'.format(k,p)
+                    custom_hook_data[cur_key].append(cur_par_dict[p].detach().numpy())
+                    # add to current energy
+                    current_energy += 0.5*torch.sum(cur_par_dict[p]**2)
+
+            # record the current energy
+            custom_hook_data['energy'].append(current_energy.item())
+
+            # now record all the states
+            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=state_dicts, d_name='state')
+            # now record all the costates
+            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=costate_dicts, d_name='costate')
+            # now record all the data states
+            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=data_dict_of_dicts, d_name='data')
+
+            # now record all the current derivatives
+            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=dot_state_dicts, d_name='dot_state')
+            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=dot_costate_dicts, d_name='dot_costate')
+            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=dot_data_dict_of_dicts, d_name='dot_data')
+
         return None
 
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
@@ -374,12 +451,14 @@ if __name__ == '__main__':
     elif args.shooting_model == 'resnet_updown':
         smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs)
 
+    block_name = 'sblock'
+
     sblock = sblocks.ShootingBlockBase(
-        name='simple',
+        name=block_name,
         shooting_integrand=smodel,
         integrator_name='rk4',
         use_adjoint_integration=False,
-        #integrator_options = {'stepsize':0.1}
+        integrator_options = {'step_size':0.1}
     )
 
     use_shooting = False
@@ -395,7 +474,7 @@ if __name__ == '__main__':
         simple_resnet = DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers)
     elif args.use_updown:
         weight_decay = 0.01
-        lr = 1e-2
+        lr = 1e-3
         print('Using ResNetUpDown: weight = {}'.format(weight_decay))
         simple_resnet = ResNetUpDown(nr_of_layers=args.nr_of_layers)
     elif args.use_simple_resnet:
@@ -506,7 +585,7 @@ if __name__ == '__main__':
 
 
     if use_shooting:
-        custom_hook_data = {'parameters': []}
+        custom_hook_data = defaultdict(list)
         hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(parameters_hook)
         sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
@@ -514,9 +593,4 @@ if __name__ == '__main__':
         pred_y, _, _, _ = sblock(x=batch_in)
         hook.remove()
 
-        times = np.asarray([t.numpy() for (t,d) in custom_hook_data["parameters"]])
-        data = np.asarray([d.detach().numpy() for (t,d) in custom_hook_data["parameters"]])
-        plt.figure()
-        for i in range(np.shape(data)[1]):
-            plt.plot(times, data[:,i,:])
-        plt.show()
+        plot_temporal_data(data=custom_hook_data, block_name=block_name)

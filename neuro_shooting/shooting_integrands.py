@@ -5,7 +5,7 @@ import torch.autograd as autograd
 from abc import ABCMeta, abstractmethod
 # may require conda install sortedcontainers
 from sortedcontainers import SortedDict
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict, defaultdict, namedtuple
 import torch.utils.hooks as hooks
 
 import neuro_shooting.activation_functions_and_derivatives as ad
@@ -111,7 +111,7 @@ class ShootingIntegrandBase(nn.Module):
         :return: n/a
         """
 
-        if type(data)!=dict:
+        if type(data)!=dict and type(data)!=defaultdict:
             print('WARNING: Expected a dictionary for custom hook data, but got {} instead. Proceeding, but there may be trouble ahead.'.format(type(data)))
 
         self._custom_hook_data = data
