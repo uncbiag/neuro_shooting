@@ -505,7 +505,7 @@ class ShootingBlockBase(nn.Module):
         # need to let the integrand know how to go from the vector to the data stuctures
         self.shooting_integrand.set_auto_assembly_plans(assembly_plans=assembly_plans)
 
-        # reset shooting integrand
+        # reset shooting integrand, this should be called at the beginning of a new integration
         self.shooting_integrand.reset()
 
         #integrate

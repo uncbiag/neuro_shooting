@@ -18,6 +18,7 @@ class ShootingIntegrandBase(nn.Module):
     """
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, use_analytic_solution=False,
+                 use_rnn_mode=False, use_particle_free_rnn_mode=False,
                  *args, **kwargs):
         """
         Constructor
@@ -70,6 +71,10 @@ class ShootingIntegrandBase(nn.Module):
         self.auto_assembly_plans = None
         """Keeps track of how data stuctures are assembled and disassembled"""
 
+        self.use_rnn_mode = use_rnn_mode
+        self.use_particle_free_rnn_mode = use_particle_free_rnn_mode # TODO not yet supported
+        self._rnn_parameters = None
+
         # todo: can we force somehow that these will be defined in the derived classes
         self.concatenation_dim = None
         self.data_concatenation_dim = None
@@ -77,6 +82,7 @@ class ShootingIntegrandBase(nn.Module):
 
     def reset(self):
         self.current_norm_penalty = None
+        self._rnn_parameters = None
 
     def set_data_concatenation_dim(self,data_concatenation_dim):
         self.data_concatenation_dim = data_concatenation_dim
@@ -324,10 +330,23 @@ class ShootingIntegrandBase(nn.Module):
         :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
         """
 
-        # first compute the current parameters
-        # current parameters are computed via autodiff
-        parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
-                                                         costate_dict_of_dicts=costate_dict_of_dicts)
+        if self.use_rnn_mode or self.use_particle_free_rnn_mode:
+            # we only compute it the first time
+            if self._rnn_parameters is None:
+                if self.use_particle_free_rnn_mode:
+                    raise ValueError('Particle free method to compute parameters not yet supported.')
+                else:
+                    parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                             costate_dict_of_dicts=costate_dict_of_dicts)
+                self._rnn_parameters = parameter_objects
+            else:
+                parameter_objects = self._rnn_parameters
+
+        else:
+            # first compute the current parameters
+            # current parameters are computed via autodiff
+            parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                             costate_dict_of_dicts=costate_dict_of_dicts)
 
 
         kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects)
@@ -556,9 +575,24 @@ class ShootingIntegrandBase(nn.Module):
         state_dict = state_dict_of_dicts.values()[0]
         costate_dict = costate_dict_of_dicts.values()[0]
 
-        parameter_objects = self.optional_compute_parameters_analytic(t=t,
-                                                                    state_dict=state_dict,
-                                                                    costate_dict=costate_dict)
+        if self.use_rnn_mode or self.use_particle_free_rnn_mode:
+            # we only compute it the first time
+            if self._rnn_parameters is None:
+                if self.use_particle_free_rnn_mode:
+                    raise ValueError('Particle free method to compute parameters not yet supported.')
+                else:
+                    parameter_objects = self.optional_compute_parameters_analytic(t=t,
+                                                                                  state_dict=state_dict,
+                                                                                  costate_dict=costate_dict)
+                self._rnn_parameters = parameter_objects
+            else:
+                parameter_objects = self._rnn_parameters
+
+        else:
+            # we compute these parameters every time
+            parameter_objects = self.optional_compute_parameters_analytic(t=t,
+                                                                        state_dict=state_dict,
+                                                                        costate_dict=costate_dict)
 
         if t == 0:
             # we only need to compute the kinetic energy here
@@ -586,11 +620,23 @@ class ShootingIntegrandBase(nn.Module):
 
         # here we compute the rhs of the equations via automatic differentiation
 
-        # current parameters are computed via autodiff
-        parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
-                                                    costate_dict_of_dicts=costate_dict_of_dicts)
+        if self.use_rnn_mode or self.use_particle_free_rnn_mode:
+            # we only compute it the first time
+            if self._rnn_parameters is None:
+                if self.use_particle_free_rnn_mode:
+                    raise ValueError('Particle free method to compute parameters not yet supported.')
+                else:
+                    parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                        costate_dict_of_dicts=costate_dict_of_dicts)
+                self._rnn_parameters = parameter_objects
+            else:
+                parameter_objects = self._rnn_parameters
 
-
+        else:
+            # we compute these parameters every time
+            # current parameters are computed via autodiff
+            parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                        costate_dict_of_dicts=costate_dict_of_dicts)
 
         if t == 0:
             # we only want it at the initial condition

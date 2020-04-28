@@ -45,6 +45,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
+    parser.add_argument('--use_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -473,15 +474,16 @@ if __name__ == '__main__':
                                 "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
     inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
+    use_rnn_mode = args.use_rnn_mode
 
     if args.shooting_model == 'simple':
-        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)
+        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True, use_rnn_mode=use_rnn_mode)
     elif args.shooting_model == '2nd_order':
-        smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
+        smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_rnn_mode)
     elif args.shooting_model == 'updown':
-        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor)
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor, use_rnn_mode=use_rnn_mode)
     elif args.shooting_model == 'dampened_updown':
-        smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor)
+        smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor, use_rnn_mode=use_rnn_mode)
 
     block_name = 'sblock'
 
