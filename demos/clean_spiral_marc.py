@@ -37,7 +37,7 @@ parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with wh
 
 parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
-parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
+parser.add_argument('--nr_of_particles', type=int, default=40, help='Number of particles to parameterize the initial condition')
 parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
 parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
 parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
@@ -63,7 +63,7 @@ rtol = 1e-8
 atol = 1e-12
 
 #integrator_options  = {'step_size': args.stepsize}
-integrator_options  = {'step_size': 0.05}
+integrator_options  = {'step_size': 0.01}
 
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                  use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
@@ -377,7 +377,7 @@ if __name__ == '__main__':
         #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
         #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
         shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity,parameter_weight=0.5,
-                                                                          nr_of_particles=50, particle_dimension=1, particle_size=2)
+                                                                          nr_of_particles=50, particle_dimension=1, particle_size=2, use_analytic_solution=True)
 
         import neuro_shooting.parameter_initialization as pi
         # par_initializer = pi.VectorEvolutionSampleBatchParameterInitializer(only_random_initialization=False,
@@ -399,7 +399,7 @@ if __name__ == '__main__':
 
         #optimizer = optim.RMSprop(shooting_block.parameters(), lr=5e-3)
 
-        optimizer = optim.Adam(shooting_block.parameters(), lr=1e-2)
+        optimizer = optim.Adam(shooting_block.parameters(), lr=1e-3)
 
 
         #optimizer = optim.SGD(shooting_block.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
