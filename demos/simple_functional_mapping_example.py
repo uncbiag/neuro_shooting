@@ -44,6 +44,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--nr_of_particles', type=int, default=8, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -463,7 +464,7 @@ if __name__ == '__main__':
                                 'particle_size': 1,
                                 "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
-    inflation_factor = 2 # for the up-down models (i.e., how much larger is the internal state; default is 5)
+    inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
 
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)

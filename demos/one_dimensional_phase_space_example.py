@@ -37,12 +37,14 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=4000)
+    parser.add_argument('--niters', type=int, default=1000)
 
     # shooting model parameters
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
-    parser.add_argument('--pw', type=float, default=0.1, help='parameter weight')
+    parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
 
     parser.add_argument('--test_freq', type=int, default=100)
     parser.add_argument('--viz', action='store_true')
@@ -211,7 +213,19 @@ if __name__ == '__main__':
                                 'particle_size': 1,
                                 "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
-    smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True)
+    inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
+
+    if args.shooting_model == 'simple':
+        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs, use_analytic_solution=True)
+    elif args.shooting_model == '2nd_order':
+        smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
+    elif args.shooting_model == 'updown':
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs, use_analytic_solution=True,
+                                                          inflation_factor=inflation_factor)
+    elif args.shooting_model == 'resnet_updown':
+        smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs,
+                                                                inflation_factor=inflation_factor)
+
     block_name = 'sblock'
 
     sblock = sblocks.ShootingBlockBase(
@@ -271,7 +285,11 @@ if __name__ == '__main__':
                                               pred_y.detach().numpy().squeeze()), axis=-1)).transpose()
 
             ax1.plot(oz,true_correspondences,'g-',linewidth=0.5)
+            ax1.set_xlim(-0.1,1.1)
+            ax1.set_ylim(-2.0,4.5)
             ax2.plot(oz,pred_correspondences,'r-',linewidth=0.5)
+            ax2.set_xlim(-0.1,1.1)
+            ax2.set_ylim(-2.0,4.5)
 
             plt.show()
 
