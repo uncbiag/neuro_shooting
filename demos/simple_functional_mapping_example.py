@@ -70,6 +70,14 @@ def get_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
+def get_uniform_sample_batch(nr_of_samples=10):
+
+    sample_batch_in = (torch.linspace(-2,2,nr_of_samples)).view([nr_of_samples,1,1]) # creates uniform samples in [-2,2]
+    sample_batch_out = sample_batch_in**3 # and takes them to the power of three for the output
+
+    return sample_batch_in, sample_batch_out
+
+
 def replicate_modules(module,nr_of_layers, **kwargs):
     modules = OrderedDict()
     for i in range(nr_of_layers):
@@ -618,8 +626,8 @@ if __name__ == '__main__':
         hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(parameters_hook)
         sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
-        batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
-        pred_y, _, _, _ = sblock(x=batch_in)
+        uniform_batch_in, uniform_batch_out = get_uniform_sample_batch(nr_of_samples=args.batch_size)
+        pred_y, _, _, _ = sblock(x=uniform_batch_in)
         hook.remove()
 
         plot_temporal_data(data=custom_hook_data, block_name=block_name)
