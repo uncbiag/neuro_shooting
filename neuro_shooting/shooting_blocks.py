@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from sortedcontainers import SortedDict
+from torch.nn.parameter import Parameter
 
 from abc import ABCMeta, abstractmethod
 
@@ -15,6 +16,7 @@ class ShootingBlockBase(nn.Module):
                  use_adjoint_integration=False, integrator_options=None,
                  keep_initial_state_parameters_at_zero=False,
                  enlarge_pass_through_states_and_costates=True,
+                 use_particle_free_rnn_mode=False,
                  *args, **kwargs):
         """
 
@@ -27,6 +29,7 @@ class ShootingBlockBase(nn.Module):
         :param integrator_options:
         :param keep_initial_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
         :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
+        :param use_particle_free_rnn_mode: if set to true than the particles are not used to compute the parameterization, instead an RNN model is assumed and the layer parameters are optimized directly, particles will stay as initialized
         :param args:
         :param kwargs:
         """
@@ -78,6 +81,10 @@ class ShootingBlockBase(nn.Module):
         self.enlarge_pass_through_states_and_costates = enlarge_pass_through_states_and_costates
         """If set to true the pass through states and costates will be enlarged so they are compatible in size with the states and costates and can be concatenated"""
 
+        self.use_particle_free_rnn_mode = use_particle_free_rnn_mode
+        """if set to true than the particles are not used to compute the parameterization, instead an RNN model is assumed and the layer parameters are optimized directly, particles will stay as initialized"""
+        self._particle_free_rnn_parameters = None
+
         self._costate_parameter_dict = None
         """Dictionary holding the costates (i.e., adjoints/duals)"""
 
@@ -92,9 +99,23 @@ class ShootingBlockBase(nn.Module):
 
         state_dict, costate_dict = self.create_initial_state_and_costate_parameters(*args, **kwargs)
 
-        self._state_parameter_dict, self._costate_parameter_dict = self.register_state_and_costate_parameters(
-            state_dict=state_dict, costate_dict=costate_dict,
-            keep_state_parameters_at_zero=keep_initial_state_parameters_at_zero)
+        # particle-free RNN mode is a direct optimization over the NN parameters (a la Neural ODE)
+        # it is included here simply to allow for direct comparisions with the same code
+        if self.use_particle_free_rnn_mode:
+            # those will have the default initialization
+            self._particle_free_rnn_parameters = self.shooting_integrand.create_default_parameter_objects()
+            # let's register them for optimization
+            self._particle_free_rnn_parameters = self.register_particle_free_rnn_parameters(rnn_parameters=self._particle_free_rnn_parameters)
+            # and then associate them with the integrand, so the integrand knows that these are externally managed
+            self.shooting_integrand.set_externally_managed_rnn_parameters(self._particle_free_rnn_parameters)
+            # we just set them to default, these will not really be needed though (as we are not optimizing over these values)
+            self._state_parameter_dict = state_dict
+            self._costate_parameter_dict = costate_dict
+
+        else:
+            self._state_parameter_dict, self._costate_parameter_dict = self.register_state_and_costate_parameters(
+                state_dict=state_dict, costate_dict=costate_dict,
+                keep_state_parameters_at_zero=keep_initial_state_parameters_at_zero)
 
 
     def parameters(self, recurse=True):
@@ -348,12 +369,37 @@ class ShootingBlockBase(nn.Module):
         return initial_conditions,assembly_plans
 
 
+    def register_particle_free_rnn_parameters(self,rnn_parameters):
+
+        if rnn_parameters is not None:
+
+            # first loop over parameter objects
+            for pd in rnn_parameters:
+                cur_par_dict = rnn_parameters[pd].get_parameter_dict()
+                # now over all the entries
+                for k in cur_par_dict:
+                    cur_name = '{}_{}'.format(pd,k)
+                    print('Registering particle-free RNN parameter {}'.format(cur_name))
+
+                    # first convert this to a parameter
+                    cur_par_dict[k] = Parameter(cur_par_dict[k])
+                    self.register_parameter(cur_name,cur_par_dict[k])
+
+            # Format is something like this
+            # par_dict1 = p['l1'].get_parameter_dict()
+            # par_dict2 = p['l2'].get_parameter_dict()
+            # l1 = par_dict1['weight']
+            # l2 = par_dict2['weight']
+
+        return rnn_parameters
+
+
     def register_state_and_costate_parameters(self,state_dict,costate_dict,keep_state_parameters_at_zero):
 
         if state_dict is not None:
 
             if type(state_dict) != SortedDict:
-                raise ValueError('state parameter dictionrary needs to be an SortedDict and not {}'.format(
+                raise ValueError('state parameter dictionary needs to be an SortedDict and not {}'.format(
                     type(state_dict)))
 
             # only register if we want to optimize over them, otherwise force them to zero

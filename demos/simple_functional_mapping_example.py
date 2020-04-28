@@ -35,9 +35,12 @@ import neuro_shooting.parameter_initialization as pi
 
 def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
-    parser.add_argument('--method', type=str, choices=['dopri5', 'adams'], default='dopri5')
+    parser.add_argument('--method', type=str, choices=['dopri5', 'adams', 'rk4'], default='rk4', help='Selects the desired integrator')
     parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--niters', type=int, default=4000)
+    parser.add_argument('--seed', type=int, default=1234)
+    parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
+    parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['dampened_updown','simple', '2nd_order', 'updown'])
@@ -45,7 +48,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
-    parser.add_argument('--use_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
+    parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
+    parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -60,6 +64,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--verbose', action='store_true', default=False)
     args = parser.parse_args()
+
     return args
 
 # --shooting_model updown --nr_of_particles 5 --pw 0.1 --viz --niters 100 --nonlinearity relu
@@ -415,6 +420,10 @@ if __name__ == '__main__':
     if args.verbose:
         print(args)
 
+    seed = args.seed
+    print('Setting the random seed to {:}'.format(seed))
+    random.seed(seed)
+    torch.manual_seed(seed)
 
     def record_generic_dict_of_dicts(custom_hook_data, d,d_name):
         for block_name in d:
@@ -474,25 +483,27 @@ if __name__ == '__main__':
                                 "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
 
     inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
-    use_rnn_mode = args.use_rnn_mode
+    use_particle_rnn_mode = args.use_particle_rnn_mode
+    use_particle_free_rnn_mode = args.use_particle_free_rnn_mode
 
     if args.shooting_model == 'simple':
-        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True, use_rnn_mode=use_rnn_mode)
+        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == '2nd_order':
-        smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_rnn_mode)
+        smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'updown':
-        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor, use_rnn_mode=use_rnn_mode)
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'dampened_updown':
-        smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor, use_rnn_mode=use_rnn_mode)
+        smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
 
     block_name = 'sblock'
 
     sblock = sblocks.ShootingBlockBase(
         name=block_name,
         shooting_integrand=smodel,
-        integrator_name='rk4',
-        use_adjoint_integration=False,
-        integrator_options = {'step_size':0.05}
+        integrator_name=args.method,
+        use_adjoint_integration=args.adjoint,
+        use_particle_free_rnn_mode=use_particle_free_rnn_mode,
+        integrator_options = {'step_size': args.stepsize}
     )
 
     use_shooting = False
