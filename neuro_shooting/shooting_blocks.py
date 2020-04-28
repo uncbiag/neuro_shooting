@@ -505,6 +505,9 @@ class ShootingBlockBase(nn.Module):
         # need to let the integrand know how to go from the vector to the data stuctures
         self.shooting_integrand.set_auto_assembly_plans(assembly_plans=assembly_plans)
 
+        # reset shooting integrand
+        self.shooting_integrand.reset()
+
         #integrate
         if self.integration_time_vector is not None:
             res_all_times = self.integrator.integrate(func=self.shooting_integrand, x0=initial_conditions, t=self.integration_time_vector)

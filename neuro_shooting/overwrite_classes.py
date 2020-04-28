@@ -102,6 +102,32 @@ class SNN_Linear(nn.Linear,RemoveParameters):
         else:
             return F.linear(input, self._parameter_dict['weight'])
 
+class SNN_LinearDampening(nn.Linear,RemoveParameters):
+    def __init__(self, in_features, out_features, bias=True, weight=None):
+        super(SNN_LinearDampening, self).__init__(in_features=in_features, out_features=out_features, bias=bias)
+        RemoveParameters.__init__(self, weight=weight)
+        # introduce constant which will be used for dampening to parameters, so that a subsequent remove_parameters() call will include it
+        # TODO: allocate this on the GPU if needed
+        self._parameters['dampening'] = 0.1*torch.ones(1)
+        self._remove_parameters()
+
+    def _apply(self, fn):
+        nn.Linear._apply(self,fn)
+        RemoveParameters._apply(self,fn)
+        return self
+
+    def to(self, *args, **kwargs):
+        nn.Linear.to(self,*args, **kwargs)
+        RemoveParameters.to(self,*args, **kwargs)
+        return self
+
+    def forward(self, input, dampening_input):
+
+        if 'bias' in self._parameter_dict:
+            return F.linear(input, self._parameter_dict['weight'], self._parameter_dict['bias']) -(self._parameter_dict['dampening'])*dampening_input
+        else:
+            return F.linear(input, self._parameter_dict['weight']) -(self._parameter_dict['dampening'])*dampening_input
+
 class SNN_Conv2d(nn.Conv2d,RemoveParameters):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,

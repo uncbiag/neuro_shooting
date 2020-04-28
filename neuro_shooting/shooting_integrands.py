@@ -75,6 +75,9 @@ class ShootingIntegrandBase(nn.Module):
         self.data_concatenation_dim = None
         self.enlargement_dimensions = None
 
+    def reset(self):
+        self.current_norm_penalty = None
+
     def set_data_concatenation_dim(self,data_concatenation_dim):
         self.data_concatenation_dim = data_concatenation_dim
 

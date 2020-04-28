@@ -40,10 +40,10 @@ def setup_cmdline_parsing():
     parser.add_argument('--niters', type=int, default=4000)
 
     # shooting model parameters
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['resnet_updown','simple', '2nd_order', 'updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['dampened_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=8, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
 
     # non-shooting networks implemented
@@ -472,8 +472,8 @@ if __name__ == '__main__':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs)
     elif args.shooting_model == 'updown':
         smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor)
-    elif args.shooting_model == 'resnet_updown':
-        smodel = smodels.AutoShootingIntegrandModelResNetUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor)
+    elif args.shooting_model == 'dampened_updown':
+        smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor)
 
     block_name = 'sblock'
 
@@ -482,7 +482,7 @@ if __name__ == '__main__':
         shooting_integrand=smodel,
         integrator_name='rk4',
         use_adjoint_integration=False,
-        integrator_options = {'step_size':0.1}
+        integrator_options = {'step_size':0.05}
     )
 
     use_shooting = False
@@ -576,8 +576,11 @@ if __name__ == '__main__':
             # sblock.set_integration_time(time_to=1.0) # try to do this mapping in unit time
             pred_y, _, _, _ = sblock(x=batch_in)
 
+        if use_shooting:
+            loss = torch.mean((pred_y - batch_out)**2)  + args.pw * sblock.get_norm_penalty()
+        else:
+            loss = torch.mean((pred_y - batch_out)**2)
 
-        loss = torch.mean((pred_y - batch_out)**2)  # + 1e-2 * sblock.get_norm_penalty()
         loss.backward()
 
         track_loss.append(loss.item())

@@ -6,13 +6,13 @@ from sortedcontainers import SortedDict
 from torchdiffeq import odeint
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 
-class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
+class AutoShootingIntegrandModelDampenedUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
                 *args, **kwargs):
 
-        super(AutoShootingIntegrandModelResNetUpDown, self).__init__(in_features=in_features,
+        super(AutoShootingIntegrandModelDampenedUpDown, self).__init__(in_features=in_features,
                                                                nonlinearity=nonlinearity,
                                                                transpose_state_when_forward=transpose_state_when_forward,
                                                                concatenate_parameters=concatenate_parameters,
@@ -21,6 +21,8 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
                                                                particle_size=particle_size,
                                                                parameter_weight=parameter_weight,
                                                                *args, **kwargs)
+
+        print('WARNING: This model is currently not functional. Play around with it at your own risk.')
 
         self.inflation_factor = inflation_factor
 
@@ -39,14 +41,27 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
                                                                      particle_dimension=self.particle_dimension,
                                                                      set_to_zero=set_to_zero)
 
+        state_dict['c1'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=1,
+                                                                     particle_dimension=1,
+                                                                     set_to_constant=0.1)
+
+        state_dict['c2'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=1,
+                                                                     particle_dimension=1,
+                                                                     set_to_constant=0.1)
+
         return state_dict
 
     def create_default_parameter_objects(self):
 
         parameter_objects = SortedDict()
 
-        linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight,bias=True)
-        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight,bias=True)
+        #linear1 = oc.SNN_LinearDampening(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight,bias=True)
+        #linear2 = oc.SNN_LinearDampening(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight,bias=True)
+
+        linear1 = oc.SNN_Linear(in_features=self.in_features * self.inflation_factor,out_features=self.in_features, weight=self.parameter_weight, bias=True)
+        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features * self.inflation_factor, weight=self.parameter_weight, bias=True)
 
         parameter_objects['l1'] = linear1
         parameter_objects['l2'] = linear2
@@ -60,9 +75,28 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
         s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
-        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
+        # # evolution equation is
+        # # \dot{q}_1 = A_1 \sigma( q_2 ) + b_1 - d_1*q1
+        # # \dot{q}_2 = A_2 \sigma( q_1 ) + b_2 - d_2*q2  (last term is dampening)
+        #
+        # rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']),dampening_input=s['q1'])
+        # # TODO: maybe make this 0.1 factor a learnable parameter
+        # rhs['dot_q2'] = p['l2'](input=self.nl(s['q1']),dampening_input=s['q2'])
+
+        # evolution equation is
+        # \dot{q}_1 = A_1 \sigma( q_2 ) + b_1 - d_1*q1
+        # \dot{q}_2 = A_2 \sigma( q_1 ) + b_2 - d_2*q2  (last term is dampening)
+
+        # rhs['dot_q1'] = p['l1'](input=self.nl(s['q2'])) -0.1*s['q1']
+        # # TODO: maybe make this 0.1 factor a learnable parameter
+        # rhs['dot_q2'] = p['l2'](input=self.nl(s['q1'])) -0.1*s['q2']
+
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2'])) - self.nl(s['c1']) * s['q1']
         # TODO: maybe make this 0.1 factor a learnable parameter
-        rhs['dot_q2'] = p['l2'](input=self.nl(s['q1']))-0.1*s['q2']
+        rhs['dot_q2'] = p['l2'](input=self.nl(s['q1'])) - self.nl(s['c2']) * s['q2']
+
+        rhs['dot_c1'] = torch.zeros_like(s['c1'])
+        rhs['dot_c2'] = torch.zeros_like(s['c2'])
 
         return rhs
 
@@ -76,6 +110,11 @@ class AutoShootingIntegrandModelResNetUpDown(shooting.ShootingLinearInParameterV
         sz[-1] = self.inflation_factor
 
         data_dict['q2'] = z.repeat(sz)
+
+        sz_orig = [1]*len(x.shape)
+        sz_orig[0] = x.shape[0]
+        data_dict['c1'] = torch.zeros(sz_orig)
+        data_dict['c2'] = torch.zeros(sz_orig)
 
         return data_dict
 
