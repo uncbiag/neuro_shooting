@@ -489,12 +489,15 @@ if __name__ == '__main__':
     use_particle_rnn_mode = args.use_particle_rnn_mode
     use_particle_free_rnn_mode = args.use_particle_free_rnn_mode
 
+    use_analytic_solution = False # just set to one value
+    write_out_first_five_gradients = True
+
     if args.shooting_model == 'simple':
-        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=True, use_rnn_mode=use_particle_rnn_mode)
+        smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == '2nd_order':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'updown':
-        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
+        smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'dampened_updown':
         smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
 
@@ -509,7 +512,7 @@ if __name__ == '__main__':
         integrator_options = {'step_size': args.stepsize}
     )
 
-    sblock.to(device)
+    #sblock.to(device)
 
     use_shooting = False
     if args.use_rnn:
@@ -575,7 +578,13 @@ if __name__ == '__main__':
     # plt.show(block=False)
 
     track_loss = []
-    for itr in range(1, args.niters + 1):
+
+    if write_out_first_five_gradients:
+        max_iter = 5
+    else:
+        max_iter = args.niters
+
+    for itr in range(1, max_iter + 1):
 
         # get current batch data
         batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
@@ -608,6 +617,15 @@ if __name__ == '__main__':
             loss = torch.mean((pred_y - batch_out)**2)
 
         loss.backward()
+
+        if write_out_first_five_gradients:
+            # save gradient
+            grad_dict = dict()
+            for n,v in sblock.named_parameters():
+                grad_dict[n] = v
+                grad_dict['{}_grad'.format(n)] = v.grad
+
+            torch.save(grad_dict,'grad_iter_{}_analytic_{}.pt'.format(itr,use_analytic_solution))
 
         track_loss.append(loss.item())
         optimizer.step()

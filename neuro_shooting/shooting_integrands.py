@@ -370,6 +370,10 @@ class ShootingIntegrandBase(nn.Module):
 
         lagrangian = kinetic_energy-potential_energy
 
+        # TODO: this is just to explicity delete it
+        # if (not self.use_rnn_mode) and (self._externally_managed_rnn_parameters is None):
+        #     del parameter_objects
+
         return self.nr_of_particles * lagrangian,self.nr_of_particles * kinetic_energy, self.nr_of_particles *potential_energy
 
     def compute_lagrangian(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
@@ -459,9 +463,9 @@ class ShootingIntegrandBase(nn.Module):
 
         pars = self.create_default_parameter_objects()
 
-        if (self._to_call_args is not None) or (self._to_call_kwargs is not None):
-            for p in pars:
-                pars[p].to(*self._to_call_args, **self._to_call_kwargs)
+        # if (self._to_call_args is not None) or (self._to_call_kwargs is not None):
+        #     for p in pars:
+        #         pars[p].to(*self._to_call_args, **self._to_call_kwargs)
 
         return pars
 
@@ -749,6 +753,11 @@ class ShootingIntegrandBase(nn.Module):
             # computing the gradients
             dot_state_dict_of_dicts, dot_costate_dict_of_dicts, dot_data_dict_of_dicts, parameter_objects = \
                 self.compute_gradients(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts,data_dict_of_dicts=data_dict_of_dicts)
+
+            # we can now delete the parameters
+            # # TODO: check if we need this
+            # if (not self.use_rnn_mode) and (self._externally_managed_rnn_parameters is None):
+            #     del parameter_objects
 
             if self.transpose_state_when_forward:
                 # as we transposed the vectors before we need to transpose on the way back

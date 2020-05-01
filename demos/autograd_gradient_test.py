@@ -31,10 +31,10 @@ stepsize = 0.1
 integrator_options = {'step_size': stepsize}
 in_features_size = 2
 
-#check_models = ['updown']
+check_models = ['updown']
 #check_models = ['DEBUG']
-check_models = ["simple"]
-check_models = ["universal"]
+#check_models = ["simple"]
+#check_models = ["universal"]
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                           use_adjoint_integration=False,
                                                           integrator_options=integrator_options)
