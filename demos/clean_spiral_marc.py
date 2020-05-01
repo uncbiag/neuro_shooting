@@ -7,6 +7,8 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 
+import matplotlib.pyplot as plt
+
 import os
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
@@ -16,459 +18,314 @@ import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
 import neuro_shooting.tensorboard_shooting_hooks as thooks
 
-# Command line arguments
 
-parser = argparse.ArgumentParser('ODE demo')
-parser.add_argument('--network', type=str, choices=['odenet', 'shooting'], default='shooting', help='Sets the network training appproach.')
-parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
-parser.add_argument('--stepsize', type=float, default=0.5, help='Step size for the integrator (if not adaptive).')
-parser.add_argument('--data_size', type=int, default=250, help='Length of the simulated data that should be matched.')
-parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
-parser.add_argument('--batch_size', type=int, default=10, help='Number of training samples.')
-parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
-parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
-parser.add_argument('--seed', required=False, type=int, default=1234,
-                    help='Sets the random seed which affects data shuffling')
+# Setup
 
-parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
+def setup_cmdline_parsing():
+    # Command line arguments
 
-parser.add_argument('--test_freq', type=int, default=20, help='Frequency with which the validation measures are to be computed.')
-parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
+    parser = argparse.ArgumentParser('ODE demo')
+    parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
+    parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
+    parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
+    parser.add_argument('--batch_time', type=int, default=10, help='Length of the training samples.')
+    parser.add_argument('--batch_size', type=int, default=10, help='Number of training samples.')
+    parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
+    parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
+    parser.add_argument('--seed', required=False, type=int, default=1234,
+                        help='Sets the random seed which affects data shuffling')
 
-parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
+    parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
-parser.add_argument('--nr_of_particles', type=int, default=40, help='Number of particles to parameterize the initial condition')
-parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
-parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
-parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='tanh', help='Nonlinearity for shooting.')
+    parser.add_argument('--test_freq', type=int, default=200, help='Frequency with which the validation measures are to be computed.')
+    parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 
+    parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
-parser.add_argument('--viz', action='store_true', help='Enable visualization.')
-parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
-parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
-
-args = parser.parse_args()
-
-print('Setting the random seed to {:}'.format(args.seed))
-random.seed(args.seed)
-torch.manual_seed(args.seed)
-
-integrator_options = dict()
-
-# default tolerance settings
-#rtol=1e-6
-#atol=1e-12
-
-rtol = 1e-8
-atol = 1e-12
-
-#integrator_options  = {'step_size': args.stepsize}
-integrator_options  = {'step_size': 0.01}
-
-integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
-                                                 use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
-
-# integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'dopri5',
-#                                                   use_adjoint_integration=args.adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
+    parser.add_argument('--nr_of_particles', type=int, default=40, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
+    parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
+    parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
 
 
-device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--viz', action='store_true', help='Enable visualization.')
+    parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
+    parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
 
-true_y0 = torch.tensor([[2., 0.]]).to(device)
-t = torch.linspace(0., 25., args.data_size).to(device)
-#true_A = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+    args = parser.parse_args()
 
-true_A = torch.tensor([[-0.01, 0.2], [-0.2, -0.01]]).to(device)
+    return args
+
+def setup_random_seed(seed):
+    print('Setting the random seed to {:}'.format(seed))
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8, atol=1e-12):
+
+    integrator_options = dict()
+
+    if method not in ['dopri5', 'adams']:
+        integrator_options  = {'step_size': step_size}
+
+    integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
+                                                     use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
+
+    return integrator
+
+def setup_shooting_block(nonlinearity='relu', device='cpu'):
+    # TODO: make the selection of the model more flexible
+    shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
+                                                                      parameter_weight=0.5,
+                                                                      inflation_factor=1,
+                                                                      nr_of_particles=50, particle_dimension=1,
+                                                                      particle_size=2, use_analytic_solution=True)
+
+    # shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
+    #                                                                   parameter_weight=0.5,
+    #                                                                   nr_of_particles=50, particle_dimension=1,
+    #                                                                   particle_size=2, use_analytic_solution=True)
 
 
-#true_A = torch.tensor([[-0.025, 2.0], [-2.0, -0.025]]).to(device)
-#true_A = torch.tensor([[-0.05, 2.0], [-2.0, -0.05]]).to(device)
-#true_A = torch.tensor([[-0.01, 0.25], [-0.25, -0.01]]).to(device)
+    import neuro_shooting.parameter_initialization as pi
+    # par_initializer = pi.VectorEvolutionSampleBatchParameterInitializer(only_random_initialization=False,
+    #     random_initialization_magnitude=0.1,
+    #     sample_batch=batch_y0)
 
+    par_initializer = pi.VectorEvolutionParameterInitializer(only_random_initialization=True,
+                                                             random_initialization_magnitude=1.0)
 
+    shooting_model.set_state_initializer(state_initializer=par_initializer)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=True)
+    shooting_block = shooting_block.to(device)
 
+    return shooting_block
 
-class Lambda(nn.Module):
+def setup_optimizer_and_scheduler(params):
+    optimizer = optim.Adam(params, lr=0.025)
+    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
+
+    return optimizer, scheduler
+
+# Defining the differential equation and data
+
+class DiffEqRHS(nn.Module):
+    """
+    RHS of the differential equation:
+    linear: \dot{y}^T = y^T A
+    nonlinear: \dot{y}^T = (y**3)^T A
+    """
+
+    def __init__(self, A, linear=False):
+        super(DiffEqRHS, self).__init__()
+        self.A = A
+        self.linear = linear
 
     def forward(self, t, y):
-        if args.linear:
-            return torch.mm(y, true_A)
+        if self.linear:
+            return torch.mm(y, self.A)
         else:
-            return torch.mm(y**3, true_A)
+            return torch.mm(y**3, self.A)
 
-with torch.no_grad():
-    true_y = integrator.integrate(func=Lambda(), x0=true_y0, t=t)
+def generate_data(integrator, data_size, linear=False, device='cpu'):
 
+    d = dict()
 
-def get_batch(batch_size=None):
-    if batch_size is None:
-        batch_size = args.batch_size
-    s = torch.from_numpy(np.random.choice(np.arange(args.data_size - args.batch_time, dtype=np.int64), batch_size, replace=False)).to(device)
-    batch_y0 = true_y[s]  # (M, D)
-    batch_t = t[:args.batch_time]  # (T)
-    batch_y = torch.stack([true_y[s + i] for i in range(args.batch_time)], dim=0)  # (T, M, D)
+    d['y0'] = torch.tensor([[2., 0.]]).to(device)
+    d['t'] = torch.linspace(0., 25., data_size).to(device)
+    #d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+
+    # pure slow oscillation
+    #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]]).to(device)
+    d['A'] = torch.tensor([[0, 0.1], [-0.1, 0]]).to(device)
+
+    with torch.no_grad():
+        # integrate it
+        d['y'] = integrator.integrate(func=DiffEqRHS(A=d['A'], linear=linear), x0=d['y0'], t=d['t'])
+
+    return d
+
+def get_batch(data_dict, batch_size, batch_time):
+
+    data_size = len(data_dict['t'])
+
+    s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True)).to(device)
+    batch_y0 = data_dict['y'][s]  # (M, D)
+    batch_t = data_dict['t'][:batch_time]  # (T)
+    batch_y = torch.stack([data_dict['y'][s + i] for i in range(batch_time)], dim=0)  # (T, M, D)
+
     return batch_y0, batch_t, batch_y
 
-def visualize_batch(batch_t,batch_y,thetas=None,real_thetas=None,bias=None):
+def __get_batch(data_dict, batch_size, batch_time):
 
-    # convention for batch_t: t x B x (row-vector)
+    # not random, just directly return the simulated data. This should be the easiest test case
 
-    if args.viz:
+    batch_y0 = data_dict['y0'].unsqueeze(dim=0)
+    batch_t = data_dict['t']
+    batch_y = data_dict['y'].unsqueeze(dim=1)
 
-        batch_size = batch_y.size()[1]
+    return batch_y0, batch_t, batch_y
 
-        if (thetas is None) or (bias is None) or (real_thetas is None):
-            fig = plt.figure(figsize=(8, 4), facecolor='white')
-            ax_traj = fig.add_subplot(121, frameon=False)
-            ax_phase = fig.add_subplot(122, frameon=False)
-        else:
-            fig = plt.figure(figsize=(8, 8), facecolor='white')
-            ax_traj = fig.add_subplot(221, frameon=False)
-            ax_phase = fig.add_subplot(222, frameon=False)
-            ax_thetas = fig.add_subplot(223, frameon=False)
-            ax_bias = fig.add_subplot(224, frameon=False)
+# Visualization
+# TODO: revamp
 
-        ax_traj.cla()
-        ax_traj.set_title('Trajectories')
-        ax_traj.set_xlabel('t')
-        ax_traj.set_ylabel('x,y')
+def basic_visualize(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t):
 
-        for b in range(batch_size):
-            c_values = batch_y[:,b,0,:]
+    plt.figure()
 
-            ax_traj.plot(batch_t.numpy(), c_values.numpy()[:, 0], batch_t.numpy(), c_values.numpy()[:, 1], 'g-')
+    for n in range(val_y.size()[1]):
+        plt.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
+        plt.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
 
-        ax_traj.set_xlim(batch_t.min(), batch_t.max())
-        ax_traj.set_ylim(-2, 2)
-        ax_traj.legend()
+    for n in range(batch_y.size()[1]):
+        plt.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
+        plt.plot(batch_pred_y.detach().numpy()[:, n, 0, 0], batch_pred_y.detach().numpy()[:, n, 0, 1], 'r--')
 
-        ax_phase.cla()
-        ax_phase.set_title('Phase Portrait')
-        ax_phase.set_xlabel('x')
-        ax_phase.set_ylabel('y')
+    plt.show()
 
-        for b in range(batch_size):
-            c_values = batch_y[:,b,0,:]
+def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True):
 
-            ax_phase.plot(c_values.numpy()[:, 0], c_values.numpy()[:, 1], 'g-')
+    quiver_scale = 2.5 # to scale the magnitude of the quiver vectors for visualization
 
-        ax_phase.set_xlim(-2, 2)
-        ax_phase.set_ylim(-2, 2)
+    fig = plt.figure(figsize=(12, 4), facecolor='white')
+    ax_traj = fig.add_subplot(131, frameon=False)
+    ax_phase = fig.add_subplot(132, frameon=False)
+    ax_vecfield = fig.add_subplot(133, frameon=False)
 
-        if (thetas is not None) and (bias is not None) and (real_thetas is not None):
-            ax_thetas.cla()
-            ax_thetas.set_title('theta elements over time')
-            nr_t_el = thetas.shape[1]
-            colors = ['r','b','c','k']
-            for n in range(nr_t_el):
-                ax_thetas.plot(thetas[:,n],color=colors[n])
-                ax_thetas.plot(real_thetas[:,n],'--', color=colors[n])
+    ax_traj.cla()
+    ax_traj.set_title('Trajectories')
+    ax_traj.set_xlabel('t')
+    ax_traj.set_ylabel('x,y')
 
-            ax_bias.cla()
-            ax_bias.set_title('bias elements over time')
-            nr_b_el = bias.shape[1]
-            for n in range(nr_b_el):
-                ax_bias.plot(bias[:,n])
+    for n in range(true_y.size()[1]):
+        ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
+                 'g-')
+        ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
+                 pred_y.detach().numpy()[:, n, 0, 1],
+                 'b--')
 
-        fig.tight_layout()
+    ax_traj.set_xlim(sim_time.min(), sim_time.max())
+    ax_traj.set_ylim(-2, 2)
+    ax_traj.legend()
 
-        print('Plotting')
-        plt.show()
+    ax_phase.cla()
+    ax_phase.set_title('Phase Portrait')
+    ax_phase.set_xlabel('x')
+    ax_phase.set_ylabel('y')
 
+    for n in range(true_y.size()[1]):
+        ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
+        ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
 
-def makedirs(dirname):
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
+    try:
+        q = (odefunc.q_params)
+        p = (odefunc.p_params)
 
+        q_np = q.cpu().detach().squeeze(dim=1).numpy()
+        p_np = p.cpu().detach().squeeze(dim=1).numpy()
 
-if args.viz:
-    makedirs('png')
-    import matplotlib.pyplot as plt
+        ax_phase.scatter(q_np[:,0],q_np[:,1],marker='+')
+        ax_phase.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
+    except:
+        pass
 
-def visualize(true_y, pred_y, sim_time, odefunc, itr, is_odenet=False, is_higher_order_model=False):
+    ax_phase.set_xlim(-2, 2)
+    ax_phase.set_ylim(-2, 2)
 
-    if args.viz:
 
-        quiver_scale = 2.5 # to scale the magnitude of the quiver vectors for visualization
+    ax_vecfield.cla()
+    ax_vecfield.set_title('Learned Vector Field')
+    ax_vecfield.set_xlabel('x')
+    ax_vecfield.set_ylabel('y')
 
-        fig = plt.figure(figsize=(12, 4), facecolor='white')
-        ax_traj = fig.add_subplot(131, frameon=False)
-        ax_phase = fig.add_subplot(132, frameon=False)
-        ax_vecfield = fig.add_subplot(133, frameon=False)
+    y, x = np.mgrid[-2:2:21j, -2:2:21j]
 
-        ax_traj.cla()
-        ax_traj.set_title('Trajectories')
-        ax_traj.set_xlabel('t')
-        ax_traj.set_ylabel('x,y')
+    current_y = torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2))
 
-        for n in range(true_y.size()[1]):
-            ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
-                     'g-')
-            ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
-                     pred_y.detach().numpy()[:, n, 0, 1],
-                     'b--')
+    # print("q_params",q_params.size())
 
-        ax_traj.set_xlim(sim_time.min(), sim_time.max())
-        ax_traj.set_ylim(-2, 2)
-        ax_traj.legend()
+    x_0 = current_y.unsqueeze(dim=1)
 
-        ax_phase.cla()
-        ax_phase.set_title('Phase Portrait')
-        ax_phase.set_xlabel('x')
-        ax_phase.set_ylabel('y')
+    #viz_time = t[:5] # just 5 timesteps ahead
+    viz_time = sim_time[:5] # just 5 timesteps ahead
 
-        for n in range(true_y.size()[1]):
-            ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
-            ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
+    odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=False)
+    dydt_pred_y,_,_,_ = odefunc(x=x_0)
 
-        if not is_odenet:
+    if is_higher_order_model:
+        dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
+        dydt = dydt[:,0,...]
+    else:
+        dydt = dydt_pred_y[-1,0,...]
 
-            try:
-                q = (odefunc.q_params)
-                p = (odefunc.p_params)
+    mag = np.sqrt(dydt[:, 0]**2 + dydt[:, 1]**2).reshape(-1, 1)
+    dydt = (dydt / mag)
+    dydt = dydt.reshape(21, 21, 2)
 
-                q_np = q.cpu().detach().squeeze(dim=1).numpy()
-                p_np = p.cpu().detach().squeeze(dim=1).numpy()
+    ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
 
-                ax_phase.scatter(q_np[:,0],q_np[:,1],marker='+')
-                ax_phase.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
-            except:
-                pass
+    try:
+        ax_vecfield.scatter(q_np[:, 0], q_np[:, 1], marker='+')
+        ax_vecfield.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
+    except:
+        pass
 
-        ax_phase.set_xlim(-2, 2)
-        ax_phase.set_ylim(-2, 2)
+    ax_vecfield.set_xlim(-2, 2)
+    ax_vecfield.set_ylim(-2, 2)
 
+    fig.tight_layout()
 
-        ax_vecfield.cla()
-        ax_vecfield.set_title('Learned Vector Field')
-        ax_vecfield.set_xlabel('x')
-        ax_vecfield.set_ylabel('y')
-
-        y, x = np.mgrid[-2:2:21j, -2:2:21j]
-
-        current_y = torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2))
-
-        # print("q_params",q_params.size())
-
-        if not is_odenet:
-            x_0 = current_y.unsqueeze(dim=1)
-
-            viz_time = t[:5] # just 5 timesteps ahead
-
-            odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=True)
-            dydt_pred_y,_,_,_ = odefunc(x=x_0)
-
-            if is_higher_order_model:
-                dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
-                dydt = dydt[:,0,...]
-            else:
-                dydt = dydt_pred_y[-1,0,...]
-
-        else:
-            dydt = odefunc(0, current_y).cpu().detach().numpy()
-
-        mag = np.sqrt(dydt[:, 0]**2 + dydt[:, 1]**2).reshape(-1, 1)
-        dydt = (dydt / mag)
-        dydt = dydt.reshape(21, 21, 2)
-
-        ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
-
-        if not is_odenet:
-            try:
-                ax_vecfield.scatter(q_np[:, 0], q_np[:, 1], marker='+')
-                ax_vecfield.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
-            except:
-                pass
-
-        ax_vecfield.set_xlim(-2, 2)
-        ax_vecfield.set_ylim(-2, 2)
-
-        fig.tight_layout()
-
-        print('Plotting')
-        # plt.savefig('png/{:03d}'.format(itr))
-        # plt.draw()
-        # plt.pause(0.001)
-        plt.show()
-
-
-class ODEFunc(nn.Module):
-
-    def __init__(self):
-        super(ODEFunc, self).__init__()
-
-        self.net = nn.Sequential(
-            nn.Linear(2, 50),
-            nn.Tanh(),
-            nn.Linear(50, 2),
-        )
-
-        for m in self.net.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.1)
-                nn.init.constant_(m.bias, val=0)
-
-    def forward(self, t, y):
-        return self.net(y)
-
-class ODESimpleFunc(nn.Module):
-
-    def __init__(self):
-        super(ODESimpleFunc, self).__init__()
-
-        self.net = nn.Sequential(
-            nn.Linear(2, 2),
-            nn.Tanh(),
-        )
-
-        for m in self.net.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.1)
-                nn.init.constant_(m.bias, val=0)
-
-    def forward(self, t, y):
-        return self.net(y)
-
-class ODESimpleFuncWithIssue(nn.Module):
-# order matters. If linear transform comes after the tanh it cannot move the nonlinearity to a point where it does not matter
-# (and hence will produce the 45 degree tanh angle phenonmenon)
-
-    def __init__(self):
-        super(ODESimpleFuncWithIssue, self).__init__()
-
-        self.net = nn.Sequential(
-            nn.Tanh(),
-            nn.Linear(2, 2),
-        )
-
-        for m in self.net.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.1)
-                nn.init.constant_(m.bias, val=0)
-
-    def forward(self, t, y):
-        return self.net(y)
-
-
-
+    plt.show()
 
 if __name__ == '__main__':
 
-    t_0 = time.time()
-    ii = 0
+    # do some initial setup
+    args = setup_cmdline_parsing()
+    device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    is_odenet = args.network == 'odenet'
+    setup_random_seed(seed=args.seed)
 
-    is_higher_order_model = True
+    integrator = setup_integrator(method=args.method, use_adjoint=args.adjoint)
+    shooting_block = setup_shooting_block(nonlinearity=args.nonlinearity, device=device)
 
-    if is_odenet:
-        #func = ODEFunc()
-        func = ODESimpleFuncWithIssue()
-        optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
-        #optimizer = optim.SGD(func.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
+    # generate the true data tha we want to match
+    data = generate_data(integrator=integrator, data_size=args.data_size, linear=args.linear, device=device)
 
+    # draw an initial batch from it
+    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
+
+    # create validation data
+    if args.validate_with_long_range:
+        print('Validating with long range data')
+        val_y0 = data['y0'].unsqueeze(dim=0)
+        val_t = data['t']
+        val_y = data['y'].unsqueeze(dim=1)
     else:
+        # draw a FIXED validation batch
+        print('Validating with fixed validation batch of size {} and with {} time-points'.format(args.batch_size,args.batch_time))
+        # TODO: maybe want to support a new validation batch every time
+        val_y0, val_t, val_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
 
-        # parameters to play with for shooting
-        K = args.nr_of_particles
+    # run through the shooting block once (to get parameters as needed)
+    shooting_block(x=batch_y)
 
-        batch_y0, batch_t, batch_y = get_batch(K)
+    optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
 
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2,nonlinearity=args.nonlinearity)
-        #shooting_model = shooting_models.AutoShootingIntegrandModelSecondOrder(in_features=2,nonlinearity=args.nonlinearity)
-        shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2,nonlinearity=args.nonlinearity,parameter_weight=0.5,
-                                                                          nr_of_particles=50, particle_dimension=1, particle_size=2, use_analytic_solution=True)
-
-        import neuro_shooting.parameter_initialization as pi
-        # par_initializer = pi.VectorEvolutionSampleBatchParameterInitializer(only_random_initialization=False,
-        #     random_initialization_magnitude=0.1,
-        #     sample_batch=batch_y0)
-
-        par_initializer = pi.VectorEvolutionParameterInitializer(only_random_initialization=True,
-            random_initialization_magnitude=1.0)
-
-
-        shooting_model.set_state_initializer(state_initializer=par_initializer)
-
-        shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model)
-        shooting_block = shooting_block.to(device)
-
-        # run through the shooting block once (to get parameters as needed)
-        _,_,sample_batch = get_batch()
-        shooting_block(x=sample_batch)
-
-        #optimizer = optim.RMSprop(shooting_block.parameters(), lr=5e-3)
-
-        optimizer = optim.Adam(shooting_block.parameters(), lr=1e-3)
-
-
-        #optimizer = optim.SGD(shooting_block.parameters(), lr=2.5e-3, momentum=0.5, dampening=0.0, nesterov=True)
-        #optimizer = custom_optimizers.LBFGS_LS(shooting.parameters())
-
-    all_thetas = None
-    all_real_thetas = None
-    all_bs = None
-
-    validate_with_batch_data = not args.validate_with_long_range
-    validate_with_random_batch_each_time = False
-
-    if validate_with_batch_data:
-        if not validate_with_random_batch_each_time:
-            val_batch_y0, val_batch_t, val_batch_y = get_batch(batch_size=args.batch_validation_size)
-
-    custom_hook_data = dict()
+    # t_0 = time.time()
+    # ### time clock
+    # t_1 = time.time()
+    # print("time", t_1 - t_0)
+    # t_0 = t_1
 
     for itr in range(0, args.niters):
 
-        custom_hook_data['epoch'] = itr
-        custom_hook_data['batch'] = 0 # we do not really have batches here
-
         optimizer.zero_grad()
-        batch_y0, batch_t, batch_y = get_batch()
+        batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
 
-        # if itr % args.test_freq == 0:
-        #     if itr % args.viz_freq == 0:
-        #
-        #         try:
-        #             if not is_odenet:
-        #                 theta_np = (shooting.compute_theta(q=shooting.q_params.transpose(1,2),p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
-        #                 bias_np = (shooting.compute_bias(p=shooting.p_params.transpose(1,2))).view(1,-1).detach().cpu().numpy()
-        #
-        #                 if all_thetas is None:
-        #                     all_thetas = theta_np
-        #                 else:
-        #                     all_thetas = np.append(all_thetas,theta_np,axis=0)
-        #
-        #                 c_true_A = true_A.view(1,-1).detach().cpu().numpy()
-        #                 if all_real_thetas is None:
-        #                     all_real_thetas = c_true_A
-        #                 else:
-        #                     all_real_thetas = np.append(all_real_thetas,c_true_A,axis=0)
-        #
-        #                 if all_bs is None:
-        #                     all_bs = bias_np
-        #                 else:
-        #                     all_bs = np.append(all_bs,bias_np,axis=0)
-        #
-        #             visualize_batch(batch_t,batch_y,thetas=all_thetas,real_thetas=all_real_thetas,bias=all_bs)
-        #         except:
-        #             pass
+        shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
+        pred_y,_,_,_ = shooting_block(x=batch_y0)
 
-        if is_odenet:
-            pred_y = integrator.integrate(func=func, x0=batch_y0, t=batch_t)
-        else:
-
-            # register a hook so we can log via tensorboard
-            #shooting_hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(thooks.linear_transform_hook)
-
-            #shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
-            shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
-            pred_y,_,_,_ = shooting_block(x=batch_y0)
-
-            # get rid of the hook again, so we don't get any issues with the testing later on (we do not want to log there)
-            #shooting_hook.remove()
-
-        # todo: figure out wht the norm penality does not work
         if args.sim_norm == 'l1':
             loss = torch.mean(torch.abs(pred_y - batch_y))
         elif args.sim_norm == 'l2':
@@ -476,53 +333,23 @@ if __name__ == '__main__':
         else:
             raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-        if not is_odenet:
-            loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
-
-            if itr % args.test_freq == 0:
-                print('Iter {:04d} | Training Loss {:.6f}'.format(itr, loss.item()))
-
+        # TODO: maybe put this norm loss back in
+        #loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
         loss.backward()
 
         optimizer.step()
 
         if itr % args.test_freq == 0:
-            # we need to keep computing the gradient here as the forward model may require gradient computations
+            try:
+                print('Iter {:04d} | Training Loss {:.6f}; lr = {:.6f}'.format(itr, loss.item(), scheduler.get_last_lr()[0]))
+                scheduler.step()
+            except:
+                print('Iter {:04d} | Training Loss {:.6f}'.format(itr, loss.item()))
+                scheduler.step(loss)
 
-            if validate_with_batch_data:
-                if validate_with_random_batch_each_time:
-                    # draw new batch. This will be like a moving target for the evaluation
-                    val_batch_y0, val_batch_t, val_batch_y = get_batch()
-                val_y0 = val_batch_y0
-                val_t = val_batch_t
-                val_y = val_batch_y
-            else:
-                val_y0 = true_y0.unsqueeze(dim=0)
-                val_t = t
-                val_y = true_y.unsqueeze(dim=1)
+        if itr % args.test_freq == 0:
 
-            if is_odenet:
-                val_pred_y = integrator.integrate(func=func, x0=val_y0, t=val_t)
-
-                if args.sim_norm=='l1':
-                    loss = torch.mean(torch.abs(val_pred_y - val_y))
-                elif args.sim_norm=='l2':
-                    loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
-                else:
-                    raise ValueError('Unknown norm {}.'.format(args.sim_norm))
-
-                print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-
-                if itr % args.viz_freq == 0:
-                    visualize(val_y, val_pred_y, val_t, func, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
-                    ii += 1
-
-            else:
-                ### time clock
-                t_1 = time.time()
-
-                print("time",t_1 - t_0)
-                t_0 = t_1
+            with torch.no_grad():
 
                 shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
                 val_pred_y,_,_,_ = shooting_block(x=val_y0)
@@ -536,11 +363,23 @@ if __name__ == '__main__':
 
                 loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
 
-                print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+                print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
 
-                if itr % args.viz_freq == 0:
-                    visualize(val_y, val_pred_y, val_t, shooting_block, ii, is_odenet=is_odenet, is_higher_order_model=is_higher_order_model)
-                    ii += 1
+            if itr % args.viz_freq == 0:
+                basic_visualize(val_y, val_pred_y, val_t, batch_y, pred_y, batch_t)
 
+                # # test two different time intervals
+                # val_t0 = data['t'][0:50]
+                # val_t1 = data['t'][0:100]
+                #
+                # shooting_block.set_integration_time_vector(integration_time_vector=val_t0, suppress_warning=True)
+                # val_pred_y0, _, _, _ = shooting_block(x=val_y0)
+                #
+                # shooting_block.set_integration_time_vector(integration_time_vector=val_t1, suppress_warning=True)
+                # val_pred_y1, _, _, _ = shooting_block(x=val_y0)
+                #
+                # tst = val_pred_y1[0:50, 0, 0, :] - val_pred_y0[0:50, 0, 0, :]
+                #
+                # print('Hello world')
 
-        end = time.time()
+        #end = time.time()
