@@ -410,6 +410,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         p = parameter_objects
         rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
         rhs['dot_q2'] = p['l2'](input=s['q1']) + p["l3"](input=self.nl(s['q2']))
+        #rhs['dot_q2'] =  p["l3"](input=self.nl(s['q2']))
         return rhs
 
     def get_initial_data_dict_from_data_tensor(self, x):
@@ -513,7 +514,6 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         par_dict3 = p["l3"].get_parameter_dict()
         par_dict3["weight"] = l3
         return p
-
 
 class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
