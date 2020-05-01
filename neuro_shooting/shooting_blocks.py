@@ -103,7 +103,7 @@ class ShootingBlockBase(nn.Module):
         # it is included here simply to allow for direct comparisions with the same code
         if self.use_particle_free_rnn_mode:
             # those will have the default initialization
-            self._particle_free_rnn_parameters = self.shooting_integrand.create_default_parameter_objects()
+            self._particle_free_rnn_parameters = self.shooting_integrand.create_default_parameter_objects_on_consistent_device()
             # let's register them for optimization
             self._particle_free_rnn_parameters = self.register_particle_free_rnn_parameters(rnn_parameters=self._particle_free_rnn_parameters)
             # and then associate them with the integrand, so the integrand knows that these are externally managed

@@ -80,6 +80,10 @@ class ShootingIntegrandBase(nn.Module):
         self.data_concatenation_dim = None
         self.enlargement_dimensions = None
 
+        # keep track of any .to() calls so that we can call this for the parameters
+        self._to_call_args = None
+        self._to_call_kwargs = None
+
     def reset(self):
         self.current_norm_penalty = None
         if not self._externally_managed_rnn_parameters:
@@ -178,6 +182,10 @@ class ShootingIntegrandBase(nn.Module):
         :return: returns self
         """
         super(ShootingIntegrandBase, self).to(*args, **kwargs)
+
+        # we keep track of this, so that when we allocate parameters from scratch, we can apply the same call dynamically
+        self._to_call_args = args
+        self._to_call_kwargs = kwargs
 
         # make sure that all the filters that were created get moved
         # TODO: remove?
@@ -437,6 +445,25 @@ class ShootingIntegrandBase(nn.Module):
         :return: returns a SortedDict of parameter objects
         """
         raise ValueError('Not implemented. Needs to return a SortedDict of parameter objects')
+
+    def create_default_parameter_objects_on_consistent_device(self):
+        """
+        Wrapper for create_default_parameter_objects, which subsequently applies a .to() call using the same arguments as the last one if there was one
+        (otherwise returns as it)
+
+        :return: returns a SortedDict of parameter objects on the current default device
+        """
+
+        # TODO: This is not a great solution as these parameter objects get created frequently and always need to first be allocated on the GPU
+        # would be better to cache them somehow so that they are reused
+
+        pars = self.create_default_parameter_objects()
+
+        if (self._to_call_args is not None) or (self._to_call_kwargs is not None):
+            for p in pars:
+                pars[p].to(*self._to_call_args, **self._to_call_kwargs)
+
+        return pars
 
     @abstractmethod
     def get_initial_data_dict_from_data_tensor(self, x):
@@ -790,7 +817,7 @@ class LinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBase):
     def compute_parameters_directly(self, t, state_dict_of_dicts, costate_dict_of_dicts):
         # we assume this is linear here, so we do not need a fixed point iteration, but can just compute the gradient
 
-        parameter_objects = self.create_default_parameter_objects()
+        parameter_objects = self.create_default_parameter_objects_on_consistent_device()
 
         current_lagrangian, current_kinetic_energy, current_potential_energy = \
             self.compute_lagrangian(t=t, state_dict_of_dicts=state_dict_of_dicts, costate_dict_of_dicts=costate_dict_of_dicts, parameter_objects=parameter_objects)
@@ -835,7 +862,7 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
 
     def compute_parameters_iteratively(self, t, state_dict_of_dicts, costate_dict_of_dicts):
 
-        parameter_objects = self.create_default_parameter_objects()
+        parameter_objects = self.create_default_parameter_objects_on_consistent_device()
 
         learning_rate = 0.5
         nr_of_fixed_point_iterations = 5
@@ -1060,7 +1087,7 @@ class OptimalTransportNonLinearInParameter(NonlinearInParameterAutogradShootingI
 
     def compute_parameters_iteratively(self, t, state_dict_of_dicts, costate_dict_of_dicts):
 
-        parameter_objects = self.create_default_parameter_objects()
+        parameter_objects = self.create_default_parameter_objects_on_consistent_device()
 
         learning_rate = 0.5
         nr_of_fixed_point_iterations = 10

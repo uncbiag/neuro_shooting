@@ -40,6 +40,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--niters', type=int, default=4000)
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
+    parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
 
     # shooting model parameters
@@ -425,6 +426,8 @@ if __name__ == '__main__':
     random.seed(seed)
     torch.manual_seed(seed)
 
+    device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+
     def record_generic_dict_of_dicts(custom_hook_data, d,d_name):
         for block_name in d:
             cur_block = d[block_name]
@@ -505,6 +508,8 @@ if __name__ == '__main__':
         use_particle_free_rnn_mode=use_particle_free_rnn_mode,
         integrator_options = {'step_size': args.stepsize}
     )
+
+    sblock.to(device)
 
     use_shooting = False
     if args.use_rnn:

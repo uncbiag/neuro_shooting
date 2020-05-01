@@ -323,7 +323,7 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         s = state_dict
         c = costate_dict
-        p = self.create_default_parameter_objects()
+        p = self.create_default_parameter_objects_on_consistent_device()
 
         # now compute the parameters
         q1i = s['q1']
@@ -655,7 +655,7 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
 
         s = state_dict
         c = costate_dict
-        p = self.create_default_parameter_objects()
+        p = self.create_default_parameter_objects_on_consistent_device()
 
         # ------------------
 
@@ -663,8 +663,12 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
         qi = s['q1']
         pi = c['p_q1']
 
+        par_dict = p['l1'].get_parameter_dict()
+        device = par_dict['weight'].device
+        dtype = par_dict['weight'].dtype
+
         # particles are saved as rows
-        At = torch.zeros(self.in_features, self.in_features)
+        At = torch.zeros(self.in_features, self.in_features, device=device, dtype=dtype)
         for i in range(self.nr_of_particles):
             At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
         At = 1 / self.nr_of_particles * At  # because of the mean in the Lagrangian multiplier
@@ -682,7 +686,7 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
         pi = c['p_q2']
 
         # particles are saved as rows
-        At = torch.zeros(self.in_features, self.in_features)
+        At = torch.zeros(self.in_features, self.in_features, device=device, dtype=dtype)
         for i in range(self.nr_of_particles):
             At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
         At = 1 / self.nr_of_particles * At  # because of the mean in the Lagrangian multiplier
@@ -814,21 +818,24 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
 
         s = state_dict
         c = costate_dict
-        p = self.create_default_parameter_objects()
+        p = self.create_default_parameter_objects_on_consistent_device()
 
         # now compute the parameters
         qi = s['q1']
         pi = c['p_q1']
 
+        par_dict = p['l1'].get_parameter_dict()
+        device = par_dict['weight'].device
+        dtype = par_dict['weight'].dtype
+
         # particles are saved as rows
-        At = torch.zeros(self.in_features, self.in_features)
+        At = torch.zeros(self.in_features, self.in_features, device=device, dtype=dtype)
         for i in range(self.nr_of_particles):
             At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
         At = 1 / self.nr_of_particles * At  # because of the mean in the Lagrangian multiplier
         bt = 1 / self.nr_of_particles * pi.sum(dim=0)  # -\sum_i q_i
 
         # results need to be written in the respective parameter variables
-        par_dict = p['l1'].get_parameter_dict()
         par_dict['weight'] = At.t()
         par_dict['bias'] = bt
 
