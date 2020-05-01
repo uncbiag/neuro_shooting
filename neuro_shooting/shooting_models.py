@@ -487,7 +487,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
 
         s = state_dict
         c = costate_dict
-        p = self.create_default_parameter_objects()
+        p = self.create_default_parameter_objects_on_consistent_device()
 
         # now compute the parameters
         q1i = s['q1']
