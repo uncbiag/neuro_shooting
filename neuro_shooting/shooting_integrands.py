@@ -288,7 +288,7 @@ class ShootingIntegrandBase(nn.Module):
                 potential_energy = potential_energy + torch.sum(torch.mean(c_costate_dict[kcs]*c_rhs_state_dict[ks],dim=0))
         return potential_energy
 
-    def compute_kinetic_energy(self,t,parameter_objects):
+    def compute_kinetic_energy(self,t,parameter_objects,states_dict_of_dicts,costate_dict_of_dicts):
         """
         Computes the kinetic energy. This is the kinetic energy given the parameters. Will only be relevant if the system is
         nonlinear in its parameters (when a fixed point solution needs to be computed). Otherwise will not be used. By default just
@@ -363,7 +363,7 @@ class ShootingIntegrandBase(nn.Module):
                                                              costate_dict_of_dicts=costate_dict_of_dicts)
 
 
-        kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects)
+        kinetic_energy = self.compute_kinetic_energy(t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts)
         potential_energy = self.compute_potential_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                          costate_dict_of_dicts=costate_dict_of_dicts,
                                                          parameter_objects=parameter_objects)
@@ -391,7 +391,7 @@ class ShootingIntegrandBase(nn.Module):
         :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
         """
 
-        kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects)
+        kinetic_energy = self.compute_kinetic_energy(t, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
         potential_energy = self.compute_potential_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                          costate_dict_of_dicts=costate_dict_of_dicts,
                                                          parameter_objects=parameter_objects)
@@ -628,7 +628,7 @@ class ShootingIntegrandBase(nn.Module):
 
         if t == 0:
             # we only need to compute the kinetic energy here
-            current_kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects)
+            current_kinetic_energy = self.compute_kinetic_energy(t,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
 
             # we only want it at the initial condition
             self.current_norm_penalty = current_kinetic_energy
@@ -673,7 +673,9 @@ class ShootingIntegrandBase(nn.Module):
 
         if t == 0:
             # we only want it at the initial condition
-            self.current_norm_penalty = self.compute_kinetic_energy(t=0, parameter_objects=parameter_objects)
+
+            self.current_norm_penalty = self.compute_kinetic_energy(0, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
+
 
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                                       parameter_objects=parameter_objects,
@@ -888,11 +890,10 @@ class NonlinearInParameterAutogradShootingIntegrand(AutogradShootingIntegrandBas
             self.add_multiple_to_parameter_objects(parameter_objects=parameter_objects,
                                                    pd_from=parameter_grad_dict, multiplier=-learning_rate)
 
-        return parameter_objects, current_kinetic_energy
+        return parameter_objects
 
-    def compute_parameters(self,t, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts):
-
-        return self.compute_parameters_iteratively(t=t, parameter_objects=parameter_objects,state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
+    def compute_parameters(self,t,state_dict_of_dicts,costate_dict_of_dicts):
+        return self.compute_parameters_iteratively(t=t, state_dict_of_dicts=state_dict_of_dicts,costate_dict_of_dicts=costate_dict_of_dicts)
 
 
 class ShootingLinearInParameterVectorIntegrand(LinearInParameterAutogradShootingIntegrand):
@@ -1058,7 +1059,7 @@ class OptimalTransportNonLinearInParameter(NonlinearInParameterAutogradShootingI
         self.data_concatenation_dim = self.concatenation_dim
         self.enlargement_dimensions = None
 
-    def compute_kinetic_energy(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
+    def compute_kinetic_energy(self, t, parameter_objects, state_dict_of_dicts, costate_dict_of_dicts):
         """
         Computes the potential energy for the Lagrangian. I.e., it pairs the costates with the right hand sides of the
         state evolution equations. This method is typically not called manually. Everything should happen automatically here.
@@ -1113,7 +1114,7 @@ class OptimalTransportNonLinearInParameter(NonlinearInParameterAutogradShootingI
             self.add_multiple_to_parameter_objects(parameter_objects=parameter_objects,
                                                    pd_from=parameter_grad_dict, multiplier=-learning_rate)
 
-        return parameter_objects, current_kinetic_energy
+        return parameter_objects
 
     def compute_lagrangian(self, t, state_dict_of_dicts, costate_dict_of_dicts, parameter_objects):
         """
@@ -1134,9 +1135,10 @@ class OptimalTransportNonLinearInParameter(NonlinearInParameterAutogradShootingI
         :return: triple (value of lagrangian, value of the kinetic energy, value of the potential energy)
         """
 
-        kinetic_energy = self.compute_kinetic_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
-                                                         costate_dict_of_dicts=costate_dict_of_dicts,
-                                                         parameter_objects=parameter_objects)
+        kinetic_energy = self.compute_kinetic_energy(t=t, parameter_objects=parameter_objects,
+                                                     state_dict_of_dicts=state_dict_of_dicts,
+                                                         costate_dict_of_dicts=costate_dict_of_dicts
+                                                         )
         potential_energy = self.compute_potential_energy(t=t, state_dict_of_dicts=state_dict_of_dicts,
                                                          costate_dict_of_dicts=costate_dict_of_dicts,
                                                          parameter_objects=parameter_objects)
