@@ -370,7 +370,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
                                                                *args, **kwargs)
 
         self.inflation_factor = inflation_factor
-        self.damping_factor = -1.0
+        self.damping_factor = -2.0
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -472,7 +472,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
 
         dot_p1t = - torch.matmul(p2i,l2)
         rhs['dot_p_q1'] = dot_p1t #- self.damping_factor * p1i
-        rhs['dot_p_q2'] = dot_p2t #- self.damping_factor * p2i  # +temp_dot_p2
+        rhs['dot_p_q2'] = dot_p2t #+ self.damping_factor * p2i  # +temp_dot_p2
         return rhs
     #
     #
