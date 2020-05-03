@@ -37,17 +37,17 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams', 'rk4'], default='rk4', help='Selects the desired integrator')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=4000)
+    parser.add_argument('--niters', type=int, default=2000)
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
 
     # shooting model parameters
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['dampened_updown','simple', '2nd_order', 'updown'])
+    parser.add_argument('--shooting_model', type=str, default='universal', choices=["universal",'dampened_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nr_of_particles', type=int, default=3, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
@@ -489,8 +489,8 @@ if __name__ == '__main__':
     use_particle_rnn_mode = args.use_particle_rnn_mode
     use_particle_free_rnn_mode = args.use_particle_free_rnn_mode
 
-    use_analytic_solution = False # just set to one value
-    write_out_first_five_gradients = True
+    use_analytic_solution = True # just set to one value
+    write_out_first_five_gradients = False
 
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, use_rnn_mode=use_particle_rnn_mode)
@@ -500,6 +500,8 @@ if __name__ == '__main__':
         smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'dampened_updown':
         smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
+    elif args.shooting_model == 'universal':
+        smodel = smodels.AutoShootingIntegrandModelUniversal(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
 
     block_name = 'sblock'
 
@@ -612,7 +614,7 @@ if __name__ == '__main__':
             pred_y, _, _, _ = sblock(x=batch_in)
 
         if use_shooting:
-            loss = torch.mean((pred_y - batch_out)**2)  + args.pw * sblock.get_norm_penalty()
+            loss = torch.mean((pred_y - batch_out)**2)  #+ args.pw * sblock.get_norm_penalty()
         else:
             loss = torch.mean((pred_y - batch_out)**2)
 

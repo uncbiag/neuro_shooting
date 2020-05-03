@@ -370,6 +370,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
                                                                *args, **kwargs)
 
         self.inflation_factor = inflation_factor
+        self.damping_factor = -1.0
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -408,9 +409,9 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
 
         s = state_dict_or_dict_of_dicts
         p = parameter_objects
-        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
-        rhs['dot_q2'] = p['l2'](input=s['q1']) + p["l3"](input=self.nl(s['q2']))
-        #rhs['dot_q2'] =  p["l3"](input=self.nl(s['q2']))
+        #rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2'])) #- self.damping_factor * s['q1']
+        rhs['dot_q2'] = p['l2'](input=s['q1']) - self.damping_factor * s['q2'] #+ p["l3"](input=self.nl(s['q2']))
         return rhs
 
     def get_initial_data_dict_from_data_tensor(self, x):
@@ -419,6 +420,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         data_dict['q1'] = x
 
         z = torch.zeros_like(x)
+        #z = x.clone()
         sz = [1]*len(z.shape)
         sz[-1] = self.inflation_factor
 
@@ -467,9 +469,10 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
         dot_p2t = - self.dnl(q2i) * torch.matmul(p1i,l1)
         temp_dot_p2 = - self.dnl(q2i) * torch.matmul(p2i,l3)
+
         dot_p1t = - torch.matmul(p2i,l2)
-        rhs['dot_p_q1'] = dot_p1t
-        rhs['dot_p_q2'] = dot_p2t + temp_dot_p2
+        rhs['dot_p_q1'] = dot_p1t #- self.damping_factor * p1i
+        rhs['dot_p_q2'] = dot_p2t #- self.damping_factor * p2i  # +temp_dot_p2
         return rhs
     #
     #
@@ -511,8 +514,8 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         par_dict2 = p['l2'].get_parameter_dict()
         par_dict2['weight'] = l2
         par_dict2['bias'] = torch.mean(p2i,dim = 0).t()
-        par_dict3 = p["l3"].get_parameter_dict()
-        par_dict3["weight"] = l3
+        #par_dict3 = p["l3"].get_parameter_dict()
+        #par_dict3["weight"] = l3
         return p
 
 class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
