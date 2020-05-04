@@ -18,6 +18,7 @@ class ShootingIntegrandBase(nn.Module):
     """
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, use_analytic_solution=False,
+                 optimize_over_data_initial_conditions=False,
                  use_rnn_mode=False,
                  *args, **kwargs):
         """
@@ -49,6 +50,8 @@ class ShootingIntegrandBase(nn.Module):
         """This weight should be associated with the model parameters when the different layers are created"""
         self.use_analytic_solution = use_analytic_solution
         """If set to True the shooting evolution equations have to be entirely specified as part of the model"""
+        self.optimize_over_data_initial_conditions = optimize_over_data_initial_conditions
+        """For higher order models if set to True will optimize over the initial conditions (if supported by the model)"""
 
         self._lagrangian_gradient_hooks = OrderedDict()
         """Hooks called at any integration step"""

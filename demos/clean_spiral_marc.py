@@ -29,7 +29,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=10, help='Length of the training samples.')
-    parser.add_argument('--batch_size', type=int, default=10, help='Number of training samples.')
+    parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
     parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
     parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
     parser.add_argument('--seed', required=False, type=int, default=1234,
@@ -38,7 +38,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
     parser.add_argument('--test_freq', type=int, default=200, help='Frequency with which the validation measures are to be computed.')
-    parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
+    parser.add_argument('--viz_freq', type=int, default=500, help='Frequency with which the results should be visualized; if --viz is set.')
 
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
@@ -68,6 +68,9 @@ def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8,
     if method not in ['dopri5', 'adams']:
         integrator_options  = {'step_size': step_size}
 
+    # TODO: remove, purely for debug
+    integrator_options = {'step_size': 0.05}
+
     integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                      use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
@@ -75,16 +78,18 @@ def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8,
 
 def setup_shooting_block(nonlinearity='relu', device='cpu'):
     # TODO: make the selection of the model more flexible
-    shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
-                                                                      parameter_weight=0.5,
-                                                                      inflation_factor=1,
+    # shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
+    #                                                                   parameter_weight=0.5,
+    #                                                                   inflation_factor=1,
+    #                                                                   nr_of_particles=50, particle_dimension=1,
+    #                                                                   particle_size=2,
+    #                                                                   use_analytic_solution=True,
+    #                                                                   optimize_over_data_initial_conditions=True)
+
+    shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
+                                                                      parameter_weight=0.1,
                                                                       nr_of_particles=50, particle_dimension=1,
                                                                       particle_size=2, use_analytic_solution=True)
-
-    # shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
-    #                                                                   parameter_weight=0.5,
-    #                                                                   nr_of_particles=50, particle_dimension=1,
-    #                                                                   particle_size=2, use_analytic_solution=True)
 
 
     import neuro_shooting.parameter_initialization as pi
@@ -96,7 +101,7 @@ def setup_shooting_block(nonlinearity='relu', device='cpu'):
                                                              random_initialization_magnitude=1.0)
 
     shooting_model.set_state_initializer(state_initializer=par_initializer)
-    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=True)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=False)
     shooting_block = shooting_block.to(device)
 
     return shooting_block
@@ -133,12 +138,17 @@ def generate_data(integrator, data_size, linear=False, device='cpu'):
     d = dict()
 
     d['y0'] = torch.tensor([[2., 0.]]).to(device)
-    d['t'] = torch.linspace(0., 25., data_size).to(device)
-    #d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+    #d['t'] = torch.linspace(0., 25., data_size).to(device)
+
+    d['t'] = torch.linspace(0., 10., data_size).to(device)
+
+    d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
 
     # pure slow oscillation
     #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]]).to(device)
-    d['A'] = torch.tensor([[0, 0.1], [-0.1, 0]]).to(device)
+
+    # small section
+    #d['A'] = torch.tensor([[0, 0.1], [-0.1, 0]]).to(device)
 
     with torch.no_grad():
         # integrate it
@@ -176,7 +186,7 @@ def basic_visualize(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t):
 
     for n in range(val_y.size()[1]):
         plt.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
-        plt.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
+        plt.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--+')
 
     for n in range(batch_y.size()[1]):
         plt.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
@@ -326,15 +336,17 @@ if __name__ == '__main__':
         shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
         pred_y,_,_,_ = shooting_block(x=batch_y0)
 
-        if args.sim_norm == 'l1':
-            loss = torch.mean(torch.abs(pred_y - batch_y))
-        elif args.sim_norm == 'l2':
-            loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
-        else:
-            raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+        # if args.sim_norm == 'l1':
+        #     loss = torch.mean(torch.abs(pred_y - batch_y))
+        # elif args.sim_norm == 'l2':
+        #     loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
+        # else:
+        #     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
         # TODO: maybe put this norm loss back in
         #loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
+
+        loss = torch.mean(torch.abs(pred_y - batch_y))
         loss.backward()
 
         optimizer.step()
@@ -354,14 +366,16 @@ if __name__ == '__main__':
                 shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
                 val_pred_y,_,_,_ = shooting_block(x=val_y0)
 
-                if args.sim_norm=='l1':
-                    loss = torch.mean(torch.abs(val_pred_y - val_y))
-                elif args.sim_norm=='l2':
-                    loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
-                else:
-                    raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+                # if args.sim_norm=='l1':
+                #     loss = torch.mean(torch.abs(val_pred_y - val_y))
+                # elif args.sim_norm=='l2':
+                #     loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
+                # else:
+                #     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-                loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
+                #loss = loss #+ shooting_block.get_norm_penalty()
+
+                loss = torch.mean(torch.abs(val_pred_y - val_y))
 
                 print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
 

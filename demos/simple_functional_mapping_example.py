@@ -50,6 +50,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
+    parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -349,7 +350,8 @@ if __name__ == '__main__':
                                 'parameter_weight': args.pw,
                                 'particle_dimension': 1,
                                 'particle_size': 1,
-                                "costate_initializer":pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1)}
+                                'costate_initializer':pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1),
+                                'optimize_over_data_initial_conditions': args.optimize_over_data_initial_conditions}
 
     inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
     use_particle_rnn_mode = args.use_particle_rnn_mode
