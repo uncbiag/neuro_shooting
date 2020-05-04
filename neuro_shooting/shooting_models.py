@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 import neuro_shooting.shooting_integrands as shooting
 import neuro_shooting.overwrite_classes as oc
-from sortedcontainers import SortedDict
-from torchdiffeq import odeint
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
+
+from torch.nn.parameter import Parameter
+
+from sortedcontainers import SortedDict
 
 class AutoShootingIntegrandModelDampenedUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -207,6 +209,14 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         self.inflation_factor = inflation_factor
 
+        self.optimize_over_initial_data_conditions = True
+
+        if self.optimize_over_data_initial_conditions:
+            self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
+        else:
+            self.data_q20 = None
+
+
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
@@ -253,11 +263,21 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         data_dict = SortedDict()
         data_dict['q1'] = x
 
-        z = torch.zeros_like(x)
-        sz = [1]*len(z.shape)
-        sz[-1] = self.inflation_factor
+        if self.data_q20 is None:
+            z = torch.zeros_like(x)
+            sz = [1]*len(z.shape)
+            sz[-1] = self.inflation_factor
 
-        data_dict['q2'] = z.repeat(sz)
+            data_dict['q2'] = z.repeat(sz)
+        else:
+            # just repeat it for all the data
+            szq20 = list(self.data_q20.shape)
+            szx = list(x.shape)
+            dim_diff = len(szx)-len(szq20)
+            data_q20 = self.data_q20.view([1]*dim_diff+szq20)
+            data_q20_replicated = data_q20.expand(szx[0:dim_diff]+[-1]*len(szq20))
+
+            data_dict['q2'] = data_q20_replicated
 
         return data_dict
 

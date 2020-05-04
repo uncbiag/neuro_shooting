@@ -117,6 +117,9 @@ class ShootingBlockBase(nn.Module):
                 state_dict=state_dict, costate_dict=costate_dict,
                 keep_state_parameters_at_zero=keep_initial_state_parameters_at_zero)
 
+        # now register the parameters that are part of the integrands (this allows for easy definition of parameters in the integrand constructors
+        self.register_integrand_parameters(integrand=self.shooting_integrand)
+
 
     def parameters(self, recurse=True):
         if self._forward_not_yet_executed:
@@ -368,6 +371,13 @@ class ShootingBlockBase(nn.Module):
                                                                                      data_dict_of_dicts=data_dicts)
         return initial_conditions,assembly_plans
 
+
+    def register_integrand_parameters(self, integrand):
+
+        if integrand is not None:
+            for pn,pv in integrand.named_parameters():
+                print('Registering integrand parameter {}'.format(pn))
+                self.register_parameter(pn,pv)
 
     def register_particle_free_rnn_parameters(self,rnn_parameters):
 
