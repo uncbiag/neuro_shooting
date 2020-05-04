@@ -345,12 +345,14 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
-        par_dict['weight'] = l1
-        par_dict['bias'] = torch.mean(p1i,dim = 0)
+        weight_dict = p['l1'].get_parameter_weight_dict()
+        par_dict['weight'] = l1/weight_dict['weight']
+        par_dict['bias'] = torch.mean(p1i,dim = 0)/weight_dict['bias']
 
         par_dict2 = p['l2'].get_parameter_dict()
-        par_dict2['weight'] = l2
-        par_dict2['bias'] = torch.mean(p2i,dim = 0).t()
+        weight_dict2 = p['l2'].get_parameter_weight_dict()
+        par_dict2['weight'] = l2/weight_dict2['weight']
+        par_dict2['bias'] = (torch.mean(p2i,dim = 0).t())/weight_dict2['bias']
 
         return p
 
@@ -505,14 +507,18 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         l3  = torch.mean(temp,dim = 0)
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
-        par_dict['weight'] = l1
-        par_dict['bias'] = torch.mean(p1i,dim = 0)
+        weight_dict = p['l1'].get_parameter_weight_dict()
+        par_dict['weight'] = l1/weight_dict['weight']
+        par_dict['bias'] = torch.mean(p1i,dim = 0)/weight_dict['bias']
 
         par_dict2 = p['l2'].get_parameter_dict()
-        par_dict2['weight'] = l2
-        par_dict2['bias'] = torch.mean(p2i,dim = 0).t()
-        par_dict3 = p["l3"].get_parameter_dict()
-        par_dict3["weight"] = l3
+        weight_dict2 = p['l2'].get_parameter_weight_dict()
+        par_dict2['weight'] = l2/weight_dict2['weight']
+        par_dict2['bias'] = (torch.mean(p2i,dim = 0).t())/weight_dict2['bias']
+
+        par_dict3 = p['l3'].get_parameter_dict()
+        weight_dict3 = p['l3'].get_parameter_weight_dict()
+        par_dict3['weight'] = l3/weight_dict3['weight']
         return p
 
 class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
@@ -676,8 +682,9 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
 
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
-        par_dict['weight'] = At.t()
-        par_dict['bias'] = bt
+        weight_dict = p['l1'].get_parameter_weight_dict()
+        par_dict['weight'] = (At.t())/weight_dict['weight']
+        par_dict['bias'] = (bt)/weight_dict['bias']
 
         # ------------------
 
@@ -694,8 +701,9 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
 
         # results need to be written in the respective parameter variables
         par_dict = p['l2'].get_parameter_dict()
-        par_dict['weight'] = At.t()
-        par_dict['bias'] = bt
+        weight_dict = p['l2'].get_parameter_weight_dict()
+        par_dict['weight'] = (At.t())/weight_dict['weight']
+        par_dict['bias'] = (bt)/weight_dict['bias']
 
         return p
 
@@ -825,6 +833,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         pi = c['p_q1']
 
         par_dict = p['l1'].get_parameter_dict()
+        weight_dict = p['l1'].get_parameter_weight_dict()
         device = par_dict['weight'].device
         dtype = par_dict['weight'].dtype
 
@@ -836,8 +845,8 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         bt = 1 / self.nr_of_particles * pi.sum(dim=0)  # -\sum_i q_i
 
         # results need to be written in the respective parameter variables
-        par_dict['weight'] = At.t()
-        par_dict['bias'] = bt
+        par_dict['weight'] = (At.t())/weight_dict['weight']
+        par_dict['bias'] = (bt)/weight_dict['bias']
 
         return p
 

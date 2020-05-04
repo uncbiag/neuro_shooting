@@ -11,12 +11,16 @@ import numpy as np
 from collections import OrderedDict
 from collections import defaultdict
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 import torch.optim as optim
 from torchdiffeq import odeint
+
+import neuro_shooting
+import neuro_shooting.shooting_blocks as sblocks
+import neuro_shooting.shooting_models as smodels
+import neuro_shooting.generic_integrator as gi
+import neuro_shooting.parameter_initialization as pi
+
+import simple_discrete_neural_networks as sdnn
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -24,14 +28,8 @@ import matplotlib.pyplot as plt
 import os
 
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
 sys.path.insert(0, '../neuro_shooting')
 
-import neuro_shooting
-import neuro_shooting.shooting_blocks as sblocks
-import neuro_shooting.shooting_models as smodels
-import neuro_shooting.generic_integrator as gi
-import neuro_shooting.parameter_initialization as pi
 
 def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
@@ -51,6 +49,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
+    parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -83,142 +82,6 @@ def get_uniform_sample_batch(nr_of_samples=10):
     sample_batch_out = sample_batch_in**3 # and takes them to the power of three for the output
 
     return sample_batch_in, sample_batch_out
-
-
-def replicate_modules(module,nr_of_layers, **kwargs):
-    modules = OrderedDict()
-    for i in range(nr_of_layers):
-        modules['l{}'.format(i)] = module(**kwargs)
-
-    return modules
-
-class SimpleResNetBlock(nn.Module):
-
-    def __init__(self):
-        super(SimpleResNetBlock, self).__init__()
-
-        self.l1 = nn.Linear(1,1,bias=True)
-
-    def forward(self, x):
-        x = x + self.l1(F.relu(x))
-
-        return x
-
-class UpDownResNetBlock(nn.Module):
-
-    def __init__(self, inflation_factor=5):
-        super(UpDownResNetBlock, self).__init__()
-
-        self.l1 = nn.Linear(1,inflation_factor,bias=True)
-        self.l2 = nn.Linear(inflation_factor,1,bias=True)
-
-    def forward(self, x):
-        y = self.l1(F.relu(x))
-        z = self.l2(F.relu(y))
-
-        return x + z
-
-class UpDownDoubleResNetBlock(nn.Module):
-
-    def __init__(self, inflation_factor=5):
-        super(UpDownDoubleResNetBlock, self).__init__()
-
-        self.l1 = nn.Linear(inflation_factor,1,bias=True)
-        self.l2 = nn.Linear(1,inflation_factor,bias=False)
-
-    def forward(self, x1x2):
-        x1 = x1x2[0]
-        x2 = x1x2[1]
-
-        x1 = x1 + self.l1(F.relu(x2))
-        x2 = x2 + self.l2(F.relu(x1)) # this is what an integrator would typically do
-        #x2 = self.l2(F.relu(x1))
-
-        return x1, x2
-
-class DoubleResNetUpDown(nn.Module):
-
-    def __init__(self, nr_of_layers=30, inflation_factor=5):
-        super(DoubleResNetUpDown, self).__init__()
-        print("nr_of_layers ",nr_of_layers)
-        modules = replicate_modules(module=UpDownDoubleResNetBlock,nr_of_layers=nr_of_layers, inflation_factor=inflation_factor)
-        self.model = nn.Sequential(modules)
-
-    def forward(self, x1x2):
-        return self.model(x1x2)
-
-class ResNetUpDown(nn.Module):
-
-    def __init__(self, nr_of_layers=10, inflation_factor=5):
-        super(ResNetUpDown, self).__init__()
-        modules = replicate_modules(module=UpDownResNetBlock, nr_of_layers=nr_of_layers, inflation_factor=inflation_factor)
-        self.model = nn.Sequential(modules)
-
-    def forward(self, x):
-        return self.model(x)
-
-class ResNet(nn.Module): # corresponds to our simple shooting model
-
-    def __init__(self, nr_of_layers=10):
-        super(ResNet, self).__init__()
-
-        modules = replicate_modules(module=SimpleResNetBlock, nr_of_layers=nr_of_layers)
-        self.model = nn.Sequential(modules)
-
-    def forward(self, x):
-        return self.model(x)
-
-class DoubleResNetUpDownRNN(nn.Module): # corresponds to our simple shooting model
-
-    def __init__(self, nr_of_layers=10, inflation_factor=5):
-        super(DoubleResNetUpDownRNN, self).__init__()
-
-        self.nr_of_layers = nr_of_layers
-        print("use "+str(self) + " with " + str(self.nr_of_layers) + " nr of layers")
-        self.l1 = UpDownDoubleResNetBlock(inflation_factor=inflation_factor)
-
-    def forward(self, x1x2):
-        x1 = x1x2[0]
-        x2 = x1x2[1]
-
-        for i in range(self.nr_of_layers):
-            x1, x2 = self.l1((x1, x2))
-
-        return x1, x2
-
-class ResNetRNN(nn.Module):
-
-    def __init__(self, nr_of_layers=10, inflation_factor=5):
-        super(ResNetRNN, self).__init__()
-        self.nr_of_layers = nr_of_layers
-        print("use "+ str(self) + " nr of layers " + str(self.nr_of_layers))
-
-        self.l1 = nn.Linear(inflation_factor,1,bias=True)
-        self.l2 = nn.Linear(1,inflation_factor,bias=True)
-
-    def forward(self, x):
-        for i in range(self.nr_of_layers):
-            x = x + 1./self.nr_of_layers * self.l1(F.relu(self.l2(x)))
-
-        return x
-
-class ODESimpleFunc(nn.Module):
-
-    def __init__(self):
-        super(ODESimpleFunc, self).__init__()
-
-        self.net = nn.Sequential(
-            nn.Linear(1, 1),
-            nn.Tanh(),
-        )
-
-        for m in self.net.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.1)
-                nn.init.constant_(m.bias, val=0)
-
-    def forward(self, t, y):
-        return self.net(y)
 
 def print_all_parameters(model):
 
@@ -423,7 +286,10 @@ if __name__ == '__main__':
 
     seed = args.seed
     print('Setting the random seed to {:}'.format(seed))
+
+    import torch
     random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
 
     device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
@@ -489,8 +355,13 @@ if __name__ == '__main__':
     use_particle_rnn_mode = args.use_particle_rnn_mode
     use_particle_free_rnn_mode = args.use_particle_free_rnn_mode
 
-    use_analytic_solution = False # just set to one value
-    write_out_first_five_gradients = True
+
+    use_analytic_solution = True # True is the proper setting here for models that have analytic solutions implemented
+    write_out_first_five_gradients = False # for debugging purposes; use jointly with check_gradient_over_iterations.py
+    use_fixed_sample_batch = write_out_first_five_gradients # has to be set to True if we want to compare autodiff and analytic gradients (as otherwise there will be different random initializations
+
+    if write_out_first_five_gradients and not use_fixed_sample_batch:
+        print('WARNING: if you want to compare autodiff/analytic gradient then use_fixed_sample_batch should be set to True')
 
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, use_rnn_mode=use_particle_rnn_mode)
@@ -507,7 +378,6 @@ if __name__ == '__main__':
         name=block_name,
         shooting_integrand=smodel,
         integrator_name=args.method,
-        use_adjoint_integration=args.adjoint,
         use_particle_free_rnn_mode=use_particle_free_rnn_mode,
         integrator_options = {'step_size': args.stepsize}
     )
@@ -519,31 +389,31 @@ if __name__ == '__main__':
         weight_decay = 0.0001
         lr = 1e-3
         print('Using ResNetRNN: weight = {}'.format(weight_decay))
-        simple_resnet = ResNetRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
+        simple_resnet = sdnn.ResNetRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_double_resnet_rnn:
         weight_decay = 0.025
         lr = 1e-3
         print('Using DoubleResNetRNN: weight = {}'.format(weight_decay))
-        simple_resnet = DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
+        simple_resnet = sdnn.DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_updown:
         weight_decay = 0.01
         lr = 1e-3
         print('Using ResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = ResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
+        simple_resnet = sdnn.ResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_simple_resnet:
         weight_decay = 0.0001
         lr = 1e-2
         print('Using ResNet: weight = {}'.format(weight_decay))
-        simple_resnet = ResNet(nr_of_layers=args.nr_of_layers)
+        simple_resnet = sdnn.ResNet(nr_of_layers=args.nr_of_layers)
     elif args.use_double_resnet:
         #weight_decay = 0.025
         weight_decay = 0.01
         lr = 1e-2
         print('Using DoubleResNetUpDown: weight = {}'.format(weight_decay))
-        simple_resnet = DoubleResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
+        simple_resnet = sdnn.DoubleResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_neural_ode:
         print('Using neural ode')
-        func = ODESimpleFunc()
+        func = sdnn.ODESimpleFunc()
         optimizer = optim.RMSprop(func.parameters(), lr=1e-3)
         integrator = gi.GenericIntegrator(integrator_library='odeint',
                                                           integrator_name=args.method,
@@ -563,6 +433,9 @@ if __name__ == '__main__':
     else:
 
         sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+        if use_fixed_sample_batch:
+            fixed_batch_in, fixed_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+
         sblock(x=sample_batch_in)
 
         # do some parameter freezing
@@ -587,7 +460,11 @@ if __name__ == '__main__':
     for itr in range(1, max_iter + 1):
 
         # get current batch data
-        batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+        if use_fixed_sample_batch:
+            batch_in = fixed_batch_in
+            batch_out = fixed_batch_out
+        else:
+            batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
 
         optimizer.zero_grad()
 
@@ -612,7 +489,9 @@ if __name__ == '__main__':
             pred_y, _, _, _ = sblock(x=batch_in)
 
         if use_shooting:
-            loss = torch.mean((pred_y - batch_out)**2)  + args.pw * sblock.get_norm_penalty()
+            loss = torch.mean((pred_y - batch_out)**2)
+            if args.use_parameter_penalty_energy:
+                loss = loss + sblock.get_norm_penalty()
         else:
             loss = torch.mean((pred_y - batch_out)**2)
 
