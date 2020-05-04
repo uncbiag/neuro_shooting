@@ -76,7 +76,7 @@ def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8,
 
     return integrator
 
-def setup_shooting_block(nonlinearity='relu', device='cpu'):
+def setup_shooting_block(integrator=None, nonlinearity='relu', device='cpu'):
     # TODO: make the selection of the model more flexible
     # shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
     #                                                                   parameter_weight=0.5,
@@ -101,7 +101,7 @@ def setup_shooting_block(nonlinearity='relu', device='cpu'):
                                                              random_initialization_magnitude=1.0)
 
     shooting_model.set_state_initializer(state_initializer=par_initializer)
-    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=True)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=True, integrator=integrator)
     shooting_block = shooting_block.to(device)
 
     return shooting_block
@@ -298,7 +298,7 @@ if __name__ == '__main__':
     setup_random_seed(seed=args.seed)
 
     integrator = setup_integrator(method=args.method, use_adjoint=args.adjoint)
-    shooting_block = setup_shooting_block(nonlinearity=args.nonlinearity, device=device)
+    shooting_block = setup_shooting_block(nonlinearity=args.nonlinearity, device=device, integrator=integrator)
 
     # generate the true data tha we want to match
     data = generate_data(integrator=integrator, data_size=args.data_size, linear=args.linear, device=device)

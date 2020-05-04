@@ -14,6 +14,7 @@ class ShootingBlockBase(nn.Module):
     def __init__(self, name, shooting_integrand=None, shooting_integrand_name=None,
                  integrator_library='odeint', integrator_name='rk4',
                  use_adjoint_integration=False, integrator_options=None,
+                 integrator=None,
                  keep_initial_state_parameters_at_zero=False,
                  enlarge_pass_through_states_and_costates=True,
                  use_particle_free_rnn_mode=False,
@@ -27,6 +28,7 @@ class ShootingBlockBase(nn.Module):
         :param integrator_name:
         :param use_adjoint_integration:
         :param integrator_options:
+        :param integrator: We can also instantiate an integrator externally and simply pass it here
         :param keep_initial_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
         :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
         :param use_particle_free_rnn_mode: if set to true than the particles are not used to compute the parameterization, instead an RNN model is assumed and the layer parameters are optimized directly, particles will stay as initialized
@@ -59,15 +61,22 @@ class ShootingBlockBase(nn.Module):
         self.integration_time = torch.tensor([0, 1]).float()
         self.integration_time_vector = None
 
-        self.integrator_name = integrator_name
-        self.integrator_library = integrator_library
-        self.integrator_options = integrator_options
-        self.use_adjoint_integration = use_adjoint_integration
+        if integrator is not None:
+            print('INFO: using externally specified integrator')
+            self.integrator = integrator
+        else:
+            self.integrator_name = integrator_name
+            self.integrator_library = integrator_library
+            self.integrator_options = integrator_options
+            self.use_adjoint_integration = use_adjoint_integration
 
-        self.integrator = generic_integrator.GenericIntegrator(integrator_library = self.integrator_library,
-                                                               integrator_name = self.integrator_name,
-                                                               use_adjoint_integration=self.use_adjoint_integration,
-                                                               integrator_options=self.integrator_options)
+            if self.integrator_options is None:
+                print('WARNING: integrator options are NOT set. Will use default options')
+
+            self.integrator = generic_integrator.GenericIntegrator(integrator_library = self.integrator_library,
+                                                                   integrator_name = self.integrator_name,
+                                                                   use_adjoint_integration=self.use_adjoint_integration,
+                                                                   integrator_options=self.integrator_options)
 
         self._state_parameter_dict = None
         """Dictionary holding the state variables"""

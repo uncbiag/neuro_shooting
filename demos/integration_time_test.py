@@ -85,7 +85,7 @@ for current_model in check_models:
 
     use_analytic_solution = True
 
-    shooting_block = shooting_blocks.ShootingBlockBase(name='test', shooting_integrand=shooting_model)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='test', shooting_integrand=shooting_model, integrator_options=integrator_options)
     shooting_model.use_analytic_solution = use_analytic_solution
 
     print('\n\nChecking model: {}'.format(current_model))

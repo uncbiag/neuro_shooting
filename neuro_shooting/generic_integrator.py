@@ -76,7 +76,6 @@ class GenericIntegrator(object):
         # if max_num_steps is not None:
         #     self.integrator_options['max_num_steps'] = max_num_steps
 
-
     def _integrate_odeint(self,func,x0,t):
         if self.use_adjoint_integration:
             # odeint(func, y0, t, rtol=1e-7, atol=1e-9, method=None, options=None)
