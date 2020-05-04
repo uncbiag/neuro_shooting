@@ -209,8 +209,6 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         self.inflation_factor = inflation_factor
 
-        self.optimize_over_initial_data_conditions = True
-
         if self.optimize_over_data_initial_conditions:
             self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
         else:

@@ -1,6 +1,4 @@
-import os
 import argparse
-import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -28,25 +26,34 @@ def setup_cmdline_parsing():
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
     parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
-    parser.add_argument('--batch_time', type=int, default=10, help='Length of the training samples.')
-    parser.add_argument('--batch_size', type=int, default=100, help='Number of training samples.')
+    parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
+    parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
     parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
-    parser.add_argument('--batch_validation_size', type=int, default=5, help='Length of the samples for validation.')
+    parser.add_argument('--batch_validation_size', type=int, default=25, help='Length of the samples for validation.')
     parser.add_argument('--seed', required=False, type=int, default=1234,
                         help='Sets the random seed which affects data shuffling')
 
     parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
-    parser.add_argument('--test_freq', type=int, default=200, help='Frequency with which the validation measures are to be computed.')
+    parser.add_argument('--test_freq', type=int, default=100, help='Frequency with which the validation measures are to be computed.')
     parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown'])
     parser.add_argument('--nr_of_particles', type=int, default=40, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
-    parser.add_argument('--shooting_norm_penalty', type=float, default=0, help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
     parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
 
+    parser.add_argument('--inflation_factor', type=int, default=5,
+                        help='Multiplier for state dimension for updown shooting model types')
+    parser.add_argument('--use_particle_rnn_mode', action='store_true',
+                        help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
+    parser.add_argument('--use_particle_free_rnn_mode', action='store_true',
+                        help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
+    parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
+    parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
 
     parser.add_argument('--viz', action='store_true', help='Enable visualization.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
@@ -59,6 +66,7 @@ def setup_cmdline_parsing():
 def setup_random_seed(seed):
     print('Setting the random seed to {:}'.format(seed))
     random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
 
 def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8, atol=1e-12):
@@ -68,47 +76,50 @@ def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8,
     if method not in ['dopri5', 'adams']:
         integrator_options  = {'step_size': step_size}
 
-    # TODO: remove, purely for debug
-    integrator_options = {'step_size': 0.05}
-
     integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                      use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
     return integrator
 
-def setup_shooting_block(integrator=None, nonlinearity='relu', device='cpu'):
-    # TODO: make the selection of the model more flexible
-    # shooting_model = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
-    #                                                                   parameter_weight=0.5,
-    #                                                                   inflation_factor=1,
-    #                                                                   nr_of_particles=50, particle_dimension=1,
-    #                                                                   particle_size=2,
-    #                                                                   use_analytic_solution=True,
-    #                                                                   optimize_over_data_initial_conditions=True)
+def setup_shooting_block(integrator=None, shooting_model='updown', parameter_weight=1.0, nr_of_particles=10,
+                         inflation_factor=2, nonlinearity='relu',
+                         use_particle_rnn_mode=False, use_particle_free_rnn_mode=False,
+                         optimize_over_data_initial_conditions=False,
+                         device='cpu'):
 
-    shooting_model = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
-                                                                      parameter_weight=0.1,
-                                                                      nr_of_particles=50, particle_dimension=1,
-                                                                      particle_size=2, use_analytic_solution=True)
-
+    if shooting_model=='updown':
+        smodel = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
+                                                                  parameter_weight=parameter_weight,
+                                                                  inflation_factor=inflation_factor,
+                                                                  nr_of_particles=nr_of_particles, particle_dimension=1,
+                                                                  particle_size=2,
+                                                                  use_analytic_solution=True,
+                                                                  use_particle_rnn_mode=use_particle_rnn_mode,
+                                                                  optimize_over_data_initial_conditions=optimize_over_data_initial_conditions)
+    elif shooting_model=='simple':
+        smodel = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
+                                                                  parameter_weight=parameter_weight,
+                                                                  nr_of_particles=nr_of_particles, particle_dimension=1,
+                                                                  particle_size=2,
+                                                                  use_analytic_solution=True,
+                                                                  use_particle_rnn_mode=use_particle_rnn_mode)
 
     import neuro_shooting.parameter_initialization as pi
     # par_initializer = pi.VectorEvolutionSampleBatchParameterInitializer(only_random_initialization=False,
     #     random_initialization_magnitude=0.1,
     #     sample_batch=batch_y0)
 
-    par_initializer = pi.VectorEvolutionParameterInitializer(only_random_initialization=True,
-                                                             random_initialization_magnitude=1.0)
+    par_initializer = pi.VectorEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=1.0)
 
-    shooting_model.set_state_initializer(state_initializer=par_initializer)
-    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=True, integrator=integrator)
+    smodel.set_state_initializer(state_initializer=par_initializer)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel, use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
     shooting_block = shooting_block.to(device)
 
     return shooting_block
 
 def setup_optimizer_and_scheduler(params):
-    #optimizer = optim.Adam(params, lr=0.025)
-    optimizer = optim.Adam(params, lr=0.1)
+
+    optimizer = optim.Adam(params, lr=0.01)
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
 
@@ -147,7 +158,6 @@ def generate_data(integrator, data_size, linear=False, device='cpu'):
 
     # pure slow oscillation
     #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]]).to(device)
-
     # small section
     #d['A'] = torch.tensor([[0, 0.1], [-0.1, 0]]).to(device)
 
@@ -181,17 +191,59 @@ def __get_batch(data_dict, batch_size, batch_time):
 # Visualization
 # TODO: revamp
 
-def basic_visualize(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t):
+def plot_particles(shooting_block,ax):
 
-    plt.figure()
+    quiver_scale = 1.0 # to scale the magnitude of the quiver vectors for visualization
 
+    # get all the parameters that we are optimizing over
+    pars = shooting_block.state_dict()
+
+    # let's first just plot the positions
+    ax.plot(pars['q1'][:,0,0], pars['q1'][:,0,1],'k+',markersize=12)
+    ax.quiver(pars['q1'][:,0,0], pars['q1'][:,0,1], pars['p_q1'][:,0,0], pars['p_q1'][:,0,1], color='r', scale=quiver_scale)
+
+    ax.set_title('q1 and p_q1')
+
+def plot_higher_order_state(shooting_block,ax):
+
+
+    quiver_scale = 1.0 # to scale the magnitude of the quiver vectors for visualization
+
+    # get all the parameters that we are optimizing over
+    pars = shooting_block.state_dict()
+
+    # let's first just plot the positions
+    ax.plot(pars['q2'][:,0,0], pars['q2'][:,0,1],'k+',markersize=12)
+    ax.quiver(pars['q2'][:,0,0], pars['q2'][:,0,1], pars['p_q2'][:,0,0], pars['p_q2'][:,0,1], color='r', scale=quiver_scale)
+
+    ax.set_title('q2 and p_q2')
+
+
+def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, ax):
     for n in range(val_y.size()[1]):
-        plt.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
-        plt.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--+')
+        ax.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
+        ax.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--+')
 
     for n in range(batch_y.size()[1]):
-        plt.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
-        plt.plot(batch_pred_y.detach().numpy()[:, n, 0, 0], batch_pred_y.detach().numpy()[:, n, 0, 1], 'r--')
+        ax.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
+        ax.plot(batch_pred_y.detach().numpy()[:, n, 0, 0], batch_pred_y.detach().numpy()[:, n, 0, 1], 'r--')
+
+    ax.set_title('trajectories')
+
+def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t):
+
+    fig = plt.figure(figsize=(12, 4), facecolor='white')
+
+    ax = fig.add_subplot(131, frameon=False)
+    ax_lo = fig.add_subplot(132, frameon=False)
+    ax_ho = fig.add_subplot(133, frameon=False)
+
+    # plot it without any additional information
+    plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, ax=ax)
+
+    # now plot the information from the state variables
+    plot_particles(shooting_block=shooting_block,ax=ax_lo)
+    plot_higher_order_state(shooting_block=shooting_block,ax=ax_ho)
 
     plt.show()
 
@@ -289,6 +341,14 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True
 
     plt.show()
 
+def freeze_parameters(shooting_block,parameters_to_freeze):
+
+    # get all the parameters that we are optimizing over
+    pars = shooting_block.state_dict()
+    for pn in parameters_to_freeze:
+        print('Freezing {}'.format(pn))
+        pars[pn].requires_grad = False
+
 if __name__ == '__main__':
 
     # do some initial setup
@@ -298,7 +358,17 @@ if __name__ == '__main__':
     setup_random_seed(seed=args.seed)
 
     integrator = setup_integrator(method=args.method, use_adjoint=args.adjoint)
-    shooting_block = setup_shooting_block(nonlinearity=args.nonlinearity, device=device, integrator=integrator)
+
+    shooting_block = setup_shooting_block(integrator=integrator,
+                                          shooting_model=args.shooting_model,
+                                          parameter_weight=args.pw,
+                                          nr_of_particles=args.nr_of_particles,
+                                          inflation_factor=args.inflation_factor,
+                                          nonlinearity=args.nonlinearity,
+                                          use_particle_rnn_mode=args.use_particle_rnn_mode,
+                                          use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
+                                          optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
+                                          device=device)
 
     # generate the true data tha we want to match
     data = generate_data(integrator=integrator, data_size=args.data_size, linear=args.linear, device=device)
@@ -321,13 +391,9 @@ if __name__ == '__main__':
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)
 
-    optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
+    freeze_parameters(shooting_block,['q1'])
 
-    # t_0 = time.time()
-    # ### time clock
-    # t_1 = time.time()
-    # print("time", t_1 - t_0)
-    # t_0 = t_1
+    optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
 
     for itr in range(0, args.niters):
 
@@ -337,17 +403,16 @@ if __name__ == '__main__':
         shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
         pred_y,_,_,_ = shooting_block(x=batch_y0)
 
-        # if args.sim_norm == 'l1':
-        #     loss = torch.mean(torch.abs(pred_y - batch_y))
-        # elif args.sim_norm == 'l2':
-        #     loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
-        # else:
-        #     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+        if args.sim_norm == 'l1':
+            loss = torch.mean(torch.abs(pred_y - batch_y))
+        elif args.sim_norm == 'l2':
+            loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
+        else:
+            raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-        # TODO: maybe put this norm loss back in
-        #loss = loss + args.shooting_norm_penalty * shooting_block.get_norm_penalty()
+        if args.use_parameter_penalty_energy:
+            loss = loss + shooting_block.get_norm_penalty()
 
-        loss = torch.mean(torch.abs(pred_y - batch_y))
         loss.backward()
 
         optimizer.step()
@@ -367,36 +432,20 @@ if __name__ == '__main__':
                 shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
                 val_pred_y,_,_,_ = shooting_block(x=val_y0)
 
-                # if args.sim_norm=='l1':
-                #     loss = torch.mean(torch.abs(val_pred_y - val_y))
-                # elif args.sim_norm=='l2':
-                #     loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
-                # else:
-                #     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+                if args.sim_norm=='l1':
+                    loss = torch.mean(torch.abs(val_pred_y - val_y))
+                elif args.sim_norm=='l2':
+                    loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
+                else:
+                    raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-                #loss = loss #+ shooting_block.get_norm_penalty()
-
-                loss = torch.mean(torch.abs(val_pred_y - val_y))
+                if args.use_parameter_penalty_energy:
+                    loss = loss + shooting_block.get_norm_penalty()
 
                 print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
 
             if itr % args.viz_freq == 0:
-                #basic_visualize(val_y, val_pred_y, val_t, batch_y, pred_y, batch_t)
+                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t)
 
-                visualize(val_y, val_pred_y, val_t, shooting_block, itr)
+                #visualize(val_y, val_pred_y, val_t, shooting_block, itr)
 
-                # # test two different time intervals
-                # val_t0 = data['t'][0:50]
-                # val_t1 = data['t'][0:100]
-                #
-                # shooting_block.set_integration_time_vector(integration_time_vector=val_t0, suppress_warning=True)
-                # val_pred_y0, _, _, _ = shooting_block(x=val_y0)
-                #
-                # shooting_block.set_integration_time_vector(integration_time_vector=val_t1, suppress_warning=True)
-                # val_pred_y1, _, _, _ = shooting_block(x=val_y0)
-                #
-                # tst = val_pred_y1[0:50, 0, 0, :] - val_pred_y0[0:50, 0, 0, :]
-                #
-                # print('Hello world')
-
-        #end = time.time()
