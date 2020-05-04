@@ -29,16 +29,16 @@ def setup_cmdline_parsing():
     parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=10, help='Length of the training samples.')
-    parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
+    parser.add_argument('--batch_size', type=int, default=100, help='Number of training samples.')
     parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
-    parser.add_argument('--batch_validation_size', type=int, default=100, help='Length of the samples for validation.')
+    parser.add_argument('--batch_validation_size', type=int, default=5, help='Length of the samples for validation.')
     parser.add_argument('--seed', required=False, type=int, default=1234,
                         help='Sets the random seed which affects data shuffling')
 
     parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
     parser.add_argument('--test_freq', type=int, default=200, help='Frequency with which the validation measures are to be computed.')
-    parser.add_argument('--viz_freq', type=int, default=500, help='Frequency with which the results should be visualized; if --viz is set.')
+    parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
 
@@ -101,13 +101,14 @@ def setup_shooting_block(nonlinearity='relu', device='cpu'):
                                                              random_initialization_magnitude=1.0)
 
     shooting_model.set_state_initializer(state_initializer=par_initializer)
-    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=False)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=shooting_model, use_particle_free_rnn_mode=True)
     shooting_block = shooting_block.to(device)
 
     return shooting_block
 
 def setup_optimizer_and_scheduler(params):
-    optimizer = optim.Adam(params, lr=0.025)
+    #optimizer = optim.Adam(params, lr=0.025)
+    optimizer = optim.Adam(params, lr=0.1)
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
 
@@ -260,7 +261,7 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True
     #viz_time = t[:5] # just 5 timesteps ahead
     viz_time = sim_time[:5] # just 5 timesteps ahead
 
-    odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=False)
+    odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=True)
     dydt_pred_y,_,_,_ = odefunc(x=x_0)
 
     if is_higher_order_model:
@@ -380,7 +381,9 @@ if __name__ == '__main__':
                 print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
 
             if itr % args.viz_freq == 0:
-                basic_visualize(val_y, val_pred_y, val_t, batch_y, pred_y, batch_t)
+                #basic_visualize(val_y, val_pred_y, val_t, batch_y, pred_y, batch_t)
+
+                visualize(val_y, val_pred_y, val_t, shooting_block, itr)
 
                 # # test two different time intervals
                 # val_t0 = data['t'][0:50]
