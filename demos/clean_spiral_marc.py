@@ -42,7 +42,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
     parser.add_argument('--chunk_time', type=int, default=15, help='For a long range valdation solution chunks the solution together in these pieces.')
 
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown', 'periodic'])
     parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
@@ -103,6 +103,16 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   use_particle_rnn_mode=use_particle_rnn_mode,
                                                                   optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
                                                                   optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
+    elif shooting_model=='periodic':
+        smodel = shooting_models.AutoShootingIntegrandModelUpdownPeriodic(in_features=2, nonlinearity=nonlinearity,
+                                                                  parameter_weight=parameter_weight,
+                                                                  inflation_factor=inflation_factor,
+                                                                  nr_of_particles=nr_of_particles, particle_dimension=1,
+                                                                  particle_size=2,
+                                                                  use_analytic_solution=True,
+                                                                  use_particle_rnn_mode=use_particle_rnn_mode,
+                                                                  optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
+                                                                  optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
     elif shooting_model=='simple':
         smodel = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
                                                                   parameter_weight=parameter_weight,
@@ -110,6 +120,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   particle_size=2,
                                                                   use_analytic_solution=True,
                                                                   use_particle_rnn_mode=use_particle_rnn_mode)
+
+    print('Using shooting model {}'.format(shooting_model))
 
     import neuro_shooting.parameter_initialization as pi
     # par_initializer = pi.VectorEvolutionSampleBatchParameterInitializer(only_random_initialization=False,

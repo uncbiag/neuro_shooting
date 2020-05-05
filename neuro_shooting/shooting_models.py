@@ -1324,6 +1324,27 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         self.inflation_factor = inflation_factor
         self.dampening_factor = -0.5
 
+        # TODO: This is just copied from the UpDown modek. Would be better to make this part of a general desig patter
+        if self.optimize_over_data_initial_conditions:
+
+            supported_initial_condition_optimization_modes = ['direct', 'linear', 'mini_nn']
+            if self.optimize_over_data_initial_conditions_type.lower() not in supported_initial_condition_optimization_modes:
+                raise ValueError('Requested mode {} which is not one of the options {}'.format(
+                    self.optimize_over_data_initial_conditions_type, supported_initial_condition_optimization_modes))
+
+            if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
+                self.data_q20 = Parameter(torch.zeros([particle_dimension, particle_size * inflation_factor]))
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'linear':
+                self.simple_init = nn.Linear(2, 2 * inflation_factor)
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                self.init_l1 = nn.Linear(2, 10)
+                self.init_l2 = nn.Linear(10, 2 * inflation_factor)
+            else:
+                raise ValueError(
+                    'Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))
+        else:
+            self.data_q20 = None
+
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
         state_dict = SortedDict()
@@ -1373,12 +1394,33 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         data_dict = SortedDict()
         data_dict['q1'] = x
 
-        z = torch.zeros_like(x)
-        #z = x.clone()
-        sz = [1]*len(z.shape)
-        sz[-1] = self.inflation_factor
+        # TODO: this is just copied from the UpDown model, would be better to make this part of a general design pattern
+        if self.optimize_over_data_initial_conditions:
 
-        data_dict['q2'] = z.repeat(sz)
+            if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
+                # just repeat it for all the data
+                szq20 = list(self.data_q20.shape)
+                szx = list(x.shape)
+                dim_diff = len(szx) - len(szq20)
+                data_q20 = self.data_q20.view([1] * dim_diff + szq20)
+                data_q20_replicated = data_q20.expand(szx[0:dim_diff] + [-1] * len(szq20))
+
+                data_dict['q2'] = data_q20_replicated
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'linear':
+                q20 = self.simple_init(x)
+                data_dict['q2'] = q20
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                # predict the initial condition based on a simple neural network
+                q20 = self.init_l2(self.nl(self.init_l1(x)))
+                data_dict['q2'] = q20
+
+        else:
+            # standard approach of initializing with zero
+            z = torch.zeros_like(x)
+            sz = [1] * len(z.shape)
+            sz[-1] = self.inflation_factor
+
+            data_dict['q2'] = z.repeat(sz)
 
         return data_dict
 
