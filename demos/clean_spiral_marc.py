@@ -56,6 +56,7 @@ def setup_cmdline_parsing():
                         help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
+    parser.add_argument('--optimize_over_data_initial_conditions_type', type=str, choices=['direct','linear','mini_nn'], default='mini_nn', help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
 
     parser.add_argument('--disable_distance_based_sampling', action='store_true', default=False, help='If specified uses the original trajectory sampling, otherwise samples based on trajectory length.')
 
@@ -89,6 +90,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                          inflation_factor=2, nonlinearity='relu',
                          use_particle_rnn_mode=False, use_particle_free_rnn_mode=False,
                          optimize_over_data_initial_conditions=False,
+                         optimize_over_data_initial_conditions_type='linear',
                          device='cpu'):
 
     if shooting_model=='updown':
@@ -99,7 +101,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   particle_size=2,
                                                                   use_analytic_solution=True,
                                                                   use_particle_rnn_mode=use_particle_rnn_mode,
-                                                                  optimize_over_data_initial_conditions=optimize_over_data_initial_conditions)
+                                                                  optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
+                                                                  optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
     elif shooting_model=='simple':
         smodel = shooting_models.AutoShootingIntegrandModelSimple(in_features=2, nonlinearity=nonlinearity,
                                                                   parameter_weight=parameter_weight,
@@ -435,6 +438,7 @@ if __name__ == '__main__':
                                           use_particle_rnn_mode=args.use_particle_rnn_mode,
                                           use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
                                           optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
+                                          optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type,
                                           device=device)
 
     # generate the true data tha we want to match

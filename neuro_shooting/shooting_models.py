@@ -194,8 +194,8 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
 class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
-                *args, **kwargs):
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
+                 *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDown, self).__init__(in_features=in_features,
                                                                nonlinearity=nonlinearity,
@@ -209,32 +209,23 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         self.inflation_factor = inflation_factor
 
-        # TODO: make these parameters optional again
-        self.data_q20 = Parameter(torch.zeros([particle_dimension, particle_size * inflation_factor]))
-        self.init_l1 = nn.Linear(2,10)
-        self.init_l2 = nn.Linear(10,2*inflation_factor)
+        if self.optimize_over_data_initial_conditions:
 
-        #self.simple_init = nn.Linear(2,2*inflation_factor)
+            supported_initial_condition_optimization_modes = ['direct','linear','mini_nn']
+            if self.optimize_over_data_initial_conditions_type.lower() not in supported_initial_condition_optimization_modes:
+                raise ValueError('Requested mode {} which is not one of the options {}'.format(self.optimize_over_data_initial_conditions_type,supported_initial_condition_optimization_modes))
 
-        # super(UpDownDoubleResNetBlock, self).__init__()
-        #
-        # self.l1 = nn.Linear(inflation_factor, 1, bias=True)
-        # self.l2 = nn.Linear(1, inflation_factor, bias=False)
-        #
-        # def forward(self, x1x2):
-        #     x1 = x1x2[0]
-        #     x2 = x1x2[1]
-        #
-        #     x1 = x1 + self.l1(F.relu(x2))
-        #     x2 = x2 + self.l2(F.relu(x1))  # this is what an integrator would typically do
-        #     # x2 = self.l2(F.relu(x1))
-        #
-        #     return x1, x2
-
-        # if self.optimize_over_data_initial_conditions:
-        #     self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
-        # else:
-        #     self.data_q20 = None
+            if self.optimize_over_data_initial_conditions_type.lower()=='direct':
+                self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                self.simple_init = nn.Linear(2,2*inflation_factor)
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                self.init_l1 = nn.Linear(2, 10)
+                self.init_l2 = nn.Linear(10, 2 * inflation_factor)
+            else:
+                raise ValueError('Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))
+        else:
+            self.data_q20 = None
 
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
@@ -283,16 +274,9 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         data_dict = SortedDict()
         data_dict['q1'] = x
 
-        if self.data_q20 is None:
-            z = torch.zeros_like(x)
-            sz = [1]*len(z.shape)
-            sz[-1] = self.inflation_factor
+        if self.optimize_over_data_initial_conditions:
 
-            data_dict['q2'] = z.repeat(sz)
-        else:
-            direct_optimization = False
-
-            if direct_optimization:
+            if self.optimize_over_data_initial_conditions_type.lower()=='direct':
                 # just repeat it for all the data
                 szq20 = list(self.data_q20.shape)
                 szx = list(x.shape)
@@ -301,11 +285,21 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
                 data_q20_replicated = data_q20.expand(szx[0:dim_diff]+[-1]*len(szq20))
 
                 data_dict['q2'] = data_q20_replicated
-            else:
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                q20 = self.simple_init(x)
+                data_dict['q2'] = q20
+            elif self.optimize_over_data_initial_conditions_type.lower()=='mini_nn':
                 # predict the initial condition based on a simple neural network
                 q20 = self.init_l2(self.nl(self.init_l1(x)))
-                #q20 = self.simple_init(x)
                 data_dict['q2'] = q20
+
+        else:
+            # standard approach of initializing with zero
+            z = torch.zeros_like(x)
+            sz = [1] * len(z.shape)
+            sz[-1] = self.inflation_factor
+
+            data_dict['q2'] = z.repeat(sz)
 
         return data_dict
 
