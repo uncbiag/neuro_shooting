@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import random
+import torch.nn.init as init
 
 import matplotlib.pyplot as plt
 
@@ -24,7 +25,7 @@ def setup_cmdline_parsing():
 
     parser = argparse.ArgumentParser('ODE demo')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
-    parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
+    parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
     parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
@@ -39,9 +40,10 @@ def setup_cmdline_parsing():
     parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
+    parser.add_argument('--chunk_time', type=int, default=15, help='For a long range valdation solution chunks the solution together in these pieces.')
 
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown'])
-    parser.add_argument('--nr_of_particles', type=int, default=40, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
     parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
@@ -76,7 +78,7 @@ def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8,
     if method not in ['dopri5', 'adams']:
         integrator_options  = {'step_size': step_size}
 
-    integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
+    integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = method,
                                                      use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
     return integrator
@@ -119,7 +121,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
 
 def setup_optimizer_and_scheduler(params):
 
-    optimizer = optim.Adam(params, lr=0.01)
+    optimizer = optim.Adam(params, lr=0.025)
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
 
@@ -155,6 +157,7 @@ def generate_data(integrator, data_size, linear=False, device='cpu'):
     d['t'] = torch.linspace(0., 10., data_size).to(device)
 
     d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
+    #d['A'] = torch.tensor([[-0.05, 0.025], [-0.025, -0.05]]).to(device)
 
     # pure slow oscillation
     #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]]).to(device)
@@ -349,6 +352,51 @@ def freeze_parameters(shooting_block,parameters_to_freeze):
         print('Freezing {}'.format(pn))
         pars[pn].requires_grad = False
 
+def get_time_chunks(t, chunk_time):
+    time_chunks = []
+
+    last_t = len(t)
+    cur_idx = 0
+
+    continue_chunking = True
+    while continue_chunking:
+        desired_idx = cur_idx+chunk_time
+        if desired_idx>=last_t:
+            desired_idx = last_t
+            continue_chunking = False
+        current_chunk = t[cur_idx:desired_idx]
+        time_chunks.append(current_chunk)
+        cur_idx = desired_idx-1
+
+    return time_chunks
+
+def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chunk_time):
+
+    if validate_with_long_range:
+
+        sz = [len(t)] + list(y0.shape)
+        val_pred_y = torch.zeros(sz,device=y0.device,dtype=y0.dtype)
+
+        # now we chunk it
+        cur_idx = 0
+        time_chunks = get_time_chunks(t=t, chunk_time=chunk_time)
+        for i,time_chunk in enumerate(time_chunks):
+            shooting_block.set_integration_time_vector(integration_time_vector=time_chunk, suppress_warning=True)
+            if i==0:
+                cur_pred_y, _, _, _ = shooting_block(x=y0)
+            else:
+                cur_pred_y, _, _, _ = shooting_block(x=val_pred_y[cur_idx-1,...])
+
+            val_pred_y[cur_idx:cur_idx + len(time_chunk), ...] = cur_pred_y
+            cur_idx += len(time_chunk) - 1
+
+    else:
+        shooting_block.set_integration_time_vector(integration_time_vector=t, suppress_warning=True)
+        val_pred_y, _, _, _ = shooting_block(x=y0)
+
+    return val_pred_y
+
+
 if __name__ == '__main__':
 
     # do some initial setup
@@ -391,6 +439,7 @@ if __name__ == '__main__':
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)
 
+    #init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
     freeze_parameters(shooting_block,['q1'])
 
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
@@ -429,8 +478,10 @@ if __name__ == '__main__':
 
             with torch.no_grad():
 
-                shooting_block.set_integration_time_vector(integration_time_vector=val_t, suppress_warning=True)
-                val_pred_y,_,_,_ = shooting_block(x=val_y0)
+                val_pred_y = compute_validation_data(shooting_block=shooting_block,
+                                                     t=val_t, y0=val_y0,
+                                                     validate_with_long_range=args.validate_with_long_range,
+                                                     chunk_time=args.chunk_time)
 
                 if args.sim_norm=='l1':
                     loss = torch.mean(torch.abs(val_pred_y - val_y))
