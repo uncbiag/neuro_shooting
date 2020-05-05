@@ -979,7 +979,7 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
-        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2'])) #- self.dampening_factor * s["q1"]
         rhs['dot_q2'] = p['l2'](input=s['q1']) - self.dampening_factor * s['q2']
 
         return rhs
@@ -1040,8 +1040,8 @@ class AutoShootingIntegrandModelUniversal(shooting.ShootingLinearInParameterVect
         #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
         dot_p2t = - self.dnl(q2i) * torch.matmul(p1i,l1)
         dot_p1t = - torch.matmul(p2i,l2)
-        rhs['dot_p_q1'] = dot_p1t
-        rhs['dot_p_q2'] = dot_p2t
+        rhs['dot_p_q1'] = dot_p1t #+ self.dampening_factor * p1i
+        rhs['dot_p_q2'] = dot_p2t #+ self.dampening_factor * p2i
 
         return rhs
 
@@ -1153,8 +1153,8 @@ class AutoShootingIntegrandModelUpdownSymmetrized(shooting.ShootingLinearInParam
         p = parameter_objects
 
         rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
-        rhs['dot_q2'] = p['l2'](input = self.nl(s['q3'])) - self.dampening_factor * s['q2']
-        rhs["dot_q3"] = p["l3"](input = s["q1"]) - self.dampening_factor * s['q3']
+        rhs['dot_q2'] = p['l2'](input = self.nl(s['q3'])) #- self.dampening_factor * s['q2']
+        rhs["dot_q3"] = p["l3"](input = s["q1"]) #- self.dampening_factor * s['q3']
         return rhs
 
     def get_initial_data_dict_from_data_tensor(self, x):
