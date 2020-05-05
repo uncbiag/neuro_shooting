@@ -25,7 +25,7 @@ def setup_cmdline_parsing():
 
     parser = argparse.ArgumentParser('ODE demo')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
-    parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
+    parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
     parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
@@ -122,6 +122,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
 def setup_optimizer_and_scheduler(params):
 
     optimizer = optim.Adam(params, lr=0.025)
+
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
 
@@ -147,7 +148,25 @@ class DiffEqRHS(nn.Module):
         else:
             return torch.mm(y**3, self.A)
 
-def generate_data(integrator, data_size, linear=False, device='cpu'):
+
+def create_uniform_distance_selection_array(data_dict, batch_time):
+    # distances between successive data points
+    dists = torch.sqrt(torch.sum((data_dict['y'][1:, 0, :] - data_dict['y'][0:-1, 0, :]) ** 2, dim=1))
+
+    all_dists = torch.cat((dists,dists[-1::1])) # repeats the last value. We can use these as weights
+
+    # remove the last batch_time minus 1 ones (as we need to be able to create trajectories at least of this size)
+    dists = dists[0:-(batch_time - 1)]
+    scaled_dists = (dists / dists.min()).numpy().round().astype(np.int32)
+    # create sampling array where each index has as many repetitions
+    indices = []
+    for i, sd in enumerate(scaled_dists):
+        indices += [i]*sd
+
+    indices = np.array(indices).astype(np.int64)
+    return indices,all_dists
+
+def generate_data(integrator, data_size, batch_time, linear=False, device='cpu'):
 
     d = dict()
 
@@ -168,13 +187,20 @@ def generate_data(integrator, data_size, linear=False, device='cpu'):
         # integrate it
         d['y'] = integrator.integrate(func=DiffEqRHS(A=d['A'], linear=linear), x0=d['y0'], t=d['t'])
 
+    d['uniform_sample_indices'],d['dists'] = create_uniform_distance_selection_array(d, batch_time=batch_time)
+
     return d
 
-def get_batch(data_dict, batch_size, batch_time):
+
+def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
 
     data_size = len(data_dict['t'])
 
-    s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True)).to(device)
+    if distance_based_sampling:
+        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=True)).to(device)
+    else:
+        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True)).to(device)
+
     batch_y0 = data_dict['y'][s]  # (M, D)
     batch_t = data_dict['t'][:batch_time]  # (T)
     batch_y = torch.stack([data_dict['y'][s + i] for i in range(batch_time)], dim=0)  # (T, M, D)
@@ -222,7 +248,7 @@ def plot_higher_order_state(shooting_block,ax):
     ax.set_title('q2 and p_q2')
 
 
-def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, ax):
+def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax):
     for n in range(val_y.size()[1]):
         ax.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
         ax.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--+')
@@ -231,9 +257,9 @@ def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, a
         ax.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
         ax.plot(batch_pred_y.detach().numpy()[:, n, 0, 0], batch_pred_y.detach().numpy()[:, n, 0, 1], 'r--')
 
-    ax.set_title('trajectories')
+    ax.set_title('trajectories: iter = {}'.format(itr))
 
-def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t):
+def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr):
 
     fig = plt.figure(figsize=(12, 4), facecolor='white')
 
@@ -242,7 +268,7 @@ def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred
     ax_ho = fig.add_subplot(133, frameon=False)
 
     # plot it without any additional information
-    plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, ax=ax)
+    plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
 
     # now plot the information from the state variables
     plot_particles(shooting_block=shooting_block,ax=ax_lo)
@@ -419,7 +445,7 @@ if __name__ == '__main__':
                                           device=device)
 
     # generate the true data tha we want to match
-    data = generate_data(integrator=integrator, data_size=args.data_size, linear=args.linear, device=device)
+    data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear, device=device)
 
     # draw an initial batch from it
     batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
@@ -496,7 +522,7 @@ if __name__ == '__main__':
                 print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
 
             if itr % args.viz_freq == 0:
-                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t)
+                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr)
 
                 #visualize(val_y, val_pred_y, val_t, shooting_block, itr)
 

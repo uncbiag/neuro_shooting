@@ -385,8 +385,9 @@ class ShootingBlockBase(nn.Module):
 
         if integrand is not None:
             for pn,pv in integrand.named_parameters():
-                print('Registering integrand parameter {}'.format(pn))
-                self.register_parameter(pn,pv)
+                pn_eff = pn.replace('.','__')
+                print('Registering integrand parameter {}'.format(pn_eff))
+                self.register_parameter(pn_eff,pv)
 
     def register_particle_free_rnn_parameters(self,rnn_parameters):
 

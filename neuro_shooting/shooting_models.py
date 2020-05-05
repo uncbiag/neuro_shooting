@@ -209,10 +209,32 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         self.inflation_factor = inflation_factor
 
-        if self.optimize_over_data_initial_conditions:
-            self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
-        else:
-            self.data_q20 = None
+        # TODO: make these parameters optional again
+        self.data_q20 = Parameter(torch.zeros([particle_dimension, particle_size * inflation_factor]))
+        self.init_l1 = nn.Linear(2,10)
+        self.init_l2 = nn.Linear(10,2*inflation_factor)
+
+        #self.simple_init = nn.Linear(2,2*inflation_factor)
+
+        # super(UpDownDoubleResNetBlock, self).__init__()
+        #
+        # self.l1 = nn.Linear(inflation_factor, 1, bias=True)
+        # self.l2 = nn.Linear(1, inflation_factor, bias=False)
+        #
+        # def forward(self, x1x2):
+        #     x1 = x1x2[0]
+        #     x2 = x1x2[1]
+        #
+        #     x1 = x1 + self.l1(F.relu(x2))
+        #     x2 = x2 + self.l2(F.relu(x1))  # this is what an integrator would typically do
+        #     # x2 = self.l2(F.relu(x1))
+        #
+        #     return x1, x2
+
+        # if self.optimize_over_data_initial_conditions:
+        #     self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
+        # else:
+        #     self.data_q20 = None
 
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
@@ -268,14 +290,22 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
             data_dict['q2'] = z.repeat(sz)
         else:
-            # just repeat it for all the data
-            szq20 = list(self.data_q20.shape)
-            szx = list(x.shape)
-            dim_diff = len(szx)-len(szq20)
-            data_q20 = self.data_q20.view([1]*dim_diff+szq20)
-            data_q20_replicated = data_q20.expand(szx[0:dim_diff]+[-1]*len(szq20))
+            direct_optimization = False
 
-            data_dict['q2'] = data_q20_replicated
+            if direct_optimization:
+                # just repeat it for all the data
+                szq20 = list(self.data_q20.shape)
+                szx = list(x.shape)
+                dim_diff = len(szx)-len(szq20)
+                data_q20 = self.data_q20.view([1]*dim_diff+szq20)
+                data_q20_replicated = data_q20.expand(szx[0:dim_diff]+[-1]*len(szq20))
+
+                data_dict['q2'] = data_q20_replicated
+            else:
+                # predict the initial condition based on a simple neural network
+                q20 = self.init_l2(self.nl(self.init_l1(x)))
+                #q20 = self.simple_init(x)
+                data_dict['q2'] = q20
 
         return data_dict
 
