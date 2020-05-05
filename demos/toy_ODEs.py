@@ -4,37 +4,43 @@ import numpy as np
 from itertools import cycle
 import torch
 import torch.optim as optim
+import random
+
 import matplotlib.pyplot as plt
+
 import os
 
 import neuro_shooting.shooting_blocks as sblocks
 import neuro_shooting.shooting_models as smodels
 import neuro_shooting.parameter_initialization as pi
+import neuro_shooting.generic_integrator as generic_integrator
 
 
 def setup_cmdline_parsing():
-    parser = argparse.ArgumentParser('Shooting odes')
+    parser = argparse.ArgumentParser('toy ODEs')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams', 'rk4'], default='rk4', help='Selects the desired integrator')
-    parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--batch_timesteps', type=int, default=100,help='batch trajectories evaluated on 0:batch_tmax:batch_timesteps')
+    parser.add_argument('--batch_size', type=int, default=50)
+    parser.add_argument('--batch_timesteps', type=int, default=25,help='batch trajectories evaluated on 0:batch_tmax:batch_timesteps')
     parser.add_argument('--batch_tmax', type=int, default=1, help='batch trajectories integration time [0,batch_tmax]')
     parser.add_argument('--niters', type=int, default=2000)
-    parser.add_argument('--seed', type=int, default=1234)
+    parser.add_argument('--seed', required=False, type=int, default=1234,
+                        help='Sets the random seed which affects data shuffling')
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
-    parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
+    parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--ode_name', type=str, default='3d_lorenz',choices=['3d_lorenz','3d_time_spiral']) #TODO: code up more ODEs, only 3d lorenz is currently in here
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['dampened_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--nr_of_particles', type=int, default=40, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--use_analytic_solution',action='store_true')
     parser.add_argument('--sim_norm', type=str, choices=['l1', 'l2'], default='l2',help='Norm for the similarity measure.')
     parser.add_argument('--shooting_norm_penalty', type=float, default=1e-4,help='Factor to penalize the norm with; default 0, but 0.1 or so might be a good value')
+    parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -104,23 +110,38 @@ def makedirs(dirname):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
-def setup_shootingblock():
+
+def setup_random_seed(seed):
+    print('Setting the random seed to {:}'.format(seed))
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8, atol=1e-12):
+
+    integrator_options = dict()
+
+    if method not in ['dopri5', 'adams']:
+        integrator_options  = {'step_size': step_size}
+
+    integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
+                                                     use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
+
+    return integrator
+
+
+def setup_shootingblock(integrator):
 
     batch_initial, batch_t, batch_trajectory = get_batch()
     in_features = batch_initial.shape[2]
-
-    par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
-        only_random_initialization=True,
-        random_initialization_magnitude=0.1,
-        sample_batch=torch.linspace(0, 1, args.nr_of_particles))
 
     shootingintegrand_kwargs = {'in_features': in_features,
                                 'nonlinearity': args.nonlinearity,
                                 'nr_of_particles': args.nr_of_particles,
                                 'parameter_weight': args.pw,
                                 'particle_dimension': 1,
-                                'particle_size': in_features,
-                                "costate_initializer": par_init}
+                                'particle_size': in_features}
 
     inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
     use_particle_rnn_mode = args.use_particle_rnn_mode
@@ -129,35 +150,48 @@ def setup_shootingblock():
     if args.shooting_model == 'simple':
         smodel = smodels.AutoShootingIntegrandModelSimple(**shootingintegrand_kwargs,
                                                           use_analytic_solution=args.use_analytic_solution,
-                                                          use_rnn_mode=use_particle_rnn_mode)
+                                                          use_particle_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == '2nd_order':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs,
                                                                use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'updown':
         smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,
                                                           use_analytic_solution=args.use_analytic_solution,
-                                                          inflation_factor=inflation_factor,
-                                                          use_rnn_mode=use_particle_rnn_mode)
+                                                          use_particle_rnn_mode=args.use_particle_rnn_mode,
+                                                          inflation_factor=args.inflation_factor,
+                                                          optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions)
     elif args.shooting_model == 'dampened_updown':
         smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs,
                                                                   inflation_factor=inflation_factor,
                                                                   use_rnn_mode=use_particle_rnn_mode)
 
-    block_name = 'sblock'
+    par_init = pi.VectorEvolutionParameterInitializer(
+        only_random_initialization=True,
+        random_initialization_magnitude=1.0)
+    smodel.set_state_initializer(state_initializer=par_init)
 
+    block_name = 'sblock'
     sblock = sblocks.ShootingBlockBase(
         name=block_name,
         shooting_integrand=smodel,
-        integrator_name=args.method,
-        use_adjoint_integration=args.adjoint,
-        use_particle_free_rnn_mode=use_particle_free_rnn_mode,
-        integrator_options={'step_size': args.stepsize}
+        integrator=integrator,
+        use_particle_free_rnn_mode=use_particle_free_rnn_mode
     )
+    sblock = sblock.to(device)
 
     # run through the shooting block once (to get parameters as needed)
     sblock(x=batch_initial)
 
     return sblock
+
+
+def setup_optimizer_and_scheduler(params):
+
+    optimizer = optim.Adam(params, lr=0.01)
+    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
+
+    return optimizer, scheduler
 
 
 def get_batch(batch_size=None,batch_tmax=None,batch_timesteps=None):
@@ -194,16 +228,29 @@ def get_batch(batch_size=None,batch_tmax=None,batch_timesteps=None):
     return batch_initial, batch_t, batch_trajectory
 
 
+def freeze_parameters(shooting_block,parameters_to_freeze):
+
+    # get all the parameters that we are optimizing over
+    pars = shooting_block.state_dict()
+    for pn in parameters_to_freeze:
+        print('Freezing {}'.format(pn))
+        pars[pn].requires_grad = False
+
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
     if args.verbose:
         print(args)
-
     device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    sblock = setup_shootingblock()
-    optimizer = optim.Adam(sblock.parameters(), lr=1e-3)
+    setup_random_seed(seed=args.seed)
+
+    integrator = setup_integrator(method=args.method, use_adjoint=args.adjoint)
+
+    sblock = setup_shootingblock(integrator)
+
+    freeze_parameters(sblock,['q1'])
+    optimizer, scheduler = setup_optimizer_and_scheduler(params=sblock.parameters())
 
     for itr in range(0, args.niters):
 
