@@ -971,7 +971,7 @@ class AutoShootingIntegrandModelUpdownDampenedQ2(shooting.ShootingLinearInParame
                                                                *args, **kwargs)
 
         self.inflation_factor = inflation_factor
-        self.dampening_factor = 2.0
+        self.dampening_factor = -0.5
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -1071,7 +1071,7 @@ class AutoShootingIntegrandModelUpdownDampenedQ2(shooting.ShootingLinearInParame
         dot_p2t = - self.dnl(q2i) * torch.matmul(p1i,l1)
         dot_p1t = - torch.matmul(p2i,l2)
         rhs['dot_p_q1'] = dot_p1t #- self.dampening_factor * p1i
-        rhs['dot_p_q2'] = dot_p2t - self.dampening_factor * p2i
+        rhs['dot_p_q2'] = dot_p2t #- self.dampening_factor * p2i
 
         return rhs
 
@@ -1285,8 +1285,8 @@ class AutoShootingIntegrandModelUpdownSymmetrized(shooting.ShootingLinearInParam
         temp2 = torch.matmul(p2i,self.nl(q3i))
         l2 = torch.mean(temp2,dim = 0)
 
-        temp3 = torch.matmul(p3i,q1i)
-        l3 = torch.mean(temp3,dim = 0)
+        temp3 = torch.matmul(q1i.transpose(1,2),p3i)
+        l3 = torch.mean(temp3,dim = 0).t()
         # particles are saved as rows
         #At = torch.zeros(self.in_features, self.in_features)
         #for i in range(self.nr_of_particles):
@@ -1328,7 +1328,7 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
                                                                *args, **kwargs)
 
         self.inflation_factor = inflation_factor
-        self.dampening_factor = 0.5
+        self.dampening_factor = -0.5
 
     def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -1368,8 +1368,9 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
-        rhs['dot_q1'] = p['l1'](input=self.nl(torch.sin( 3.1415927410125732 * t) * s['q2'])) + p["l3"](input = s['q1'])#- self.dampening_factor * s["q1"]
-        rhs['dot_q2'] =  p['l2'](input=s['q1']) - self.dampening_factor * s["q2"]
+        #rhs['dot_q1'] = p['l1'](input=self.nl(torch.sin( 3.1415927410125732 * t) * s['q2'])) + p["l3"](input = s['q1'])#- self.dampening_factor * s["q1"]
+        rhs['dot_q1'] = p['l1'](input=self.nl( s['q2'])) + p["l3"](input = s['q1'])#- self.dampening_factor * s["q1"]
+        rhs['dot_q2'] =  p['l2'](input=s['q1']) #- self.dampening_factor * s["q2"]
 
         return rhs
 
@@ -1429,10 +1430,12 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         # for i in range(self.nr_of_particles):
         #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
         temp = - torch.matmul(p1i,l3)
-        dot_p2t = - self.dnl(torch.sin(3.1415927410125732 * t) * q2i) * torch.matmul(p1i,l1)
+        #dot_p2t = - self.dnl(torch.sin(3.1415927410125732 * t) * q2i) * torch.matmul(p1i,l1)
+        dot_p2t = - self.dnl(  q2i) * torch.matmul(p1i,l1)
         dot_p1t = - torch.matmul(p2i,l2) + temp
         rhs['dot_p_q1'] =  dot_p1t #+ self.dampening_factor * p1i
-        rhs['dot_p_q2'] =  torch.sin(3.1415927410125732 * t) * dot_p2t - self.dampening_factor * p2i
+        #rhs['dot_p_q2'] =  torch.sin(3.1415927410125732 * t) * dot_p2t - self.dampening_factor * p2i
+        rhs['dot_p_q2'] =  dot_p2t #- self.dampening_factor * p2i
 
         return rhs
 
