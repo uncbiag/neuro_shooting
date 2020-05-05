@@ -57,6 +57,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
 
+    parser.add_argument('--disable_distance_based_sampling', action='store_true', default=False, help='If specified uses the original trajectory sampling, otherwise samples based on trajectory length.')
+
     parser.add_argument('--viz', action='store_true', help='Enable visualization.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
@@ -204,16 +206,6 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
     batch_y0 = data_dict['y'][s]  # (M, D)
     batch_t = data_dict['t'][:batch_time]  # (T)
     batch_y = torch.stack([data_dict['y'][s + i] for i in range(batch_time)], dim=0)  # (T, M, D)
-
-    return batch_y0, batch_t, batch_y
-
-def __get_batch(data_dict, batch_size, batch_time):
-
-    # not random, just directly return the simulated data. This should be the easiest test case
-
-    batch_y0 = data_dict['y0'].unsqueeze(dim=0)
-    batch_t = data_dict['t']
-    batch_y = data_dict['y'].unsqueeze(dim=1)
 
     return batch_y0, batch_t, batch_y
 
@@ -428,6 +420,7 @@ if __name__ == '__main__':
     # do some initial setup
     args = setup_cmdline_parsing()
     device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+    use_distance_based_sampling = not args.disable_distance_based_sampling
 
     setup_random_seed(seed=args.seed)
 
@@ -448,7 +441,7 @@ if __name__ == '__main__':
     data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear, device=device)
 
     # draw an initial batch from it
-    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
+    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
 
     # create validation data
     if args.validate_with_long_range:
@@ -460,7 +453,7 @@ if __name__ == '__main__':
         # draw a FIXED validation batch
         print('Validating with fixed validation batch of size {} and with {} time-points'.format(args.batch_size,args.batch_time))
         # TODO: maybe want to support a new validation batch every time
-        val_y0, val_t, val_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
+        val_y0, val_t, val_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
 
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)
@@ -473,7 +466,7 @@ if __name__ == '__main__':
     for itr in range(0, args.niters):
 
         optimizer.zero_grad()
-        batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size)
+        batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
 
         shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
         pred_y,_,_,_ = shooting_block(x=batch_y0)
