@@ -47,6 +47,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown', 'periodic'])
     parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
+    parser.add_argument('--sim_weight', type=float, default=10.0, help='Weight for the similarity measure')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
     parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
 
@@ -495,6 +496,7 @@ def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chu
             shooting_block.set_integration_time_vector(integration_time_vector=time_chunk, suppress_warning=True)
             if i==0:
                 cur_pred_y, _, _, _ = shooting_block(x=y0)
+                current_norm_penalty = shooting_block.get_norm_penalty()
             else:
                 cur_pred_y, _, _, _ = shooting_block(x=val_pred_y[cur_idx-1,...])
 
@@ -504,8 +506,9 @@ def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chu
     else:
         shooting_block.set_integration_time_vector(integration_time_vector=t, suppress_warning=True)
         val_pred_y, _, _, _ = shooting_block(x=y0)
+        current_norm_penalty = shooting_block.get_norm_penalty()
 
-    return val_pred_y
+    return val_pred_y, current_norm_penalty
 
 
 if __name__ == '__main__':
@@ -582,14 +585,17 @@ if __name__ == '__main__':
         pred_y,_,_,_ = shooting_block(x=batch_y0)
 
         if args.sim_norm == 'l1':
-            loss = torch.mean(torch.abs(pred_y - batch_y))
+            loss = args.sim_weight*torch.mean(torch.abs(pred_y - batch_y))
         elif args.sim_norm == 'l2':
-            loss = torch.mean(torch.norm(pred_y-batch_y,dim=3))
+            loss = args.sim_weight*torch.mean(torch.norm(pred_y-batch_y,dim=3))
         else:
             raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
         if args.use_parameter_penalty_energy:
-            loss = loss + shooting_block.get_norm_penalty()
+            current_norm_penalty = shooting_block.get_norm_penalty()
+            loss = loss + current_norm_penalty
+        else:
+            current_norm_penalty = torch.tensor([0])
 
         loss.backward()
 
@@ -597,32 +603,35 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
             try:
-                print('Iter {:04d} | Training Loss {:.6f}; lr = {:.6f}'.format(itr, loss.item(), scheduler.get_last_lr()[0]))
+                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}; lr = {:.6f}'.format(itr, loss.item(), current_norm_penalty.item(), scheduler.get_last_lr()[0]))
                 scheduler.step()
             except:
-                print('Iter {:04d} | Training Loss {:.6f}'.format(itr, loss.item()))
+                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}'.format(itr, loss.item(), current_norm_penalty.item()))
                 scheduler.step(loss)
 
         if itr % args.test_freq == 0:
 
             with torch.no_grad():
 
-                val_pred_y = compute_validation_data(shooting_block=shooting_block,
+                val_pred_y, norm_penalty = compute_validation_data(shooting_block=shooting_block,
                                                      t=val_t, y0=val_y0,
                                                      validate_with_long_range=args.validate_with_long_range,
                                                      chunk_time=args.chunk_time)
 
                 if args.sim_norm=='l1':
-                    loss = torch.mean(torch.abs(val_pred_y - val_y))
+                    loss = args.sim_weight*torch.mean(torch.abs(val_pred_y - val_y))
                 elif args.sim_norm=='l2':
-                    loss = torch.mean(torch.norm(val_pred_y - val_y, dim=3))
+                    loss = args.sim_weight*torch.mean(torch.norm(val_pred_y - val_y, dim=3))
                 else:
                     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
                 if args.use_parameter_penalty_energy:
-                    loss = loss + shooting_block.get_norm_penalty()
+                    current_norm_penalty = norm_penalty
+                    loss = loss + norm_penalty #shooting_block.get_norm_penalty()
+                else:
+                    current_norm_penalty = torch.tensor([0])
 
-                print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
+                print('Iter {:04d} | Validation Loss {:.6f}; norm_penalty = {:.6f}'.format(itr, loss.item(), current_norm_penalty))
 
             if itr % args.viz_freq == 0:
                 basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles)
