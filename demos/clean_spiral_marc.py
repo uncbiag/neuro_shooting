@@ -591,11 +591,13 @@ if __name__ == '__main__':
         else:
             raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
+        current_norm = shooting_block.get_norm_penalty()
+
         if args.use_parameter_penalty_energy:
-            current_norm_penalty = shooting_block.get_norm_penalty()
-            loss = loss + current_norm_penalty
+            norm_penalty = current_norm
+            loss = loss + norm_penalty
         else:
-            current_norm_penalty = torch.tensor([0])
+            norm_penalty = torch.tensor([0])
 
         loss.backward()
 
@@ -603,17 +605,17 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
             try:
-                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}; lr = {:.6f}'.format(itr, loss.item(), current_norm_penalty.item(), scheduler.get_last_lr()[0]))
+                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}; current_norm = {:.6f}; lr = {:.6f}'.format(itr, loss.item(), norm_penalty.item(), current_norm.item(), scheduler.get_last_lr()[0]))
                 scheduler.step()
             except:
-                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}'.format(itr, loss.item(), current_norm_penalty.item()))
+                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}; current_norm = {:.6f}'.format(itr, loss.item(), norm_penalty.item(), current_norm.item()))
                 scheduler.step(loss)
 
         if itr % args.test_freq == 0:
 
             with torch.no_grad():
 
-                val_pred_y, norm_penalty = compute_validation_data(shooting_block=shooting_block,
+                val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
                                                      t=val_t, y0=val_y0,
                                                      validate_with_long_range=args.validate_with_long_range,
                                                      chunk_time=args.chunk_time)
@@ -626,12 +628,12 @@ if __name__ == '__main__':
                     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
                 if args.use_parameter_penalty_energy:
-                    current_norm_penalty = norm_penalty
+                    norm_penalty = current_norm
                     loss = loss + norm_penalty #shooting_block.get_norm_penalty()
                 else:
                     current_norm_penalty = torch.tensor([0])
 
-                print('Iter {:04d} | Validation Loss {:.6f}; norm_penalty = {:.6f}'.format(itr, loss.item(), current_norm_penalty))
+                print('Iter {:04d} | Validation Loss {:.6f}; norm_penalty = {:.6f}; current_norm = {:.6f}'.format(itr, loss.item(), norm_penalty.item(), current_norm.item()))
 
             if itr % args.viz_freq == 0:
                 basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles)
