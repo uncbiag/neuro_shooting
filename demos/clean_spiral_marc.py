@@ -62,6 +62,9 @@ def setup_cmdline_parsing():
 
     parser.add_argument('--disable_distance_based_sampling', action='store_true', default=False, help='If specified uses the original trajectory sampling, otherwise samples based on trajectory length.')
 
+    parser.add_argument('--custom_parameter_freezing', action='store_true', default=False, help='Enable custom code for parameter freezing -- development mode')
+    parser.add_argument('--custom_parameter_initialization', action='store_true', default=False, help='Enable custom code for parameter initialization -- development mode')
+
     parser.add_argument('--viz', action='store_true', help='Enable visualization.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
@@ -78,6 +81,26 @@ def setup_random_seed(seed):
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
+
+def compute_number_of_parameters(model):
+
+    nr_of_fixed_parameters = 0
+    nr_of_optimized_parameters = 0
+    print('\nModel parameters:\n')
+    print('-----------------')
+    for pn, pv in model.named_parameters():
+        #print('{} = {}'.format(pn, pv))
+        current_number_of_parameters = np.prod(list(pv.size()))
+        print('{}: # of parameters = {}\n'.format(pn,current_number_of_parameters))
+        if pv.requires_grad:
+            nr_of_optimized_parameters += current_number_of_parameters
+        else:
+            nr_of_fixed_parameters += current_number_of_parameters
+
+    print('Number of fixed parameters = {}'.format(nr_of_fixed_parameters))
+    print('Number of optimized parameters = {}'.format(nr_of_optimized_parameters))
+    print('Overall number of parameters = {}\n'.format(nr_of_fixed_parameters + nr_of_optimized_parameters))
+
 
 def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
 
@@ -265,11 +288,13 @@ def plot_higher_order_state(shooting_block,ax):
     if sz[1]!=1:
         raise ValueError('Expected size 1 for dimensions 1.')
 
+    nr_of_particles = sz[0]
+
     # we do PCA if there are more than two components
     q2 = pars['q2'][:,0,:].detach().numpy()
     p_q2 = pars['q2'][:,0,:].detach().numpy()
 
-    if sz[2]>2:
+    if (sz[2]>2) and (nr_of_particles>1):
 
         # project it to two dimensions
         pca = decomposition.PCA(n_components=2)
@@ -313,19 +338,26 @@ def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, i
 
 def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, uses_particles=True):
 
-    fig = plt.figure(figsize=(12, 4), facecolor='white')
-
-    ax = fig.add_subplot(131, frameon=False)
-    ax_lo = fig.add_subplot(132, frameon=False)
-    ax_ho = fig.add_subplot(133, frameon=False)
-
-    # plot it without any additional information
-    plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
-
     if uses_particles:
+
+        fig = plt.figure(figsize=(12, 4), facecolor='white')
+
+        ax = fig.add_subplot(131, frameon=False)
+        ax_lo = fig.add_subplot(132, frameon=False)
+        ax_ho = fig.add_subplot(133, frameon=False)
+
+        # plot it without any additional information
+        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
+
         # now plot the information from the state variables
         plot_particles(shooting_block=shooting_block,ax=ax_lo)
         plot_higher_order_state(shooting_block=shooting_block,ax=ax_ho)
+
+    else:
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, frameon=False)
+        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
 
     plt.show()
 
@@ -520,12 +552,26 @@ if __name__ == '__main__':
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)
 
-    #init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
+    # custom initialization
+    if args.custom_parameter_initialization:
+
+        # first get the state dictionary of the shooting block which contains all parameters
+        ss_sd = shooting_block.state_dict()
+
+        # get initial positions on the trajectory (to place the particles there)
+        init_q1, _, _ = get_batch(data_dict=data, batch_time=1, batch_size=args.nr_of_particles, distance_based_sampling=True)
+        with torch.no_grad():
+            ss_sd['q1'].copy_(init_q1)
+
+        #init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
+
     uses_particles = not args.use_particle_free_rnn_mode
     if uses_particles:
-        freeze_parameters(shooting_block,['q1'])
+        if args.custom_parameter_freezing:
+            freeze_parameters(shooting_block,['q1'])
 
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
+    compute_number_of_parameters(model=shooting_block)
 
     for itr in range(0, args.niters):
 
