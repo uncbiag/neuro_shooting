@@ -6,6 +6,8 @@ import torch.optim as optim
 import random
 import torch.nn.init as init
 
+from sklearn import decomposition
+
 import matplotlib.pyplot as plt
 
 import os
@@ -31,7 +33,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
     parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
     parser.add_argument('--batch_validation_size', type=int, default=25, help='Length of the samples for validation.')
-    parser.add_argument('--seed', required=False, type=int, default=1234,
+    parser.add_argument('--seed', required=False, type=int, default=-1,
                         help='Sets the random seed which affects data shuffling')
 
     parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
@@ -56,7 +58,7 @@ def setup_cmdline_parsing():
                         help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
-    parser.add_argument('--optimize_over_data_initial_conditions_type', type=str, choices=['direct','linear','mini_nn'], default='mini_nn', help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
+    parser.add_argument('--optimize_over_data_initial_conditions_type', type=str, choices=['direct','linear','mini_nn'], default='linear', help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
 
     parser.add_argument('--disable_distance_based_sampling', action='store_true', default=False, help='If specified uses the original trajectory sampling, otherwise samples based on trajectory length.')
 
@@ -69,10 +71,13 @@ def setup_cmdline_parsing():
     return args
 
 def setup_random_seed(seed):
-    print('Setting the random seed to {:}'.format(seed))
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    if seed==-1:
+        print('No seed was specified, leaving everthing at random. Use --seed to specify a seed if you want repeatable results.')
+    else:
+        print('Setting the random seed to {:}'.format(seed))
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
 def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8, atol=1e-12):
 
@@ -138,7 +143,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
 
 def setup_optimizer_and_scheduler(params):
 
-    optimizer = optim.Adam(params, lr=0.025)
+    #optimizer = optim.Adam(params, lr=0.025)
+    optimizer = optim.Adam(params, lr=0.1)
 
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
@@ -234,11 +240,17 @@ def plot_particles(shooting_block,ax):
     # get all the parameters that we are optimizing over
     pars = shooting_block.state_dict()
 
-    # let's first just plot the positions
-    ax.plot(pars['q1'][:,0,0], pars['q1'][:,0,1],'k+',markersize=12)
-    ax.quiver(pars['q1'][:,0,0], pars['q1'][:,0,1], pars['p_q1'][:,0,0], pars['p_q1'][:,0,1], color='r', scale=quiver_scale)
+    q1 = pars['q1'][:,0,:].detach().numpy()
+    p_q1 = pars['p_q1'][:,0,:].detach().numpy()
 
-    ax.set_title('q1 and p_q1')
+    # let's first just plot the positions
+    ax.plot(q1[:,0], q1[:,1],'k+',markersize=12)
+    ax.quiver(q1[:,0], q1[:,1], p_q1[:,0], p_q1[:,1], color='r') #, scale=quiver_scale)
+
+    ax.set_title('q1 and p_q1; q1 in [{:.1f},{:.1f}],\np_q1 in [{:.1f},{:.1f}]'.format(
+        q1.min(), q1.max(),
+        p_q1.min(), p_q1.max(),
+    ))
 
 def plot_higher_order_state(shooting_block,ax):
 
@@ -248,11 +260,43 @@ def plot_higher_order_state(shooting_block,ax):
     # get all the parameters that we are optimizing over
     pars = shooting_block.state_dict()
 
-    # let's first just plot the positions
-    ax.plot(pars['q2'][:,0,0], pars['q2'][:,0,1],'k+',markersize=12)
-    ax.quiver(pars['q2'][:,0,0], pars['q2'][:,0,1], pars['p_q2'][:,0,0], pars['p_q2'][:,0,1], color='r', scale=quiver_scale)
+    sz = pars['q2'].shape
+    if sz[1]!=1:
+        raise ValueError('Expected size 1 for dimensions 1.')
 
-    ax.set_title('q2 and p_q2')
+    # we do PCA if there are more than two components
+    q2 = pars['q2'][:,0,:].detach().numpy()
+    p_q2 = pars['q2'][:,0,:].detach().numpy()
+
+    if sz[2]>2:
+
+        # project it to two dimensions
+        pca = decomposition.PCA(n_components=2)
+        pca_q2 = pca.fit_transform(q2)
+        #pca_p_q2 = pca.transform(p_q2)
+        # want to be able to see what the projection is afer the addition
+        pca_p_q2 = pca.transform(q2+p_q2)-pca_q2
+
+        overall_explained_variance_in_perc = 100*pca.explained_variance_ratio_.sum()
+
+        ax.plot(pca_q2[:, 0], pca_q2[:, 1], 'k+', markersize=12)
+        ax.quiver(pca_q2[:, 0], pca_q2[:, 1], pca_p_q2[:, 0], pca_p_q2[:, 1], color='r') #, scale=quiver_scale)
+
+        ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}] \nexplained_var={:.1f}%'.format(pca_q2.min(),pca_q2.max(),
+                                                                                                                     pca_p_q2.min(),pca_p_q2.max(),
+                                                                                                                     overall_explained_variance_in_perc))
+
+    else:
+        # we can just plot it directly
+        # let's first just plot the positions
+        ax.plot(q2[:,0], q2[:,1],'k+',markersize=12)
+        ax.quiver(q2[:,0], q2[:,1], p_q2[:,0], p_q2[:,1], color='r') # scale=quiver_scale)
+
+        ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}]'.format(
+            q2.min(), q2.max(),
+            p_q2.min(), p_q2.max(),
+            ))
+
 
 
 def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax):
