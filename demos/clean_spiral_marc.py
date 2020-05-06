@@ -79,7 +79,7 @@ def setup_random_seed(seed):
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-def setup_integrator(method='rk4', use_adjoint=False, step_size=0.05, rtol=1e-8, atol=1e-12):
+def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
 
     integrator_options = dict()
 
@@ -136,7 +136,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
     par_initializer = pi.VectorEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=1.0)
 
     smodel.set_state_initializer(state_initializer=par_initializer)
-    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel, use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
+    shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel,
+                                                       use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
     shooting_block = shooting_block.to(device)
 
     return shooting_block
@@ -310,7 +311,7 @@ def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, i
 
     ax.set_title('trajectories: iter = {}'.format(itr))
 
-def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr):
+def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, uses_particles=True):
 
     fig = plt.figure(figsize=(12, 4), facecolor='white')
 
@@ -321,9 +322,10 @@ def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred
     # plot it without any additional information
     plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
 
-    # now plot the information from the state variables
-    plot_particles(shooting_block=shooting_block,ax=ax_lo)
-    plot_higher_order_state(shooting_block=shooting_block,ax=ax_ho)
+    if uses_particles:
+        # now plot the information from the state variables
+        plot_particles(shooting_block=shooting_block,ax=ax_lo)
+        plot_higher_order_state(shooting_block=shooting_block,ax=ax_ho)
 
     plt.show()
 
@@ -483,7 +485,7 @@ if __name__ == '__main__':
 
     setup_random_seed(seed=args.seed)
 
-    integrator = setup_integrator(method=args.method, use_adjoint=args.adjoint)
+    integrator = setup_integrator(method=args.method, step_size=args.stepsize, use_adjoint=args.adjoint)
 
     shooting_block = setup_shooting_block(integrator=integrator,
                                           shooting_model=args.shooting_model,
@@ -519,7 +521,9 @@ if __name__ == '__main__':
     shooting_block(x=batch_y)
 
     #init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
-    freeze_parameters(shooting_block,['q1'])
+    uses_particles = not args.use_particle_free_rnn_mode
+    if uses_particles:
+        freeze_parameters(shooting_block,['q1'])
 
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
 
@@ -575,7 +579,7 @@ if __name__ == '__main__':
                 print('Iter {:04d} | Validation Loss {:.6f}'.format(itr, loss.item()))
 
             if itr % args.viz_freq == 0:
-                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr)
+                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles)
 
                 #visualize(val_y, val_pred_y, val_t, shooting_block, itr)
 
