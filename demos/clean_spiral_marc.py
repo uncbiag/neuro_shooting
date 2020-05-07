@@ -46,8 +46,9 @@ def setup_cmdline_parsing():
 
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown', 'periodic'])
     parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
-    parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
-    parser.add_argument('--sim_weight', type=float, default=10.0, help='Weight for the similarity measure')
+    parser.add_argument('--pw', type=float, default=1.0, help='Parameter weight; controls the weight internally for the shooting equations; probably best left at zero and to control the weight with --sim_weight and --norm_weight.')
+    parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
+    parser.add_argument('--norm_weight', type=float, default=0.01, help='Weight for the similarity measure')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
     parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
 
@@ -57,7 +58,7 @@ def setup_cmdline_parsing():
                         help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true',
                         help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
-    parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
+    parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions_type', type=str, choices=['direct','linear','mini_nn'], default='linear', help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
 
@@ -100,7 +101,15 @@ def compute_number_of_parameters(model):
 
     print('Number of fixed parameters = {}'.format(nr_of_fixed_parameters))
     print('Number of optimized parameters = {}'.format(nr_of_optimized_parameters))
-    print('Overall number of parameters = {}\n'.format(nr_of_fixed_parameters + nr_of_optimized_parameters))
+    overall_nr_of_parameters = nr_of_fixed_parameters + nr_of_optimized_parameters
+    print('Overall number of parameters = {}\n'.format(overall_nr_of_parameters))
+
+    nr_of_pars = dict()
+    nr_of_pars['fixed'] = nr_of_fixed_parameters
+    nr_of_pars['optimized'] = nr_of_optimized_parameters
+    nr_of_pars['overall'] = overall_nr_of_parameters
+
+    return nr_of_pars
 
 
 def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
@@ -309,7 +318,7 @@ def plot_higher_order_state(shooting_block,ax):
         ax.plot(pca_q2[:, 0], pca_q2[:, 1], 'k+', markersize=12)
         ax.quiver(pca_q2[:, 0], pca_q2[:, 1], pca_p_q2[:, 0], pca_p_q2[:, 1], color='r') #, scale=quiver_scale)
 
-        ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}] \nexplained_var={:.1f}%'.format(pca_q2.min(),pca_q2.max(),
+        ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}] \nPCA explained_var={:.1f}%'.format(pca_q2.min(),pca_q2.max(),
                                                                                                                      pca_p_q2.min(),pca_p_q2.max(),
                                                                                                                      overall_explained_variance_in_perc))
 
@@ -321,12 +330,10 @@ def plot_higher_order_state(shooting_block,ax):
 
         ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}]'.format(
             q2.min(), q2.max(),
-            p_q2.min(), p_q2.max(),
-            ))
+            p_q2.min(), p_q2.max()))
 
 
-
-def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax):
+def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax, losses_to_print=None, nr_of_pars=None):
     for n in range(val_y.size()[1]):
         ax.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
         ax.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--+')
@@ -335,9 +342,24 @@ def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, i
         ax.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
         ax.plot(batch_pred_y.detach().numpy()[:, n, 0, 0], batch_pred_y.detach().numpy()[:, n, 0, 1], 'r--')
 
-    ax.set_title('trajectories: iter = {}'.format(itr))
+    if losses_to_print is not None:
+        # losses_to_print = {'model_name': args.shooting_model, 'loss': loss.item(), 'sim_loss': sim_loss.item(),
+        #                    'norm_loss': norm_loss.item(), 'par_norm': norm_penalty.item()}
+        current_title = 'Trajectories of model {}:\niter={}; loss={:.4f}; sim_loss={:.4f};\nnorm_loss={:.4f}; par_norm={:.4f}'.format(losses_to_print['model_name'],
+                                                                                                                itr,
+                                                                                                                losses_to_print['loss'],
+                                                                                                                losses_to_print['sim_loss'],
+                                                                                                                losses_to_print['norm_loss'],
+                                                                                                                losses_to_print['par_norm'])
+    else:
+        current_title = 'trajectories: iter = {}'.format(itr)
 
-def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, uses_particles=True):
+    if nr_of_pars is not None:
+        current_title += '\n#pars={} = {}(fixed) + {}(optimized)'.format(nr_of_pars['overall'],nr_of_pars['fixed'],nr_of_pars['optimized'])
+
+    ax.set_title(current_title)
+
+def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, uses_particles=True, losses_to_print=None, nr_of_pars=None):
 
     if uses_particles:
 
@@ -348,7 +370,7 @@ def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred
         ax_ho = fig.add_subplot(133, frameon=False)
 
         # plot it without any additional information
-        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
+        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
 
         # now plot the information from the state variables
         plot_particles(shooting_block=shooting_block,ax=ax_lo)
@@ -356,9 +378,9 @@ def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred
 
     else:
 
-        fig = plt.figure()
+        fig = plt.figure(figsize=(4,4), facecolor='white')
         ax = fig.add_subplot(111, frameon=False)
-        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax)
+        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
 
     plt.show()
 
@@ -574,7 +596,7 @@ if __name__ == '__main__':
             freeze_parameters(shooting_block,['q1'])
 
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
-    compute_number_of_parameters(model=shooting_block)
+    nr_of_pars = compute_number_of_parameters(model=shooting_block)
 
     for itr in range(0, args.niters):
 
@@ -585,19 +607,20 @@ if __name__ == '__main__':
         pred_y,_,_,_ = shooting_block(x=batch_y0)
 
         if args.sim_norm == 'l1':
-            loss = args.sim_weight*torch.mean(torch.abs(pred_y - batch_y))
+            sim_loss = args.sim_weight*torch.mean(torch.abs(pred_y - batch_y))
         elif args.sim_norm == 'l2':
-            loss = args.sim_weight*torch.mean(torch.norm(pred_y-batch_y,dim=3))
+            sim_loss = args.sim_weight*torch.mean(torch.norm(pred_y-batch_y,dim=3))
         else:
             raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-        current_norm = shooting_block.get_norm_penalty()
+        norm_penalty = shooting_block.get_norm_penalty()
 
-        if args.use_parameter_penalty_energy:
-            norm_penalty = current_norm
-            loss = loss + norm_penalty
+        if args.do_not_use_parameter_penalty_energy:
+            norm_loss = torch.tensor([0])
         else:
-            norm_penalty = torch.tensor([0])
+            norm_loss = args.norm_weight*norm_penalty
+
+        loss = sim_loss + norm_loss
 
         loss.backward()
 
@@ -605,10 +628,10 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
             try:
-                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}; current_norm = {:.6f}; lr = {:.6f}'.format(itr, loss.item(), norm_penalty.item(), current_norm.item(), scheduler.get_last_lr()[0]))
+                print('Iter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}; lr = {:.6f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item(), scheduler.get_last_lr()[0]))
                 scheduler.step()
             except:
-                print('Iter {:04d} | Training Loss {:.6f}; norm_penalty = {:.6f}; current_norm = {:.6f}'.format(itr, loss.item(), norm_penalty.item(), current_norm.item()))
+                print('Iter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
                 scheduler.step(loss)
 
         if itr % args.test_freq == 0:
@@ -621,22 +644,27 @@ if __name__ == '__main__':
                                                      chunk_time=args.chunk_time)
 
                 if args.sim_norm=='l1':
-                    loss = args.sim_weight*torch.mean(torch.abs(val_pred_y - val_y))
+                    sim_loss = args.sim_weight*torch.mean(torch.abs(val_pred_y - val_y))
                 elif args.sim_norm=='l2':
-                    loss = args.sim_weight*torch.mean(torch.norm(val_pred_y - val_y, dim=3))
+                    sim_loss = args.sim_weight*torch.mean(torch.norm(val_pred_y - val_y, dim=3))
                 else:
                     raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-                if args.use_parameter_penalty_energy:
-                    norm_penalty = current_norm
-                    loss = loss + norm_penalty #shooting_block.get_norm_penalty()
+                norm_penalty = current_norm
+                if args.do_not_use_parameter_penalty_energy:
+                    norm_loss = torch.tensor([0])
                 else:
-                    current_norm_penalty = torch.tensor([0])
+                    norm_loss = args.norm_weight*norm_penalty
 
-                print('Iter {:04d} | Validation Loss {:.6f}; norm_penalty = {:.6f}; current_norm = {:.6f}'.format(itr, loss.item(), norm_penalty.item(), current_norm.item()))
+                loss = sim_loss + norm_loss
+
+                print('Iter {:04d} | Validation Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
 
             if itr % args.viz_freq == 0:
-                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles)
+
+                losses_to_print = {'model_name': args.shooting_model, 'loss': loss.item(), 'sim_loss': sim_loss.item(), 'norm_loss': norm_loss.item(), 'par_norm': norm_penalty.item()}
+
+                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
 
                 #visualize(val_y, val_pred_y, val_t, shooting_block, itr)
 
