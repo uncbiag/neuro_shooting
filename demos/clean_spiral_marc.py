@@ -122,6 +122,7 @@ def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
     integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = method,
                                                      use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
 
+
     return integrator
 
 def setup_shooting_block(integrator=None, shooting_model='updown', parameter_weight=1.0, nr_of_particles=10,
@@ -138,7 +139,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   nr_of_particles=nr_of_particles, particle_dimension=1,
                                                                   particle_size=2,
                                                                   use_analytic_solution=True,
-                                                                  use_particle_rnn_mode=use_particle_rnn_mode,
+                                                                  use_rnn_mode=use_particle_rnn_mode,
                                                                   optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
                                                                   optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
     elif shooting_model=='periodic':
@@ -148,7 +149,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   nr_of_particles=nr_of_particles, particle_dimension=1,
                                                                   particle_size=2,
                                                                   use_analytic_solution=True,
-                                                                  use_particle_rnn_mode=use_particle_rnn_mode,
+                                                                  use_rnn_mode=use_particle_rnn_mode,
                                                                   optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
                                                                   optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
     elif shooting_model=='simple':
@@ -157,7 +158,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   nr_of_particles=nr_of_particles, particle_dimension=1,
                                                                   particle_size=2,
                                                                   use_analytic_solution=True,
-                                                                  use_particle_rnn_mode=use_particle_rnn_mode)
+                                                                  use_rnn_mode=use_particle_rnn_mode)
 
     print('Using shooting model {}'.format(shooting_model))
 
