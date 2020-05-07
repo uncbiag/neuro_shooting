@@ -19,6 +19,7 @@ import neuro_shooting.shooting_blocks as sblocks
 import neuro_shooting.shooting_models as smodels
 import neuro_shooting.generic_integrator as gi
 import neuro_shooting.parameter_initialization as pi
+import neuro_shooting.shooting_hooks as sh
 
 import simple_discrete_neural_networks as sdnn
 
@@ -295,49 +296,6 @@ if __name__ == '__main__':
 
     device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-    def record_generic_dict_of_dicts(custom_hook_data, d,d_name):
-        for block_name in d:
-            cur_block = d[block_name]
-            for cur_state_name in cur_block:
-                cur_key = '{}.{}.{}'.format(block_name, d_name, cur_state_name)
-                custom_hook_data[cur_key].append(cur_block[cur_state_name].detach().numpy())
-
-    def parameters_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
-                              dot_state_dicts, dot_costate_dicts, dot_data_dict_of_dicts, parameter_objects,
-                              custom_hook_data):
-
-        with torch.no_grad():
-
-            # record time
-            custom_hook_data['t'].append(t.item())
-
-            current_energy = torch.zeros(1)
-            # record all parameters
-            for k in parameter_objects:
-                cur_par_dict = parameter_objects[k]._parameter_dict
-                for p in cur_par_dict:
-                    cur_key = '{}.{}'.format(k,p)
-                    custom_hook_data[cur_key].append(cur_par_dict[p].detach().numpy())
-                    # add to current energy
-                    current_energy += 0.5*torch.sum(cur_par_dict[p]**2)
-
-            # record the current energy
-            custom_hook_data['energy'].append(current_energy.item())
-
-            # now record all the states
-            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=state_dicts, d_name='state')
-            # now record all the costates
-            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=costate_dicts, d_name='costate')
-            # now record all the data states
-            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=data_dict_of_dicts, d_name='data')
-
-            # now record all the current derivatives
-            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=dot_state_dicts, d_name='dot_state')
-            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=dot_costate_dicts, d_name='dot_costate')
-            record_generic_dict_of_dicts(custom_hook_data=custom_hook_data, d=dot_data_dict_of_dicts, d_name='dot_data')
-
-        return None
-
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
         random_initialization_magnitude=0.1, 
@@ -541,7 +499,7 @@ if __name__ == '__main__':
 
     if use_shooting:
         custom_hook_data = defaultdict(list)
-        hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(parameters_hook)
+        hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
         sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
         uniform_batch_in, uniform_batch_out = get_uniform_sample_batch(nr_of_samples=args.batch_size)
