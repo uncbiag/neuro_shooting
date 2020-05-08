@@ -8,7 +8,7 @@ def setup_device(desired_gpu=None):
         print('Setting the default tensor type to torch.cuda.FloatTensor')
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
         print('Setting the cude device to {}'.format(desired_gpu))
-        torch.cuda.set_device(2)
+        torch.cuda.set_device(desired_gpu)
     else:
         device = 'cpu'
         print('Setting the default tensor type to torch.FloatTensor')
