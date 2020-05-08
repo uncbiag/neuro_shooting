@@ -41,6 +41,7 @@ requirements:
     - jupyter
     - ipykernel
     - future
+    - tqdm
     - termcolor
     - pytorch
     - torchvision

@@ -6,6 +6,15 @@ import torch.optim as optim
 import random
 import torch.nn.init as init
 
+try:
+    from tqdm import trange
+    has_TQDM = True
+    range_command = trange
+except:
+    has_TQDM = False
+    print('If you want to display progress bars install TQDM; conda install tqdm')
+    range_command = range
+
 from collections import defaultdict
 
 import os
@@ -17,6 +26,7 @@ import neuro_shooting.generic_integrator as generic_integrator
 import neuro_shooting.tensorboard_shooting_hooks as thooks
 import neuro_shooting.shooting_hooks as sh
 import neuro_shooting.vector_visualization as vector_visualization
+import neuro_shooting.validation_measures as validation_measures
 
 # Setup
 
@@ -277,18 +287,22 @@ def freeze_parameters(shooting_block,parameters_to_freeze):
 def get_time_chunks(t, chunk_time):
     time_chunks = []
 
-    last_t = len(t)
-    cur_idx = 0
+    if chunk_time<=0:
+        time_chunks.append(t)
+    else:
 
-    continue_chunking = True
-    while continue_chunking:
-        desired_idx = cur_idx+chunk_time
-        if desired_idx>=last_t:
-            desired_idx = last_t
-            continue_chunking = False
-        current_chunk = t[cur_idx:desired_idx]
-        time_chunks.append(current_chunk)
-        cur_idx = desired_idx-1
+        last_t = len(t)
+        cur_idx = 0
+
+        continue_chunking = True
+        while continue_chunking:
+            desired_idx = cur_idx+chunk_time
+            if desired_idx>=last_t:
+                desired_idx = last_t
+                continue_chunking = False
+            current_chunk = t[cur_idx:desired_idx]
+            time_chunks.append(current_chunk)
+            cur_idx = desired_idx-1
 
     return time_chunks
 
@@ -386,7 +400,7 @@ if __name__ == '__main__':
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
     nr_of_pars = compute_number_of_parameters(model=shooting_block)
 
-    for itr in range(0, args.niters):
+    for itr in range_command(0, args.niters):
 
         optimizer.zero_grad()
         batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
@@ -416,10 +430,10 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
             try:
-                print('Iter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}; lr = {:.6f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item(), scheduler.get_last_lr()[0]))
+                print('\nIter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}; lr = {:.6f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item(), scheduler.get_last_lr()[0]))
                 scheduler.step()
             except:
-                print('Iter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
+                print('\nIter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
                 scheduler.step(loss)
 
         if itr % args.test_freq == 0:
@@ -454,20 +468,25 @@ if __name__ == '__main__':
 
                 vector_visualization.basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
 
+    # now evaluate the evolution over time
+    custom_hook_data = defaultdict(list)
+    hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
+    shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+
+    # run the evaluation for the validation data and record it via the hook
+    val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
+                                                       t=val_t, y0=val_y0,
+                                                       validate_with_long_range=args.validate_with_long_range,
+                                                       chunk_time=args.chunk_time)
+
+    hook.remove()
+
+    complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
+    print('\nLog complexity measures:')
+    for m in complexity_measures:
+        print('  {} = {:.3f}'.format(m,complexity_measures[m]))
+
     if args.create_animation:
-
         # now plot the evolution over time
-        custom_hook_data = defaultdict(list)
-        hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
-        shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
-
-        # run the evaluation for the validation data and record it via the hook
-        val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
-                                                           t=val_t, y0=val_y0,
-                                                           validate_with_long_range=args.validate_with_long_range,
-                                                           chunk_time=args.chunk_time)
-
-        hook.remove()
-
         vector_visualization.visualize_time_evolution(val_y, data=custom_hook_data, block_name='simple', save_to_directory='result-{}'.format(args.shooting_model))
 

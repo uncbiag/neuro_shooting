@@ -26,6 +26,7 @@ REQUIRED = [
     "jupyter",
     "ipykernel",
     "future",
+    "tqdm",
     "termcolor",
     "torch",
     "torchvision",
