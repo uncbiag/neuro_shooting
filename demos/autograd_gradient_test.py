@@ -36,11 +36,15 @@ in_features_size = 1
 #check_models = ['simple']
 #check_models = ['universal']
 
-check_models = ['updown','DEBUG','simple',"universal"]
+#check_models = ['updown','DEBUG','simple'] #,"universal"]
+check_models = ['simple'] #,"universal"]
 
 number_of_tests_passed = 0
 number_of_tests_attempted = 0
 tolerance = 5e-3
+
+gpu = 0
+device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
 
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',
                                                           use_adjoint_integration=False,
@@ -82,13 +86,14 @@ for current_model in check_models:
         raise ValueError('Unknown model to check: {}'.format( current_model ))
 
     shooting_block = shooting_blocks.ShootingBlockBase(name='test', shooting_integrand=shooting_model)
+    shooting_block.to(device)
 
     print('\n\nChecking model: {}'.format(current_model))
     print('-------------------------------------\n')
 
     # create some sample data
-    sample_data = torch.randn([100,1,in_features_size])
-    sample_data_init = torch.randn([100,1,in_features_size])
+    sample_data = torch.randn([100,1,in_features_size]).to(device)
+    sample_data_init = torch.randn([100,1,in_features_size]).to(device)
 
     autodiff_gradient_results = dict()
     analytic_gradient_results = dict()
