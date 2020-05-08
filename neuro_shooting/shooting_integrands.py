@@ -469,9 +469,10 @@ class ShootingIntegrandBase(nn.Module):
 
         pars = self.create_default_parameter_objects()
 
-        if (self._to_call_args is not None) or (self._to_call_kwargs is not None):
-            for p in pars:
-                pars[p].to(*self._to_call_args, **self._to_call_kwargs)
+        #  no longer needed, is setup so that tensors are by default generated on the correct device
+        # if (self._to_call_args is not None) or (self._to_call_kwargs is not None):
+        #     for p in pars:
+        #         pars[p].to(*self._to_call_args, **self._to_call_kwargs)
 
         return pars
 
