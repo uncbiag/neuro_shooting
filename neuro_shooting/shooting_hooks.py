@@ -6,7 +6,7 @@ def record_generic_dict_of_dicts(custom_hook_data, d, d_name):
         cur_block = d[block_name]
         for cur_state_name in cur_block:
             cur_key = '{}.{}.{}'.format(block_name, d_name, cur_state_name)
-            custom_hook_data[cur_key].append(cur_block[cur_state_name].detach().numpy())
+            custom_hook_data[cur_key].append(cur_block[cur_state_name].detach().cpu().numpy())
 
 
 def parameter_evolution_hook(module, t, state_dicts, costate_dicts, data_dict_of_dicts,
@@ -27,7 +27,7 @@ def parameter_evolution_hook(module, t, state_dicts, costate_dicts, data_dict_of
             cur_par_dict = parameter_objects[k]._parameter_dict
             for p in cur_par_dict:
                 cur_key = '{}.{}'.format(k, p)
-                custom_hook_data[cur_key].append(cur_par_dict[p].detach().numpy())
+                custom_hook_data[cur_key].append(cur_par_dict[p].detach().cpu().numpy())
                 # add to current energy
                 current_energy += 0.5 * torch.sum(cur_par_dict[p] ** 2)
 

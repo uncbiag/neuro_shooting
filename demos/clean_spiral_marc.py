@@ -6,19 +6,17 @@ import torch.optim as optim
 import random
 import torch.nn.init as init
 
-from sklearn import decomposition
-
-import matplotlib.pyplot as plt
+from collections import defaultdict
 
 import os
-
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
 import neuro_shooting.tensorboard_shooting_hooks as thooks
-
+import neuro_shooting.shooting_hooks as sh
+import neuro_shooting.vector_visualization as vector_visualization
 
 # Setup
 
@@ -70,6 +68,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--viz', action='store_true', help='Enable visualization.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
+
+    parser.add_argument('--create_animation', action='store_true', help='Creates animated gif for the evolution of the particles.')
 
     args = parser.parse_args()
 
@@ -265,219 +265,6 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
 
     return batch_y0, batch_t, batch_y
 
-# Visualization
-# TODO: revamp
-
-def plot_particles(shooting_block,ax):
-
-    quiver_scale = 1.0 # to scale the magnitude of the quiver vectors for visualization
-
-    # get all the parameters that we are optimizing over
-    pars = shooting_block.state_dict()
-
-    q1 = pars['q1'][:,0,:].detach().numpy()
-    p_q1 = pars['p_q1'][:,0,:].detach().numpy()
-
-    # let's first just plot the positions
-    ax.plot(q1[:,0], q1[:,1],'k+',markersize=12)
-    ax.quiver(q1[:,0], q1[:,1], p_q1[:,0], p_q1[:,1], color='r') #, scale=quiver_scale)
-
-    ax.set_title('q1 and p_q1; q1 in [{:.1f},{:.1f}],\np_q1 in [{:.1f},{:.1f}]'.format(
-        q1.min(), q1.max(),
-        p_q1.min(), p_q1.max(),
-    ))
-
-def plot_higher_order_state(shooting_block,ax):
-
-
-    quiver_scale = 1.0 # to scale the magnitude of the quiver vectors for visualization
-
-    # get all the parameters that we are optimizing over
-    pars = shooting_block.state_dict()
-
-    sz = pars['q2'].shape
-    if sz[1]!=1:
-        raise ValueError('Expected size 1 for dimensions 1.')
-
-    nr_of_particles = sz[0]
-
-    # we do PCA if there are more than two components
-    q2 = pars['q2'][:,0,:].detach().numpy()
-    p_q2 = pars['q2'][:,0,:].detach().numpy()
-
-    if (sz[2]>2) and (nr_of_particles>1):
-
-        # project it to two dimensions
-        pca = decomposition.PCA(n_components=2)
-        pca_q2 = pca.fit_transform(q2)
-        #pca_p_q2 = pca.transform(p_q2)
-        # want to be able to see what the projection is afer the addition
-        pca_p_q2 = pca.transform(q2+p_q2)-pca_q2
-
-        overall_explained_variance_in_perc = 100*pca.explained_variance_ratio_.sum()
-
-        ax.plot(pca_q2[:, 0], pca_q2[:, 1], 'k+', markersize=12)
-        ax.quiver(pca_q2[:, 0], pca_q2[:, 1], pca_p_q2[:, 0], pca_p_q2[:, 1], color='r') #, scale=quiver_scale)
-
-        ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}] \nPCA explained_var={:.1f}%'.format(pca_q2.min(),pca_q2.max(),
-                                                                                                                     pca_p_q2.min(),pca_p_q2.max(),
-                                                                                                                     overall_explained_variance_in_perc))
-
-    else:
-        # we can just plot it directly
-        # let's first just plot the positions
-        ax.plot(q2[:,0], q2[:,1],'k+',markersize=12)
-        ax.quiver(q2[:,0], q2[:,1], p_q2[:,0], p_q2[:,1], color='r') # scale=quiver_scale)
-
-        ax.set_title('q2 and p_q2; q2 in [{:.1f},{:.1f}],\np_q2 in [{:.1f},{:.1f}]'.format(
-            q2.min(), q2.max(),
-            p_q2.min(), p_q2.max()))
-
-
-def plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax, losses_to_print=None, nr_of_pars=None):
-    for n in range(val_y.size()[1]):
-        ax.plot(val_y.detach().numpy()[:, n, 0, 0], val_y.detach().numpy()[:, n, 0, 1], 'g-')
-        ax.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--+')
-
-    for n in range(batch_y.size()[1]):
-        ax.plot(batch_y.detach().numpy()[:, n, 0, 0], batch_y.detach().numpy()[:, n, 0, 1], 'k-')
-        ax.plot(batch_pred_y.detach().numpy()[:, n, 0, 0], batch_pred_y.detach().numpy()[:, n, 0, 1], 'r--')
-
-    if losses_to_print is not None:
-        # losses_to_print = {'model_name': args.shooting_model, 'loss': loss.item(), 'sim_loss': sim_loss.item(),
-        #                    'norm_loss': norm_loss.item(), 'par_norm': norm_penalty.item()}
-        current_title = 'Trajectories of model {}:\niter={}; loss={:.4f}; sim_loss={:.4f};\nnorm_loss={:.4f}; par_norm={:.4f}'.format(losses_to_print['model_name'],
-                                                                                                                itr,
-                                                                                                                losses_to_print['loss'],
-                                                                                                                losses_to_print['sim_loss'],
-                                                                                                                losses_to_print['norm_loss'],
-                                                                                                                losses_to_print['par_norm'])
-    else:
-        current_title = 'trajectories: iter = {}'.format(itr)
-
-    if nr_of_pars is not None:
-        current_title += '\n#pars={} = {}(fixed) + {}(optimized)'.format(nr_of_pars['overall'],nr_of_pars['fixed'],nr_of_pars['optimized'])
-
-    ax.set_title(current_title)
-
-def basic_visualize(shooting_block, val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, uses_particles=True, losses_to_print=None, nr_of_pars=None):
-
-    if uses_particles:
-
-        fig = plt.figure(figsize=(12, 4), facecolor='white')
-
-        ax = fig.add_subplot(131, frameon=False)
-        ax_lo = fig.add_subplot(132, frameon=False)
-        ax_ho = fig.add_subplot(133, frameon=False)
-
-        # plot it without any additional information
-        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
-
-        # now plot the information from the state variables
-        plot_particles(shooting_block=shooting_block,ax=ax_lo)
-        plot_higher_order_state(shooting_block=shooting_block,ax=ax_ho)
-
-    else:
-
-        fig = plt.figure(figsize=(4,4), facecolor='white')
-        ax = fig.add_subplot(111, frameon=False)
-        plot_trajectories(val_y, pred_y, sim_time, batch_y, batch_pred_y, batch_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
-
-    plt.show()
-
-def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True):
-
-    quiver_scale = 2.5 # to scale the magnitude of the quiver vectors for visualization
-
-    fig = plt.figure(figsize=(12, 4), facecolor='white')
-    ax_traj = fig.add_subplot(131, frameon=False)
-    ax_phase = fig.add_subplot(132, frameon=False)
-    ax_vecfield = fig.add_subplot(133, frameon=False)
-
-    ax_traj.cla()
-    ax_traj.set_title('Trajectories')
-    ax_traj.set_xlabel('t')
-    ax_traj.set_ylabel('x,y')
-
-    for n in range(true_y.size()[1]):
-        ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
-                 'g-')
-        ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
-                 pred_y.detach().numpy()[:, n, 0, 1],
-                 'b--')
-
-    ax_traj.set_xlim(sim_time.min(), sim_time.max())
-    ax_traj.set_ylim(-2, 2)
-    ax_traj.legend()
-
-    ax_phase.cla()
-    ax_phase.set_title('Phase Portrait')
-    ax_phase.set_xlabel('x')
-    ax_phase.set_ylabel('y')
-
-    for n in range(true_y.size()[1]):
-        ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
-        ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
-
-    try:
-        q = (odefunc.q_params)
-        p = (odefunc.p_params)
-
-        q_np = q.cpu().detach().squeeze(dim=1).numpy()
-        p_np = p.cpu().detach().squeeze(dim=1).numpy()
-
-        ax_phase.scatter(q_np[:,0],q_np[:,1],marker='+')
-        ax_phase.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
-    except:
-        pass
-
-    ax_phase.set_xlim(-2, 2)
-    ax_phase.set_ylim(-2, 2)
-
-
-    ax_vecfield.cla()
-    ax_vecfield.set_title('Learned Vector Field')
-    ax_vecfield.set_xlabel('x')
-    ax_vecfield.set_ylabel('y')
-
-    y, x = np.mgrid[-2:2:21j, -2:2:21j]
-
-    current_y = torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2))
-
-    # print("q_params",q_params.size())
-
-    x_0 = current_y.unsqueeze(dim=1)
-
-    #viz_time = t[:5] # just 5 timesteps ahead
-    viz_time = sim_time[:5] # just 5 timesteps ahead
-
-    odefunc.set_integration_time_vector(integration_time_vector=viz_time,suppress_warning=True)
-    dydt_pred_y,_,_,_ = odefunc(x=x_0)
-
-    if is_higher_order_model:
-        dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
-        dydt = dydt[:,0,...]
-    else:
-        dydt = dydt_pred_y[-1,0,...]
-
-    mag = np.sqrt(dydt[:, 0]**2 + dydt[:, 1]**2).reshape(-1, 1)
-    dydt = (dydt / mag)
-    dydt = dydt.reshape(21, 21, 2)
-
-    ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
-
-    try:
-        ax_vecfield.scatter(q_np[:, 0], q_np[:, 1], marker='+')
-        ax_vecfield.quiver(q_np[:,0],q_np[:,1], p_np[:,0],p_np[:,1],color='r', scale=quiver_scale)
-    except:
-        pass
-
-    ax_vecfield.set_xlim(-2, 2)
-    ax_vecfield.set_ylim(-2, 2)
-
-    fig.tight_layout()
-
-    plt.show()
 
 def freeze_parameters(shooting_block,parameters_to_freeze):
 
@@ -665,7 +452,22 @@ if __name__ == '__main__':
 
                 losses_to_print = {'model_name': args.shooting_model, 'loss': loss.item(), 'sim_loss': sim_loss.item(), 'norm_loss': norm_loss.item(), 'par_norm': norm_penalty.item()}
 
-                basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
+                vector_visualization.basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
 
-                #visualize(val_y, val_pred_y, val_t, shooting_block, itr)
+    if args.create_animation:
+
+        # now plot the evolution over time
+        custom_hook_data = defaultdict(list)
+        hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
+        shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+
+        # run the evaluation for the validation data and record it via the hook
+        val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
+                                                           t=val_t, y0=val_y0,
+                                                           validate_with_long_range=args.validate_with_long_range,
+                                                           chunk_time=args.chunk_time)
+
+        hook.remove()
+
+        vector_visualization.visualize_time_evolution(val_y, data=custom_hook_data, block_name='simple', save_to_directory='result-{}'.format(args.shooting_model))
 

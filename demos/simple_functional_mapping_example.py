@@ -20,6 +20,7 @@ import neuro_shooting.shooting_models as smodels
 import neuro_shooting.generic_integrator as gi
 import neuro_shooting.parameter_initialization as pi
 import neuro_shooting.shooting_hooks as sh
+import neuro_shooting.vector_visualization as vector_visualization
 
 import simple_discrete_neural_networks as sdnn
 
@@ -238,46 +239,6 @@ def collect_and_sort_parameter_values_across_layers(model):
         fig.colorbar(im4, cax=cax, orientation='horizontal')
 
     fig.show()
-
-def plot_temporal_data(data, block_name):
-
-    # time
-    t = np.asarray(data['t'])
-    # energy
-    energy = np.asarray(data['energy'])
-
-    # first plot the energy over time
-    plt.figure()
-    plt.plot(t,energy)
-    plt.xlabel('time')
-    plt.ylabel('energy')
-    plt.show()
-
-    # exclude list (what not to plot, partial initial match is fine)
-    do_not_plot = ['t', 'energy', 'dot_state','dot_costate','dot_data']
-
-    for k in data:
-
-        # first check if we should plot this
-        do_plotting = True
-        for dnp in do_not_plot:
-            if k.startswith(dnp) or k.startswith('{}.{}'.format(block_name,dnp)):
-                do_plotting = False
-
-        if do_plotting:
-            plt.figure()
-
-            cur_vals = np.asarray(data[k]).squeeze()
-            cur_shape = cur_vals.shape
-            if len(cur_shape)==3: # multi-dimensional state
-                for cur_dim in range(cur_shape[2]):
-                    plt.plot(t,cur_vals[:,:,cur_dim])
-            else:
-                plt.plot(t,cur_vals)
-
-            plt.xlabel('time')
-            plt.ylabel(k)
-            plt.show()
 
 
 if __name__ == '__main__':
@@ -506,4 +467,4 @@ if __name__ == '__main__':
         pred_y, _, _, _ = sblock(x=uniform_batch_in)
         hook.remove()
 
-        plot_temporal_data(data=custom_hook_data, block_name=block_name)
+        vector_visualization.plot_temporal_data(data=custom_hook_data, block_name=block_name)
