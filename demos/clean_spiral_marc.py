@@ -27,6 +27,7 @@ import neuro_shooting.tensorboard_shooting_hooks as thooks
 import neuro_shooting.shooting_hooks as sh
 import neuro_shooting.vector_visualization as vector_visualization
 import neuro_shooting.validation_measures as validation_measures
+import neuro_shooting.utils as utils
 
 # Setup
 
@@ -139,8 +140,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                          inflation_factor=2, nonlinearity='relu',
                          use_particle_rnn_mode=False, use_particle_free_rnn_mode=False,
                          optimize_over_data_initial_conditions=False,
-                         optimize_over_data_initial_conditions_type='linear',
-                         device='cpu'):
+                         optimize_over_data_initial_conditions_type='linear'):
 
     if shooting_model=='updown':
         smodel = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
@@ -182,7 +182,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
     smodel.set_state_initializer(state_initializer=par_initializer)
     shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel,
                                                        use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
-    shooting_block = shooting_block.to(device)
+    shooting_block = shooting_block
 
     return shooting_block
 
@@ -234,22 +234,22 @@ def create_uniform_distance_selection_array(data_dict, batch_time):
     indices = np.array(indices).astype(np.int64)
     return indices,all_dists
 
-def generate_data(integrator, data_size, batch_time, linear=False, device='cpu'):
+def generate_data(integrator, data_size, batch_time, linear=False):
 
     d = dict()
 
-    d['y0'] = torch.tensor([[2., 0.]]).to(device)
-    #d['t'] = torch.linspace(0., 25., data_size).to(device)
+    d['y0'] = torch.tensor([[2., 0.]])
+    #d['t'] = torch.linspace(0., 25., data_size)
 
-    d['t'] = torch.linspace(0., 10., data_size).to(device)
+    d['t'] = torch.linspace(0., 10., data_size)
 
-    d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]]).to(device)
-    #d['A'] = torch.tensor([[-0.05, 0.025], [-0.025, -0.05]]).to(device)
+    d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]])
+    #d['A'] = torch.tensor([[-0.05, 0.025], [-0.025, -0.05]])
 
     # pure slow oscillation
-    #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]]).to(device)
+    #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]])
     # small section
-    #d['A'] = torch.tensor([[0, 0.1], [-0.1, 0]]).to(device)
+    #d['A'] = torch.tensor([[0, 0.1], [-0.1, 0]])
 
     with torch.no_grad():
         # integrate it
@@ -265,9 +265,9 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
     data_size = len(data_dict['t'])
 
     if distance_based_sampling:
-        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=True)).to(device)
+        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=True))
     else:
-        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True)).to(device)
+        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True))
 
     batch_y0 = data_dict['y'][s]  # (M, D)
     batch_t = data_dict['t'][:batch_time]  # (T)
@@ -339,7 +339,10 @@ if __name__ == '__main__':
 
     # do some initial setup
     args = setup_cmdline_parsing()
-    device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+
+    # takes care of the GPU setup
+    utils.setup_device(desired_gpu=args.gpu)
+
     use_distance_based_sampling = not args.disable_distance_based_sampling
 
     setup_random_seed(seed=args.seed)
@@ -355,11 +358,10 @@ if __name__ == '__main__':
                                           use_particle_rnn_mode=args.use_particle_rnn_mode,
                                           use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
                                           optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
-                                          optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type,
-                                          device=device)
+                                          optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type)
 
     # generate the true data tha we want to match
-    data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear, device=device)
+    data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear)
 
     # draw an initial batch from it
     batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
