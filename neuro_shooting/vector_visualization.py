@@ -176,6 +176,8 @@ def visualize_time_evolution(val_y, data,block_name, max_display=10, save_to_dir
     # time
     t = np.asarray(data['t'])
 
+    val_y = convert_to_numpy_from_torch_if_needed(val_y)
+
     q1 = convert_list_of_np_arrays_into_np_array(data['{}.state.q1'.format(block_name)])
     p_q1 = convert_list_of_np_arrays_into_np_array(data['{}.costate.p_q1'.format(block_name)])
     q2 = convert_list_of_np_arrays_into_np_array(data['{}.state.q2'.format(block_name)])
