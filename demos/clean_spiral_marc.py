@@ -225,7 +225,7 @@ def create_uniform_distance_selection_array(data_dict, batch_time):
 
     # remove the last batch_time minus 1 ones (as we need to be able to create trajectories at least of this size)
     dists = dists[0:-(batch_time - 1)]
-    scaled_dists = (dists / dists.min()).numpy().round().astype(np.int32)
+    scaled_dists = (dists / dists.min()).detach().cpu().numpy().round().astype(np.int32)
     # create sampling array where each index has as many repetitions
     indices = []
     for i, sd in enumerate(scaled_dists):

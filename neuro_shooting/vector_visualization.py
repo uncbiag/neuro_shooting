@@ -128,10 +128,10 @@ def basic_visualize(shooting_block, val_y, val_pred_y, val_sim_time, train_y=Non
 
         # get all the parameters that we are optimizing over
         pars = shooting_block.state_dict()
-        q1 = pars['q1'].detach().numpy()
-        p_q1 = pars['p_q1'].detach().numpy()
-        q2 = pars['q2'].detach().numpy()
-        p_q2 = pars['p_q2'].detach().numpy()
+        q1 = pars['q1'].detach().cpu().numpy()
+        p_q1 = pars['p_q1'].detach().cpu().numpy()
+        q2 = pars['q2'].detach().cpu().numpy()
+        p_q2 = pars['p_q2'].detach().cpu().numpy()
 
         # now plot the information from the state variables
         plot_particles(q1=q1,p_q1=p_q1,ax=ax_lo)
@@ -246,10 +246,10 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True
     ax_traj.set_ylabel('x,y')
 
     for n in range(true_y.size()[1]):
-        ax_traj.plot(sim_time.numpy(), true_y.detach().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
+        ax_traj.plot(sim_time.numpy(), true_y.detach().cpu().numpy()[:, n, 0, 0], sim_time.numpy(), true_y.numpy()[:, n, 0, 1],
                  'g-')
-        ax_traj.plot(sim_time.numpy(), pred_y.detach().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
-                 pred_y.detach().numpy()[:, n, 0, 1],
+        ax_traj.plot(sim_time.numpy(), pred_y.detach().cpu().numpy()[:, n, 0, 0], '--', sim_time.numpy(),
+                 pred_y.detach().cpu().numpy()[:, n, 0, 1],
                  'b--')
 
     ax_traj.set_xlim(sim_time.min(), sim_time.max())
@@ -262,8 +262,8 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True
     ax_phase.set_ylabel('y')
 
     for n in range(true_y.size()[1]):
-        ax_phase.plot(true_y.detach().numpy()[:, n, 0, 0], true_y.detach().numpy()[:, n, 0, 1], 'g-')
-        ax_phase.plot(pred_y.detach().numpy()[:, n, 0, 0], pred_y.detach().numpy()[:, n, 0, 1], 'b--')
+        ax_phase.plot(true_y.detach().cpu().numpy()[:, n, 0, 0], true_y.detach().cpu().numpy()[:, n, 0, 1], 'g-')
+        ax_phase.plot(pred_y.detach().cpu().numpy()[:, n, 0, 0], pred_y.detach().cpu().numpy()[:, n, 0, 1], 'b--')
 
     try:
         q = (odefunc.q_params)
@@ -301,7 +301,7 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True
     dydt_pred_y,_,_,_ = odefunc(x=x_0)
 
     if is_higher_order_model:
-        dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().numpy()
+        dydt = (dydt_pred_y[-1,...]-dydt_pred_y[0,...]).detach().cpu().numpy()
         dydt = dydt[:,0,...]
     else:
         dydt = dydt_pred_y[-1,0,...]
