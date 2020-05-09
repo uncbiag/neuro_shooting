@@ -33,6 +33,7 @@ REQUIRED = [
     "tb-nightly",
     "matplotlib",
     "scipy",
+    "scikit-learn",
     "sphinx",
     "nbsphinx",
     "sphinx-gallery",
