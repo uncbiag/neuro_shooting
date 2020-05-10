@@ -95,33 +95,6 @@ def setup_random_seed(seed):
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-def compute_number_of_parameters(model):
-
-    nr_of_fixed_parameters = 0
-    nr_of_optimized_parameters = 0
-    print('\nModel parameters:\n')
-    print('-----------------')
-    for pn, pv in model.named_parameters():
-        #print('{} = {}'.format(pn, pv))
-        current_number_of_parameters = np.prod(list(pv.size()))
-        print('{}: # of parameters = {}\n'.format(pn,current_number_of_parameters))
-        if pv.requires_grad:
-            nr_of_optimized_parameters += current_number_of_parameters
-        else:
-            nr_of_fixed_parameters += current_number_of_parameters
-
-    print('Number of fixed parameters = {}'.format(nr_of_fixed_parameters))
-    print('Number of optimized parameters = {}'.format(nr_of_optimized_parameters))
-    overall_nr_of_parameters = nr_of_fixed_parameters + nr_of_optimized_parameters
-    print('Overall number of parameters = {}\n'.format(overall_nr_of_parameters))
-
-    nr_of_pars = dict()
-    nr_of_pars['fixed'] = nr_of_fixed_parameters
-    nr_of_pars['optimized'] = nr_of_optimized_parameters
-    nr_of_pars['overall'] = overall_nr_of_parameters
-
-    return nr_of_pars
-
 
 def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
 
@@ -276,14 +249,6 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
     return batch_y0, batch_t, batch_y
 
 
-def freeze_parameters(shooting_block,parameters_to_freeze):
-
-    # get all the parameters that we are optimizing over
-    pars = shooting_block.state_dict()
-    for pn in parameters_to_freeze:
-        print('Freezing {}'.format(pn))
-        pars[pn].requires_grad = False
-
 def get_time_chunks(t, chunk_time):
     time_chunks = []
 
@@ -397,10 +362,10 @@ if __name__ == '__main__':
     uses_particles = not args.use_particle_free_rnn_mode
     if uses_particles:
         if args.custom_parameter_freezing:
-            freeze_parameters(shooting_block,['q1'])
+            utils.freeze_parameters(shooting_block,['q1'])
 
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
-    nr_of_pars = compute_number_of_parameters(model=shooting_block)
+    nr_of_pars = utils.compute_number_of_parameters(model=shooting_block)
 
     for itr in range_command(0, args.niters+1):
 
