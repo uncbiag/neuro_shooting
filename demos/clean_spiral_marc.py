@@ -322,7 +322,7 @@ def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chu
                 cur_pred_y, _, _, _ = shooting_block(x=y0)
                 current_norm_penalty = shooting_block.get_norm_penalty()
             else:
-                cur_pred_y, _, _, _ = shooting_block(x=val_pred_y[cur_idx-1,...])
+                cur_pred_y, _, _, _ = shooting_block(x=val_pred_y[cur_idx,...])
 
             val_pred_y[cur_idx:cur_idx + len(time_chunk), ...] = cur_pred_y
             cur_idx += len(time_chunk) - 1
@@ -402,7 +402,7 @@ if __name__ == '__main__':
     optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
     nr_of_pars = compute_number_of_parameters(model=shooting_block)
 
-    for itr in range_command(0, args.niters):
+    for itr in range_command(0, args.niters+1):
 
         optimizer.zero_grad()
         batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
