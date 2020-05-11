@@ -218,10 +218,14 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
             if self.optimize_over_data_initial_conditions_type.lower()=='direct':
                 self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
             elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
-                self.simple_init = nn.Linear(2,2*inflation_factor)
+                # self.simple_init = nn.Linear(2,2*inflation_factor)
+                # TODO: shouldn't hard code this
+                self.simple_init = nn.Linear(in_features, in_features*inflation_factor)
             elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
-                self.init_l1 = nn.Linear(2, 10)
-                self.init_l2 = nn.Linear(10, 2 * inflation_factor)
+                # self.init_l1 = nn.Linear(2, 10)
+                # TODO: shouldn't hard code this
+                self.init_l1 = nn.Linear(in_features,10)
+                self.init_l2 = nn.Linear(10, in_features * inflation_factor)
             else:
                 raise ValueError('Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))
         else:
@@ -1334,11 +1338,16 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
 
             if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
                 self.data_q20 = Parameter(torch.zeros([particle_dimension, particle_size * inflation_factor]))
-            elif self.optimize_over_data_initial_conditions_type.lower() == 'linear':
-                self.simple_init = nn.Linear(2, 2 * inflation_factor)
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                # self.simple_init = nn.Linear(2,2*inflation_factor)
+                # TODO: shouldn't hard code this
+                self.simple_init = nn.Linear(in_features, in_features*inflation_factor)
             elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
-                self.init_l1 = nn.Linear(2, 10)
-                self.init_l2 = nn.Linear(10, 2 * inflation_factor)
+                # self.init_l1 = nn.Linear(2, 10)
+                # TODO: shouldn't hard code this
+                self.init_l1 = nn.Linear(in_features, 10)
+                self.init_l2 = nn.Linear(10, in_features*inflation_factor)
+
             else:
                 raise ValueError(
                     'Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))

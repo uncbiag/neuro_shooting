@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 def setup_device(desired_gpu=None):
     print('Device setup:')
