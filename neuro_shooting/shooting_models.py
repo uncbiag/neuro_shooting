@@ -1537,13 +1537,13 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         par_dict3['weight'] = l3 / weight_dict3['weight']
         return p
 
-class AutoShootingIntegrandModelUpDownConv(shooting.ShootingLinearInParameterConvolutionIntegrand):
+class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,inflation_factor = 5,
                 *args, **kwargs):
 
-        super(AutoShootingIntegrandModelUpDownConv, self).__init__(in_features=in_features,
+        super(AutoShootingIntegrandModelUpDownConv2D, self).__init__(in_features=in_features,
                                                                      nonlinearity=nonlinearity,
                                                                      transpose_state_when_forward=transpose_state_when_forward,
                                                                      concatenate_parameters=concatenate_parameters,
@@ -1551,11 +1551,12 @@ class AutoShootingIntegrandModelUpDownConv(shooting.ShootingLinearInParameterCon
                                                                      particle_dimension=particle_dimension,
                                                                      particle_size=particle_size,
                                                                      parameter_weight=parameter_weight,
+                                                                     inflation_factor=5,
                                                                      *args, **kwargs)
 
         self.filter_size = filter_size
         self.enlargement_dimensions = [2,3]
-        self.inflation_factor = 2
+        self.inflation_factor = inflation_factor
 
     def create_initial_state_parameters(self,set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
