@@ -19,65 +19,21 @@ except:
     anode_available = False
 
 
-def flatten_params(params):
-    flat_params = [p.contiguous().view(-1) for p in params]
-    return torch.cat(flat_params) if len(flat_params) > 0 else torch.tensor([])
-
-def flatten_params_grad(params, params_ref):
-    _params = [p for p in params]
-    _params_ref = [p for p in params_ref]
-    flat_params = [p.contiguous().view(-1) if p is not None else torch.zeros_like(q).view(-1)
-        for p, q in zip(_params, _params_ref)]
-
-    return torch.cat(flat_params) if len(flat_params) > 0 else torch.tensor([])
-
-class Checkpointed_Adjoint(torch.autograd.Function):
-
-    @staticmethod
-    def forward(self, *args):
-
-        func, flat_func_params, x0, t, odesolver = args[0], args[1], args[2], args[3], args[4]
-
+class IntegrationWrapper(nn.Module):
+    def __init__(self,integration_fcn,func):
+        super(IntegrationWrapper, self).__init__()
         self.func = func
-        self.odesolver = odesolver
-        self.t = t
-        self.x0 = x0
+        self.integration_fcn = integration_fcn
 
-        with torch.no_grad():
-            res = odesolver(func=func, x0=x0, t=t)
+    def forward(self,t,x0, dummy_arg=None):
+        # this dummy arg needs to be such that it requires gradient, does not need to be used, but otherwise the autograd tape breaks
+        # See
+        # here: https://github.com/prigoyal/pytorch_memonger/blob/master/tutorial/Checkpointing_for_PyTorch_models.ipynb
+        # and here: https://discuss.pytorch.org/t/checkpoint-with-no-grad-requiring-inputs-problem/19117/11
+        assert dummy_arg is not None
+        assert dummy_arg.requires_grad is True
 
-        self.save_for_backward(x0)
-
-        return res
-
-    @staticmethod
-    def backward(self, grad_output):
-
-        x0 = self.saved_tensors
-        t = self.t
-        func = self.func
-        odesolver = self.odesolver
-
-        fcn_params = func.parameters()
-
-        with torch.enable_grad():
-            current_x0 = Variable(x0[0].detach(),requires_grad=True)
-            func_eval = odesolver(func=func, x0=current_x0, t=t)
-            x0_grad = torch.autograd.grad(
-               func_eval,  current_x0,
-               grad_output, allow_unused=True, retain_graph=True)
-            par_grad = torch.autograd.grad(
-               func_eval,  fcn_params,
-               grad_output, allow_unused=True, retain_graph=True)
-
-        return None, flatten_params_grad(par_grad, func.parameters()), x0_grad[0], None,  None
-
-
-def checkpointed_odesolver(func, x0, t, odesolver):
-    flat_params = flatten_params(func.parameters())
-    integration_result = Checkpointed_Adjoint.apply(func, flat_params, x0, t, odesolver)
-
-    return integration_result
+        return self.integration_fcn(func=self.func,x0=x0,t=t)
 
 class GenericIntegrator(object):
     def __init__(self,integrator_library = None, integrator_name = None, use_adjoint_integration=False,
@@ -140,6 +96,9 @@ class GenericIntegrator(object):
 
         self.nr_of_checkpoints = nr_of_checkpoints
         self.checkpointing_time_interval = checkpointing_time_interval
+
+        # dummy tensor to support checkpointing
+        self._dummy_tensor = torch.ones(1, requires_grad=True)
 
         # if max_num_steps is not None:
         #     self.integrator_options['max_num_steps'] = max_num_steps
@@ -275,13 +234,11 @@ class GenericIntegrator(object):
 
         # now let's chunk the solutions together
 
+        integrator = IntegrationWrapper(integration_fcn=self._integrate_direct,func=func)
+
         for current_integration_times, current_output_time_points in zip(integration_times,output_time_points):
 
-            current_res = checkpoint.checkpoint(self._integrate_direct, func, current_x0,current_integration_times)
-                #self.run_function(start, end), emb, hidden[0], hidden[1]
-
-            #current_res = checkpointed_odesolver(func=func,x0=current_x0,t=current_integration_times,odesolver=self._integrate_direct)
-
+            current_res = checkpoint.checkpoint(integrator, current_integration_times, current_x0, self._dummy_tensor)
             current_x0 = current_res[-1,...]
 
             if overall_integration_results is None:
