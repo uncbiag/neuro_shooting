@@ -80,6 +80,9 @@ def setup_cmdline_parsing():
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
 
+    parser.add_argument('--checkpointing_time_interval', type=float, default=0.0, help='If specified puts a checkpoint after every interval (hence dynamically changes with the integration time). If a fixed number is deisred use --nr_of_checkpoints instead.')
+    parser.add_argument('--nr_of_checkpoints', type=int, default=0, help='If specified will add that many checkpoints for integration. If integration times differ it is more convenient to set --checkpointing_time_interval instead.')
+
     parser.add_argument('--create_animation', action='store_true', help='Creates animated gif for the evolution of the particles.')
 
     args = parser.parse_args()
@@ -96,7 +99,7 @@ def setup_random_seed(seed):
         torch.manual_seed(seed)
 
 
-def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
+def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12, nr_of_checkpoints=None, checkpointing_time_interval=None):
 
     integrator_options = dict()
 
@@ -104,9 +107,9 @@ def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12):
         integrator_options  = {'step_size': step_size}
 
     integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = method,
-                                                     use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol)
-
-
+                                                     use_adjoint_integration=use_adjoint, integrator_options=integrator_options, rtol=rtol, atol=atol,
+                                                      nr_of_checkpoints=nr_of_checkpoints,
+                                                      checkpointing_time_interval=checkpointing_time_interval)
     return integrator
 
 def setup_shooting_block(integrator=None, shooting_model='updown', parameter_weight=1.0, nr_of_particles=10,
@@ -304,6 +307,17 @@ if __name__ == '__main__':
 
     # do some initial setup
     args = setup_cmdline_parsing()
+
+    # optional checkpointing support for integration
+    if args.checkpointing_time_interval>0:
+        checkpointing_time_interval = args.checkpointing_time_interval
+    else:
+        checkpointing_time_interval = None
+
+    if args.nr_of_checkpoints>0:
+        nr_of_checkpoints = args.nr_of_checkpoints
+    else:
+        nr_of_checkpoints = None
 
     # takes care of the GPU setup
     utils.setup_device(desired_gpu=args.gpu)
