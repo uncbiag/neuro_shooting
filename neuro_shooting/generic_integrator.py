@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
+import torch.utils.checkpoint as checkpoint
+
+
 try:
     from torchdiffeq import odeint_adjoint as odeintadjoint
     from torchdiffeq import odeint
@@ -201,6 +204,9 @@ class GenericIntegrator(object):
         else:
             raise ValueError('Either nr_of_checkpoints or checkpointing_time_interval needs to be set.')
 
+        # force the last time-points to numericall agree
+        checkpointing_time_points[-1] = t_to
+
         # now we need to create the intervals (i.e., match the integration time-points we want to hit, to the checkpoints)
         time_intervals = []
         output_time_points = []
@@ -218,9 +224,6 @@ class GenericIntegrator(object):
 
         if t[idx_t]!=checkpointing_time_points[idx_checkpoint_t]:
             raise ValueError('Need to start with the same time.')
-
-        if t[-1]!=checkpointing_time_points[-1]:
-            raise ValueError('The last time points also need to agree.')
 
         idx_t += 1
         idx_checkpoint_t += 1
@@ -273,7 +276,12 @@ class GenericIntegrator(object):
         # now let's chunk the solutions together
 
         for current_integration_times, current_output_time_points in zip(integration_times,output_time_points):
-            current_res = checkpointed_odesolver(func=func,x0=current_x0,t=current_integration_times,odesolver=self._integrate_direct)
+
+            current_res = checkpoint.checkpoint(self._integrate_direct, func, current_x0,current_integration_times)
+                #self.run_function(start, end), emb, hidden[0], hidden[1]
+
+            #current_res = checkpointed_odesolver(func=func,x0=current_x0,t=current_integration_times,odesolver=self._integrate_direct)
+
             current_x0 = current_res[-1,...]
 
             if overall_integration_results is None:

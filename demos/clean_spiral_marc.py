@@ -83,6 +83,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--checkpointing_time_interval', type=float, default=0.0, help='If specified puts a checkpoint after every interval (hence dynamically changes with the integration time). If a fixed number is deisred use --nr_of_checkpoints instead.')
     parser.add_argument('--nr_of_checkpoints', type=int, default=0, help='If specified will add that many checkpoints for integration. If integration times differ it is more convenient to set --checkpointing_time_interval instead.')
 
+    parser.add_argument('--do_not_use_analytic_solution', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
+
     parser.add_argument('--create_animation', action='store_true', help='Creates animated gif for the evolution of the particles.')
 
     args = parser.parse_args()
@@ -116,7 +118,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                          inflation_factor=2, nonlinearity='relu',
                          use_particle_rnn_mode=False, use_particle_free_rnn_mode=False,
                          optimize_over_data_initial_conditions=False,
-                         optimize_over_data_initial_conditions_type='linear'):
+                         optimize_over_data_initial_conditions_type='linear',
+                         use_analytic_solution=True):
 
     if shooting_model=='updown':
         smodel = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
@@ -124,7 +127,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   inflation_factor=inflation_factor,
                                                                   nr_of_particles=nr_of_particles, particle_dimension=1,
                                                                   particle_size=2,
-                                                                  use_analytic_solution=True,
+                                                                  use_analytic_solution=use_analytic_solution,
                                                                   use_rnn_mode=use_particle_rnn_mode,
                                                                   optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
                                                                   optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
@@ -134,7 +137,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   inflation_factor=inflation_factor,
                                                                   nr_of_particles=nr_of_particles, particle_dimension=1,
                                                                   particle_size=2,
-                                                                  use_analytic_solution=True,
+                                                                  use_analytic_solution=use_analytic_solution,
                                                                   use_rnn_mode=use_particle_rnn_mode,
                                                                   optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
                                                                   optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
@@ -326,7 +329,7 @@ if __name__ == '__main__':
 
     setup_random_seed(seed=args.seed)
 
-    integrator = setup_integrator(method=args.method, step_size=args.stepsize, use_adjoint=args.adjoint)
+    integrator = setup_integrator(method=args.method, step_size=args.stepsize, use_adjoint=args.adjoint, nr_of_checkpoints=nr_of_checkpoints, checkpointing_time_interval=checkpointing_time_interval)
 
     shooting_block = setup_shooting_block(integrator=integrator,
                                           shooting_model=args.shooting_model,
@@ -337,7 +340,8 @@ if __name__ == '__main__':
                                           use_particle_rnn_mode=args.use_particle_rnn_mode,
                                           use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
                                           optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
-                                          optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type)
+                                          optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type,
+                                          use_analytic_solution=not args.do_not_use_analytic_solution)
 
     # generate the true data tha we want to match
     data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear)
@@ -449,25 +453,27 @@ if __name__ == '__main__':
 
                 vector_visualization.basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
 
-    # now evaluate the evolution over time
-    custom_hook_data = defaultdict(list)
-    hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
-    shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+    with torch.no_grad():
 
-    # run the evaluation for the validation data and record it via the hook
-    val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
-                                                       t=val_t, y0=val_y0,
-                                                       validate_with_long_range=args.validate_with_long_range,
-                                                       chunk_time=args.chunk_time)
+        # now evaluate the evolution over time
+        custom_hook_data = defaultdict(list)
+        hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
+        shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
-    hook.remove()
+        # run the evaluation for the validation data and record it via the hook
+        val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
+                                                           t=val_t, y0=val_y0,
+                                                           validate_with_long_range=args.validate_with_long_range,
+                                                           chunk_time=args.chunk_time)
 
-    complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
-    print('\nLog complexity measures:')
-    for m in complexity_measures:
-        print('  {} = {:.3f}'.format(m,complexity_measures[m]))
+        hook.remove()
 
-    if args.create_animation:
-        # now plot the evolution over time
-        vector_visualization.visualize_time_evolution(val_y, data=custom_hook_data, block_name='simple', save_to_directory='result-{}'.format(args.shooting_model))
+        complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
+        print('\nLog complexity measures:')
+        for m in complexity_measures:
+            print('  {} = {:.3f}'.format(m,complexity_measures[m]))
+
+        if args.create_animation:
+            # now plot the evolution over time
+            vector_visualization.visualize_time_evolution(val_y, data=custom_hook_data, block_name='simple', save_to_directory='result-{}'.format(args.shooting_model))
 
