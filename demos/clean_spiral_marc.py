@@ -91,16 +91,6 @@ def setup_cmdline_parsing():
 
     return args
 
-def setup_random_seed(seed):
-    if seed==-1:
-        print('No seed was specified, leaving everthing at random. Use --seed to specify a seed if you want repeatable results.')
-    else:
-        print('Setting the random seed to {:}'.format(seed))
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-
-
 def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12, nr_of_checkpoints=None, checkpointing_time_interval=None):
 
     integrator_options = dict()
@@ -323,11 +313,11 @@ if __name__ == '__main__':
         nr_of_checkpoints = None
 
     # takes care of the GPU setup
+    utils.setup_random_seed(seed=args.seed)
     utils.setup_device(desired_gpu=args.gpu)
 
     use_distance_based_sampling = not args.disable_distance_based_sampling
 
-    setup_random_seed(seed=args.seed)
 
     integrator = setup_integrator(method=args.method, step_size=args.stepsize, use_adjoint=args.adjoint, nr_of_checkpoints=nr_of_checkpoints, checkpointing_time_interval=checkpointing_time_interval)
 

@@ -1,5 +1,15 @@
 import torch
 import numpy as np
+import random
+
+def setup_random_seed(seed):
+    if seed==-1:
+        print('No seed was specified, leaving everthing at random. Use --seed to specify a seed if you want repeatable results.')
+    else:
+        print('Setting the random seed to {:}'.format(seed))
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
 def setup_device(desired_gpu=None):
     print('Device setup:')
@@ -18,14 +28,21 @@ def setup_device(desired_gpu=None):
         
     return device
 
-def compute_number_of_parameters(model):
+def print_all_parameters(model):
+
+    print('\n Model parameters:\n')
+    for pn,pv in model.named_parameters():
+        print('{} = {}\n'.format(pn, pv))
+
+def compute_number_of_parameters(model, print_parameters=False):
 
     nr_of_fixed_parameters = 0
     nr_of_optimized_parameters = 0
     print('\nModel parameters:\n')
     print('-----------------')
     for pn, pv in model.named_parameters():
-        #print('{} = {}'.format(pn, pv))
+        if print_parameters:
+            print('{} = {}'.format(pn, pv))
         current_number_of_parameters = np.prod(list(pv.size()))
         print('{}: # of parameters = {}\n'.format(pn,current_number_of_parameters))
         if pv.requires_grad:
