@@ -12,10 +12,7 @@ import torchvision.transforms as transforms
 import random
 import neuro_shooting.resnet_fx as resnet
 #import neuro_shooting.res_net as resnet
-import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.utils as utils
-
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
@@ -44,19 +41,12 @@ parser.add_argument('--seed', required=False, type=int, default=1234,
 
 args = parser.parse_args()
 
-
+# random seeds
+utils.setup_random_seed(seed=args.seed)
 # takes care of the GPU setup
-#utils.setup_device(desired_gpu=args.gpu)
-
-
-print('Setting the random seed to {:}'.format(args.seed))
-random.seed(args.seed)
-torch.manual_seed(args.seed)
 utils.setup_device(desired_gpu=args.gpu)
-device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
 
-
-def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc=1.0):
+def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc=1.0, num_workers=0):
     if data_aug:
         transform_train = transforms.Compose([
             transforms.RandomCrop(28, padding=4),
@@ -73,17 +63,17 @@ def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc
 
     train_loader = DataLoader(
         datasets.MNIST(root='.data/fashionmnist', train=True, download=True, transform=transform_train), batch_size=batch_size,
-        shuffle=True, num_workers=2, drop_last=True
+        shuffle=True, num_workers=num_workers, drop_last=True
     )
 
     train_eval_loader = DataLoader(
         datasets.MNIST(root='.data/fashionmnist', train=True, download=True, transform=transform_test),
-        batch_size=test_batch_size, shuffle=False, num_workers=2, drop_last=True
+        batch_size=test_batch_size, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     test_loader = DataLoader(
         datasets.MNIST(root='.data/fashionmnist', train=False, download=True, transform=transform_test),
-        batch_size=test_batch_size, shuffle=False, num_workers=2, drop_last=True
+        batch_size=test_batch_size, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     return train_loader, test_loader, train_eval_loader
@@ -109,7 +99,6 @@ def one_hot(x, K):
 def accuracy(model, dataset_loader):
     total_correct = 0
     for x, y in dataset_loader:
-        x = x.to(device)
         y = one_hot(np.array(y.numpy()), 10)
 
         target_class = np.argmax(y, axis=1)
@@ -140,14 +129,12 @@ if __name__ == '__main__':
 
     # prepare the model (for first pass, and register parameters)
     images, labels = dataiter.next()
-    model.to(device)
-    images = images.to(device)
     model(images)
     model.parameters()
     print("number of parameters ",sum(p.numel() for p in model.parameters() if p.requires_grad))
 
     # define criterion and optimizer
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
 
     best_acc = 0
@@ -156,15 +143,13 @@ if __name__ == '__main__':
 
         optimizer.zero_grad()
         x, y = data_gen.__next__()
-        x = x.to(device)
-        y = y.to(device)
         logits = model(x)
         loss = criterion(logits, y)
 
         loss.backward()
         optimizer.step()
         if itr%30==0:
-            print(itr," loss ",loss)
+            print(itr," loss ",loss.item())
 
         if itr % batches_per_epoch == 0:
             #print(loss.data)

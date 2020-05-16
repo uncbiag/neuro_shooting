@@ -4,10 +4,16 @@ import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.striding_block as striding_block
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 import neuro_shooting.parameter_initialization as parameter_initialization
+import neuro_shooting.utils as utils
+import neuro_shooting.generic_integrator as generic_integrator
 
-gpu = 0
-device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
+utils.setup_device(desired_gpu=0)
 nonlinearity = 'tanh'
+
+# setup the integrator
+integrator_options = dict()
+integrator_options['step_size'] = 0.1
+integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',integrator_options=integrator_options)
 
 # Let's create some random input images of size 64x64, batch size 15
 sample_image_batch = torch.randn(15,1,64,64)
@@ -49,34 +55,21 @@ shooting_model_3_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_f
 shooting_model_3_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[2], nonlinearity=nonlinearity,nr_of_particles=None)
 
 
-shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1)
-shooting_block_1_2 = shooting_blocks.ShootingBlockBase(name='block1_2', shooting_integrand=shooting_model_1_2)
-shooting_block_1_3 = shooting_blocks.ShootingBlockBase(name='block1_3', shooting_integrand=shooting_model_1_3)
+shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1, integrator=integrator)
+shooting_block_1_2 = shooting_blocks.ShootingBlockBase(name='block1_2', shooting_integrand=shooting_model_1_2, integrator=integrator)
+shooting_block_1_3 = shooting_blocks.ShootingBlockBase(name='block1_3', shooting_integrand=shooting_model_1_3, integrator=integrator)
 
 striding_block_1 = striding_block.ShootingStridingBlock(stride=[2,2],stride_dims=[2,3])
 
-shooting_block_2_1 = shooting_blocks.ShootingBlockBase(name='block2_1', shooting_integrand=shooting_model_2_1)
-shooting_block_2_2 = shooting_blocks.ShootingBlockBase(name='block2_2', shooting_integrand=shooting_model_2_2)
-shooting_block_2_3 = shooting_blocks.ShootingBlockBase(name='block2_3', shooting_integrand=shooting_model_2_3)
+shooting_block_2_1 = shooting_blocks.ShootingBlockBase(name='block2_1', shooting_integrand=shooting_model_2_1, integrator=integrator)
+shooting_block_2_2 = shooting_blocks.ShootingBlockBase(name='block2_2', shooting_integrand=shooting_model_2_2, integrator=integrator)
+shooting_block_2_3 = shooting_blocks.ShootingBlockBase(name='block2_3', shooting_integrand=shooting_model_2_3, integrator=integrator)
 
 striding_block_2 = striding_block.ShootingStridingBlock(stride=[2,2],stride_dims=[2,3])
 
-shooting_block_3_1 = shooting_blocks.ShootingBlockBase(name='block3_1', shooting_integrand=shooting_model_3_1)
-shooting_block_3_2 = shooting_blocks.ShootingBlockBase(name='block3_2', shooting_integrand=shooting_model_3_2)
-shooting_block_3_3 = shooting_blocks.ShootingBlockBase(name='block3_3', shooting_integrand=shooting_model_3_3)
-
-shooting_block_1_1 = shooting_block_1_1.to(device)
-shooting_block_1_2 = shooting_block_1_2.to(device)
-shooting_block_1_3 = shooting_block_1_3.to(device)
-
-shooting_block_2_1 = shooting_block_2_1.to(device)
-shooting_block_2_2 = shooting_block_2_2.to(device)
-shooting_block_2_3 = shooting_block_2_3.to(device)
-
-shooting_block_3_1 = shooting_block_3_1.to(device)
-shooting_block_3_2 = shooting_block_3_2.to(device)
-shooting_block_3_3 = shooting_block_3_3.to(device)
-
+shooting_block_3_1 = shooting_blocks.ShootingBlockBase(name='block3_1', shooting_integrand=shooting_model_3_1, integrator=integrator)
+shooting_block_3_2 = shooting_blocks.ShootingBlockBase(name='block3_2', shooting_integrand=shooting_model_3_2, integrator=integrator)
+shooting_block_3_3 = shooting_blocks.ShootingBlockBase(name='block3_3', shooting_integrand=shooting_model_3_3, integrator=integrator)
 
 ret1_1,state_dicts1_1,costate_dicts1_1,data_dicts1_1 = shooting_block_1_1(x=sample_image_batch_multi_channel)
 ret1_2,state_dicts1_2,costate_dicts1_2,data_dicts1_2 = shooting_block_1_2(data_dict_of_dicts=data_dicts1_1,

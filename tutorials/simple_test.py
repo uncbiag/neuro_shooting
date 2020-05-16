@@ -1,12 +1,12 @@
 import torch
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
+import neuro_shooting.generic_integrator as generic_integrator
 
 # create some random input
 sample_batch = torch.randn(50,10,1,15) # time-points, batch-size, particle-dimension (channels), particle-size
 nonlinearity = 'relu'
 
-import neuro_shooting.generic_integrator as generic_integrator
 integrator_options = dict()
 integrator_options['step_size'] = 0.1
 integrator = generic_integrator.GenericIntegrator(integrator_library = 'odeint', integrator_name = 'rk4',integrator_options=integrator_options)
