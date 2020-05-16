@@ -123,12 +123,13 @@ def accuracy(model, dataset_loader):
 if __name__ == '__main__':
 
     ## define the model
-    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[1],
+    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[4],
                  downsampling_stride=2,
                  nonlinearity='relu',
                  particle_sizes=[[4,4]],
                  nr_of_particles=10,
-                 nr_of_classes=10,parameter_weight=1.0,inflation_factor=5)
+                 nr_of_classes=10,parameter_weight=1.0,inflation_factor=5,optimize_over_data_initial_conditions=True,
+                                                                  optimize_over_data_initial_conditions_type="linear")
 
     train_loader, test_loader, train_eval_loader = get_mnist_loaders(args.data_aug, args.batch_size, args.test_batch_size)
 

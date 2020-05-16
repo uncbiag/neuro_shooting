@@ -1541,7 +1541,8 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
 class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,inflation_factor = 5,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,inflation_factor = 5,optimize_over_data_initial_conditions=False,
+                                                                  optimize_over_data_initial_conditions_type="linear",
                 *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDownConv2D, self).__init__(in_features=in_features,
@@ -1553,6 +1554,8 @@ class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterC
                                                                      particle_size=particle_size,
                                                                      parameter_weight=parameter_weight,
                                                                      inflation_factor=5,
+                                                                     optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
+                                                                     optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type,
                                                                      *args, **kwargs)
 
         self.filter_size = filter_size
