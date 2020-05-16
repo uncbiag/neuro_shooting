@@ -29,11 +29,9 @@ class RemoveParameters(object):
             if self._parameters[k] is not None:
                 #new_parameter_dict[k] = None # torch.zeros_like(self._parameters[k],requires_grad=True)
                 #new_parameter_dict[k] = torch.zeros_like(self._parameters[k],requires_grad=True)
-
                 # for now keep the original parameter initialization
                 new_parameter_dict[k] = (self._parameters[k]).detach().clone()
                 new_parameter_dict[k].requires_grad=True
-
             # # gets rid of the variables like self.bias or self.weight (so there is no confusion afterwards)
             # setattr(self,k,None)
             # delattr(self,k)

@@ -23,7 +23,9 @@ class BasicResNet(nn.Module):
                  nr_of_particles=10,
                  nr_of_classes=10,
                  parameter_weight=1.0,
-                 inflation_factor = 2
+                 inflation_factor = 2,
+                 optimize_over_data_initial_conditions=False,
+                 optimize_over_data_initial_conditions_type="linear"
                  ):
 
         super(BasicResNet, self).__init__()
@@ -35,7 +37,8 @@ class BasicResNet(nn.Module):
         self.nonlinearity = nonlinearity
         self.inflation_factor = inflation_factor
         self.nl,_ = ad.get_nonlinearity(nonlinearity=nonlinearity)
-
+        self.optimize_over_data_initial_conditions = optimize_over_data_initial_conditions
+        self.optimize_over_data_initial_conditions_type = optimize_over_data_initial_conditions_type
         self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
         self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.0)
 
@@ -83,7 +86,8 @@ class BasicResNet(nn.Module):
                                                  costate_initializer=self._costate_initializer,
                                                  nr_of_particles=nr_of_particles,
                                                  particle_size=particle_size,
-                                                 particle_dimension=particle_dimension,parameter_weight=self.pw,inflation_factor = self.inflation_factor)
+                                                 particle_dimension=particle_dimension,parameter_weight=self.pw,inflation_factor = self.inflation_factor,optimize_over_data_initial_conditions=self.optimize_over_data_initial_conditions,
+            optimize_over_data_initial_conditions_type=self.optimize_over_data_initial_conditions_type)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name=name, shooting_integrand=shooting_model,parameter_weight = 0.01)
 

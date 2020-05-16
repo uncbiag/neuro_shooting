@@ -1541,7 +1541,8 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
 class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
-                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,inflation_factor = 5,
+                nr_of_particles=10, particle_dimension=1, particle_size=2, filter_size=3, parameter_weight=None,inflation_factor = 5,optimize_over_data_initial_conditions=False,
+                                                                  optimize_over_data_initial_conditions_type="linear",
                 *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDownConv2D, self).__init__(in_features=in_features,
@@ -1553,11 +1554,39 @@ class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterC
                                                                      particle_size=particle_size,
                                                                      parameter_weight=parameter_weight,
                                                                      inflation_factor=5,
+                                                                     optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
+                                                                     optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type,
                                                                      *args, **kwargs)
 
         self.filter_size = filter_size
         self.enlargement_dimensions = [2,3]
         self.inflation_factor = inflation_factor
+
+        if self.optimize_over_data_initial_conditions:
+
+            supported_initial_condition_optimization_modes = ['linear', 'mini_nn']
+            if self.optimize_over_data_initial_conditions_type.lower() not in supported_initial_condition_optimization_modes:
+                raise ValueError('Requested mode {} which is not one of the options {}'.format(
+                    self.optimize_over_data_initial_conditions_type, supported_initial_condition_optimization_modes))
+
+            #if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
+            #    self.data_q20 = Parameter(torch.zeros([nr_of_particles, particle_dimension * inflation_factor,*particle_size]))
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                # self.simple_init = nn.Linear(2,2*inflation_factor)
+                # TODO: shouldn't hard code this
+                self.simple_init = nn.Conv2d(particle_dimension, particle_dimension*inflation_factor,kernel_size = 1)
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                # self.init_l1 = nn.Linear(2, 10)
+                # TODO: shouldn't hard code this
+                self.init_l1 = nn.Conv2d(particle_dimension, particle_dimension*inflation_factor,kernel_size = 1)
+                self.init_l2 = nn.Conv2d(particle_dimension*inflation_factor, particle_dimension*inflation_factor,kernel_size = 2)
+
+            else:
+                raise ValueError(
+                    'Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))
+        else:
+            self.data_q20 = None
+
 
     def create_initial_state_parameters(self,set_to_zero, *args, **kwargs):
         # creates these as a sorted dictionary and returns it (need to be in the same order!!)
@@ -1603,12 +1632,38 @@ class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterC
         # Initial data dict from given data tensor
         data_dict = SortedDict()
         data_dict['q1'] = x
-        #data_dict['q2'] = torch.zeros_like(x)
-        z = torch.zeros_like(x)
-        sz = [1] * len(z.shape)
-        sz[1] = sz[1] * self.inflation_factor
+        if self.optimize_over_data_initial_conditions:
 
-        data_dict['q2'] = z.repeat(sz)
+            if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
+                # just repeat it for all the data
+                szq20 = list(self.data_q20.shape)
+                szx = list(x.shape)
+                dim_diff = len(szx) - len(szq20)
+                data_q20 = self.data_q20.view([1] * dim_diff + szq20)
+                data_q20_replicated = data_q20.expand(szx[0:dim_diff] + [-1] * len(szq20))
+
+                data_dict['q2'] = data_q20_replicated
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'linear':
+                q20 = self.simple_init(x)
+                data_dict['q2'] = q20
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                # predict the initial condition based on a simple neural network
+                q20 = self.init_l2(self.nl(self.init_l1(x)))
+                data_dict['q2'] = q20
+
+        else:
+            # standard approach of initializing with zero
+            z = torch.zeros_like(x)
+            sz = [1] * len(z.shape)
+            sz[1] = sz[1] * self.inflation_factor
+
+            data_dict['q2'] = z.repeat(sz)
+
+
+
+
+        #data_dict['q2'] = torch.zeros_like(x)
+
 
         return data_dict
 
