@@ -8,20 +8,24 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-import random
 
 import neuro_shooting.shooting_models as shooting_models
+import neuro_shooting.shooting_blocks as shooting_blocks
+import neuro_shooting.generic_integrator as generic_integrator
+import neuro_shooting.parameter_initialization as parameter_initialization
+
+import neuro_shooting.utils as utils
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
 parser.add_argument('--tol', type=float, default=1e-3)
 parser.add_argument('--adjoint', type=eval, default=False, choices=[True, False])
 parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
-parser.add_argument('--step_size', type=float, default=None, help='Step size for the integrator (if not adaptive).')
+parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
 parser.add_argument('--max_num_steps', type=int, default=None, help='Maximum number of steps (for dopri5).')
 
 parser.add_argument('--particle_number', type=int, default=10, help='Number of particles for shooting.')
-parser.add_argument('--particle_size', type=int, default=6, help='Particle size for shooting.')
+parser.add_argument('--particle_size', type=int, default=3, help='Particle size for shooting.')
 
 parser.add_argument('--downsampling-method', type=str, default='conv', choices=['conv', 'res'])
 parser.add_argument('--nepochs', type=int, default=160)
@@ -34,16 +38,12 @@ parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
 parser.add_argument('--gpu', type=int, default=1)
 
-parser.add_argument('--seed', required=False, type=int, default=1234,
-                    help='Sets the random seed which affects data shuffling')
+parser.add_argument('--seed', required=False, type=int, default=1234, help='Sets the random seed which affects data shuffling')
 
 args = parser.parse_args()
 
-print('Setting the random seed to {:}'.format(args.seed))
-random.seed(args.seed)
-torch.manual_seed(args.seed)
-
-device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+utils.setup_random_seed(seed=args.seed)
+utils.setup_device(desired_gpu=args.gpu)
 
 if args.adjoint:
     from torchdiffeq import odeint_adjoint as odeint
@@ -183,7 +183,7 @@ class RunningAverageMeter(object):
         self.val = val
 
 
-def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc=1.0):
+def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc=1.0, num_workers=0):
     if data_aug:
         transform_train = transforms.Compose([
             transforms.RandomCrop(28, padding=4),
@@ -200,17 +200,17 @@ def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc
 
     train_loader = DataLoader(
         datasets.MNIST(root='.data/mnist', train=True, download=True, transform=transform_train), batch_size=batch_size,
-        shuffle=True, num_workers=2, drop_last=True
+        shuffle=True, num_workers=num_workers, drop_last=True
     )
 
     train_eval_loader = DataLoader(
         datasets.MNIST(root='.data/mnist', train=True, download=True, transform=transform_test),
-        batch_size=test_batch_size, shuffle=False, num_workers=2, drop_last=True
+        batch_size=test_batch_size, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     test_loader = DataLoader(
         datasets.MNIST(root='.data/mnist', train=False, download=True, transform=transform_test),
-        batch_size=test_batch_size, shuffle=False, num_workers=2, drop_last=True
+        batch_size=test_batch_size, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     return train_loader, test_loader, train_eval_loader
@@ -249,7 +249,6 @@ def one_hot(x, K):
 def accuracy(model, dataset_loader):
     total_correct = 0
     for x, y in dataset_loader:
-        x = x.to(device)
         y = one_hot(np.array(y.numpy()), 10)
 
         target_class = np.argmax(y, axis=1)
@@ -295,6 +294,16 @@ def get_logger(logpath, filepath=None, package_files=[], displaying=True, saving
 
     return logger
 
+class ExtractFirstOutput(nn.Module):
+
+    def __init__(self, shooting_block):
+        super(ExtractFirstOutput, self).__init__()
+        self.shooting_block = shooting_block
+
+    def forward(self,x):
+        ret_all = self.shooting_block(x)
+        return ret_all[0]
+
 
 if __name__ == '__main__':
 
@@ -325,23 +334,43 @@ if __name__ == '__main__':
     if is_odenet:
         feature_layers = [ODEBlock(ODEfunc(64))]
     elif is_shootingnet:
-        feature_layers = [shooting_models.ShootingModule(shooting_models.AutoShootingIntegrandModelSimpleConv2D(name = "test",channel_number=64,
-                                                                                                                particle_size=args.particle_size,
-                                                                                                                particle_number=args.particle_number),
-                                                         method=args.method,
-                                                         max_num_steps=args.max_num_steps,
-                                                         step_size=args.step_size)]
+        # name=name, shooting_integrand=shooting_model, integrator=self._integrator)
+
+        # setup the integrator
+        integrator_options = dict()
+        integrator_options['step_size'] = args.stepsize
+        integrator = generic_integrator.GenericIntegrator(integrator_library='odeint', integrator_name=args.method,
+                                                          integrator_options=integrator_options)
+
+        # setup the initializers
+        state_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(
+            only_random_initialization=True, random_initialization_magnitude=0.5)
+        costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(
+            only_random_initialization=True, random_initialization_magnitude=0.5)
+
+        shooting_model = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=64,
+                                                                                nonlinearity='relu',
+                                                                                nr_of_particles=args.particle_number,
+                                                                                state_initializer=state_initializer,
+                                                                                costate_initializer=costate_initializer,
+                                                                                particle_size=[args.particle_size,args.particle_size],
+                                                                                particle_dimension=64)
+
+        shooting_block = ExtractFirstOutput(shooting_blocks.ShootingBlockBase(name='test_block', shooting_integrand=shooting_model, integrator=integrator))
+
+        feature_layers = [shooting_block]
+
     else:
         feature_layers = [ResBlock(64, 64) for _ in range(6)]
 
     fc_layers = [norm(64), nn.ReLU(inplace=True), nn.AdaptiveAvgPool2d((1, 1)), Flatten(), nn.Linear(64, 10)]
 
-    model = nn.Sequential(*downsampling_layers, *feature_layers, *fc_layers).to(device)
+    model = nn.Sequential(*downsampling_layers, *feature_layers, *fc_layers)
 
     logger.info(model)
     logger.info('Number of parameters: {}'.format(count_parameters(model)))
 
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.CrossEntropyLoss()
 
     train_loader, test_loader, train_eval_loader = get_mnist_loaders(
         args.data_aug, args.batch_size, args.test_batch_size
@@ -370,8 +399,6 @@ if __name__ == '__main__':
 
         optimizer.zero_grad()
         x, y = data_gen.__next__()
-        x = x.to(device)
-        y = y.to(device)
         logits = model(x)
         loss = criterion(logits, y)
 
