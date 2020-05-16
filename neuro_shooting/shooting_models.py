@@ -1564,22 +1564,22 @@ class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterC
 
         if self.optimize_over_data_initial_conditions:
 
-            supported_initial_condition_optimization_modes = ['direct', 'linear', 'mini_nn']
+            supported_initial_condition_optimization_modes = ['linear', 'mini_nn']
             if self.optimize_over_data_initial_conditions_type.lower() not in supported_initial_condition_optimization_modes:
                 raise ValueError('Requested mode {} which is not one of the options {}'.format(
                     self.optimize_over_data_initial_conditions_type, supported_initial_condition_optimization_modes))
 
-            if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
-                self.data_q20 = Parameter(torch.zeros([particle_dimension, particle_size * inflation_factor]))
+            #if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
+            #    self.data_q20 = Parameter(torch.zeros([nr_of_particles, particle_dimension * inflation_factor,*particle_size]))
             elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
                 # self.simple_init = nn.Linear(2,2*inflation_factor)
                 # TODO: shouldn't hard code this
-                self.simple_init = nn.Linear(in_features, in_features*inflation_factor)
+                self.simple_init = nn.Conv2d(particle_dimension, particle_dimension*inflation_factor,kernel_size = 1)
             elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
                 # self.init_l1 = nn.Linear(2, 10)
                 # TODO: shouldn't hard code this
-                self.init_l1 = nn.Linear(in_features, 10)
-                self.init_l2 = nn.Linear(10, in_features*inflation_factor)
+                self.init_l1 = nn.Conv2d(particle_dimension, particle_dimension*inflation_factor,kernel_size = 1)
+                self.init_l2 = nn.Conv2d(particle_dimension*inflation_factor, particle_dimension*inflation_factor,kernel_size = 2)
 
             else:
                 raise ValueError(

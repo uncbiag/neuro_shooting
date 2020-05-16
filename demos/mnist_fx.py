@@ -31,7 +31,7 @@ parser.add_argument('--particle_size', type=int, default=6, help='Particle size 
 parser.add_argument('--downsampling-method', type=str, default='res', choices=['conv', 'res'])
 parser.add_argument('--nepochs', type=int, default=160)
 parser.add_argument('--data_aug', type=eval, default=True, choices=[True, False])
-parser.add_argument('--lr', type=float, default=0.1)
+parser.add_argument('--lr', type=float, default=0.2)
 parser.add_argument('--batch_size', type=int, default=128)
 parser.add_argument('--test_batch_size', type=int, default=1000)
 
@@ -123,11 +123,11 @@ def accuracy(model, dataset_loader):
 if __name__ == '__main__':
 
     ## define the model
-    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[4],
+    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[1],
                  downsampling_stride=2,
                  nonlinearity='relu',
                  particle_sizes=[[4,4]],
-                 nr_of_particles=10,
+                 nr_of_particles=3,
                  nr_of_classes=10,parameter_weight=1.0,inflation_factor=5,optimize_over_data_initial_conditions=True,
                                                                   optimize_over_data_initial_conditions_type="linear")
 
