@@ -37,7 +37,7 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
-parser.add_argument('--gpu', type=int, default=2)
+parser.add_argument('--gpu', type=int, default=8)
 
 parser.add_argument('--seed', required=False, type=int, default=1234,
                     help='Sets the random seed which affects data shuffling')
@@ -123,12 +123,12 @@ def accuracy(model, dataset_loader):
 if __name__ == '__main__':
 
     ## define the model
-    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[32],
+    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[1],
                  downsampling_stride=2,
                  nonlinearity='relu',
                  particle_sizes=[[4,4]],
-                 nr_of_particles=30,
-                 nr_of_classes=10,parameter_weight=1.0,inflation_factor=2)
+                 nr_of_particles=10,
+                 nr_of_classes=10,parameter_weight=1.0,inflation_factor=5)
 
     train_loader, test_loader, train_eval_loader = get_mnist_loaders(args.data_aug, args.batch_size, args.test_batch_size)
 

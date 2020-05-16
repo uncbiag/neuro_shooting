@@ -138,7 +138,6 @@ class VectorEvolutionSampleBatchParameterInitializer(VectorEvolutionParameterIni
         size = tuple([nr_of_particles,particle_dimension,particle_size])
         return nn.Parameter(self.sample_batch + self.random_initialization_magnitude*torch.randn(size))
 
-
 class ConvolutionEvolutionParameterInitializerBase(ParameterInitializer):
     def __init__(self, only_random_initialization=True, random_initialization_magnitude=0.5,sample_batch=None):
         super(ConvolutionEvolutionParameterInitializerBase, self).__init__(only_random_initialization=only_random_initialization,
