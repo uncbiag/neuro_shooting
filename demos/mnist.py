@@ -36,7 +36,7 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
-parser.add_argument('--gpu', type=int, default=1)
+parser.add_argument('--gpu', type=int, default=0)
 
 parser.add_argument('--seed', required=False, type=int, default=1234, help='Sets the random seed which affects data shuffling')
 
@@ -249,10 +249,10 @@ def one_hot(x, K):
 def accuracy(model, dataset_loader):
     total_correct = 0
     for x, y in dataset_loader:
-        y = one_hot(np.array(y.numpy()), 10)
+        y = one_hot(np.array(y.cpu().detach().numpy()), 10)
 
         target_class = np.argmax(y, axis=1)
-        predicted_class = np.argmax(model(x).cpu().detach().numpy(), axis=1)
+        predicted_class = np.argmax(model(x.to(device)).cpu().detach().numpy(), axis=1)
         total_correct += np.sum(predicted_class == target_class)
     return total_correct / len(dataset_loader.dataset)
 
