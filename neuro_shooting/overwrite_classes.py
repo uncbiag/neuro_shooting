@@ -42,10 +42,9 @@ class RemoveParameters(object):
         self._parameter_dict = new_parameter_dict
 
         # if there is a global weight specified, associate it with all the parameters
-        if self._weight is not None:
-            self._parameter_weight_dict = SortedDict()
-            for k in self._parameter_dict:
-                self._parameter_weight_dict[k] = self._weight
+        self._parameter_weight_dict = SortedDict()
+        for k in self._parameter_dict:
+            self._parameter_weight_dict[k] = self._weight
 
     def add_weight(self,parameter_name,parameter_weight):
         if parameter_name not in self._parameter_dict:

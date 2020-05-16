@@ -7,6 +7,16 @@ import time
 import random
 import argparse
 import numpy as np
+import torch
+
+try:
+    from tqdm import trange
+    has_TQDM = True
+    range_command = trange
+except:
+    has_TQDM = False
+    print('If you want to display progress bars install TQDM; conda install tqdm')
+    range_command = range
 
 from collections import OrderedDict
 from collections import defaultdict
@@ -21,6 +31,9 @@ import neuro_shooting.generic_integrator as gi
 import neuro_shooting.parameter_initialization as pi
 import neuro_shooting.shooting_hooks as sh
 import neuro_shooting.vector_visualization as vector_visualization
+
+import neuro_shooting.validation_measures as validation_measures
+import neuro_shooting.utils as utils
 
 import simple_discrete_neural_networks as sdnn
 
@@ -44,15 +57,23 @@ def setup_cmdline_parsing():
     parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
 
     # shooting model parameters
-    parser.add_argument('--shooting_model', type=str, default='universal', choices=["universal",'dampened_updown','simple', '2nd_order', 'updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','dampened_updown','simple', '2nd_order', 'updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
-    parser.add_argument('--nr_of_particles', type=int, default=3, help='Number of particles to parameterize the initial condition')
-    parser.add_argument('--inflation_factor', type=int, default=5, help='Multiplier for state dimension for updown shooting model types')
+    parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
+    parser.add_argument('--norm_weight', type=float, default=0.01, help='Weight for the similarity measure')
+    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--inflation_factor', type=int, default=10, help='Multiplier for state dimension for updown shooting model types')
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
-    parser.add_argument('--use_parameter_penalty_energy', action='store_true', default=False)
+    parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
+
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
+
+    parser.add_argument('--custom_parameter_freezing', action='store_true', default=False,
+                        help='Enable custom code for parameter freezing -- development mode')
+    parser.add_argument('--custom_parameter_initialization', action='store_true', default=False,
+                        help='Enable custom code for parameter initialization -- development mode')
 
     # non-shooting networks implemented
     parser.add_argument('--nr_of_layers', type=int, default=30, help='Number of layers for the non-shooting networks')
@@ -86,30 +107,6 @@ def get_uniform_sample_batch(nr_of_samples=10):
 
     return sample_batch_in, sample_batch_out
 
-def print_all_parameters(model):
-
-    print('\n Model parameters:\n')
-    for pn,pv in model.named_parameters():
-        print('{} = {}\n'.format(pn, pv))
-
-def compute_number_of_parameters_and_print_all_parameters(model):
-
-    nr_of_fixed_parameters = 0
-    nr_of_optimized_parameters = 0
-    print('\n Model parameters:\n')
-    for pn, pv in model.named_parameters():
-        print('{} = {}'.format(pn, pv))
-        current_number_of_parameters = np.prod(list(pv.size()))
-        print('# of parameters = {}\n'.format(current_number_of_parameters))
-        if pv.requires_grad:
-            nr_of_optimized_parameters += current_number_of_parameters
-        else:
-            nr_of_fixed_parameters += current_number_of_parameters
-
-    print('\n')
-    print('Number of fixed parameters = {}'.format(nr_of_fixed_parameters))
-    print('Number of optimized parameters = {}'.format(nr_of_optimized_parameters))
-    print('Overall number of parameters = {}'.format(nr_of_fixed_parameters + nr_of_optimized_parameters))
 
 def collect_and_sort_parameter_values_across_layers(model):
 
@@ -247,15 +244,9 @@ if __name__ == '__main__':
     if args.verbose:
         print(args)
 
-    seed = args.seed
-    print('Setting the random seed to {:}'.format(seed))
-
-    import torch
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-
-    device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
+    # takes care of the GPU setup
+    utils.setup_random_seed(seed=args.seed)
+    utils.setup_device(desired_gpu=args.gpu)
 
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
@@ -303,8 +294,6 @@ if __name__ == '__main__':
         use_particle_free_rnn_mode=use_particle_free_rnn_mode,
         integrator_options = {'step_size': args.stepsize}
     )
-
-    #sblock.to(device)
 
     use_shooting = False
     if args.use_rnn:
@@ -360,12 +349,23 @@ if __name__ == '__main__':
 
         sblock(x=sample_batch_in)
 
-        # do some parameter freezing
-        for pn,pp in sblock.named_parameters():
-            if pn=='q1':
-                # freeze the locations
-                #pp.requires_grad = False
-                pass
+        # custom initialization
+        if args.custom_parameter_initialization:
+            # first get the state dictionary of the shooting block which contains all parameters
+            ss_sd = sblock.state_dict()
+
+            # get initial positions on the trajectory (to place the particles there)
+            init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles)
+            with torch.no_grad():
+                ss_sd['q1'].copy_(init_q1)
+
+            # init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
+
+        uses_particles = not args.use_particle_free_rnn_mode
+        if uses_particles:
+            if args.custom_parameter_freezing:
+                utils.freeze_parameters(sblock, ['q1'])
+
         optimizer = optim.Adam(sblock.parameters(), lr=1e-2)
 
     # fig = plt.figure(figsize=(12, 4), facecolor='white')
@@ -379,7 +379,7 @@ if __name__ == '__main__':
     else:
         max_iter = args.niters
 
-    for itr in range(1, max_iter + 1):
+    for itr in range_command(1, max_iter + 1):
 
         # get current batch data
         if use_fixed_sample_batch:
@@ -411,9 +411,16 @@ if __name__ == '__main__':
             pred_y, _, _, _ = sblock(x=batch_in)
 
         if use_shooting:
-            loss = torch.mean((pred_y - batch_out)**2)
-            if args.use_parameter_penalty_energy:
-                loss = loss + sblock.get_norm_penalty()
+            sim_loss = args.sim_weight*torch.mean((pred_y - batch_out)**2)
+
+            norm_penalty = sblock.get_norm_penalty()
+
+            if args.do_not_use_parameter_penalty_energy:
+                norm_loss = torch.tensor([0])
+            else:
+                norm_loss = args.norm_weight * norm_penalty
+            loss = sim_loss + norm_loss
+
         else:
             loss = torch.mean((pred_y - batch_out)**2)
 
@@ -442,20 +449,24 @@ if __name__ == '__main__':
             plt.draw()
             #plt.pause(0.001)
             plt.show()
-            print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+
+            if use_shooting:
+                print('\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
+            else:
+                print('Iter {:04d} | Loss {:.6f}'.format(itr, loss.item()))
 
     # now print the paramerers
     if not use_shooting:
         if args.use_neural_ode:
-            compute_number_of_parameters_and_print_all_parameters(func)
+            utils.compute_number_of_parameters(func,print_parameters=True)
         else:
-            compute_number_of_parameters_and_print_all_parameters(simple_resnet)
+            utils.compute_number_of_parameters(simple_resnet,print_parameters=True)
 
             if args.use_double_resnet:
                 collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
-        #print_all_parameters(sblock)
-        compute_number_of_parameters_and_print_all_parameters(sblock)
+        #utils.print_all_parameters(sblock)
+        utils.compute_number_of_parameters(sblock,print_parameters=True)
 
 
     if use_shooting:

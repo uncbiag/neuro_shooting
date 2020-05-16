@@ -324,7 +324,10 @@ class ShootingIntegrandBase(nn.Module):
                 if k not in current_weights:
                     cpar_penalty = (cpar ** 2).sum()
                 else:
-                    cpar_penalty = current_weights[k]*(cpar**2).sum()
+                    if current_weights[k] is None:
+                        cpar_penalty = (cpar ** 2).sum()
+                    else:
+                        cpar_penalty = current_weights[k]*(cpar**2).sum()
 
                 kinetic_energy = kinetic_energy + cpar_penalty
 
@@ -571,7 +574,10 @@ class ShootingIntegrandBase(nn.Module):
                 if k not in current_weights:
                     current_pars[k] = current_pars_from[f]
                 else:
-                    current_pars[k] = current_pars_from[f]/current_weights[k]
+                    if current_weights[k] is None:
+                        current_pars[k] = current_pars_from[f]
+                    else:
+                        current_pars[k] = current_pars_from[f]/current_weights[k]
 
         return parameter_objects
 

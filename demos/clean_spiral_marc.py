@@ -91,16 +91,6 @@ def setup_cmdline_parsing():
 
     return args
 
-def setup_random_seed(seed):
-    if seed==-1:
-        print('No seed was specified, leaving everthing at random. Use --seed to specify a seed if you want repeatable results.')
-    else:
-        print('Setting the random seed to {:}'.format(seed))
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-
-
 def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12, nr_of_checkpoints=None, checkpointing_time_interval=None):
 
     integrator_options = dict()
@@ -161,7 +151,6 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
     smodel.set_state_initializer(state_initializer=par_initializer)
     shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel,
                                                        use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
-    shooting_block = shooting_block
 
     return shooting_block
 
@@ -323,11 +312,11 @@ if __name__ == '__main__':
         nr_of_checkpoints = None
 
     # takes care of the GPU setup
+    utils.setup_random_seed(seed=args.seed)
     utils.setup_device(desired_gpu=args.gpu)
 
     use_distance_based_sampling = not args.disable_distance_based_sampling
 
-    setup_random_seed(seed=args.seed)
 
     integrator = setup_integrator(method=args.method, step_size=args.stepsize, use_adjoint=args.adjoint, nr_of_checkpoints=nr_of_checkpoints, checkpointing_time_interval=checkpointing_time_interval)
 
