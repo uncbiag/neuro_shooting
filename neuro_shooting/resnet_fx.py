@@ -78,7 +78,8 @@ class BasicResNet(nn.Module):
         if only_pass_through:
             shooting_model = self.shooting_model(in_features=nr_of_channels,
                                                  nonlinearity=self.nonlinearity,
-                                                 nr_of_particles=None)
+                                                 nr_of_particles=nr_of_particles,
+                                                 is_pass_through=True)
         else:
             shooting_model = self.shooting_model(in_features=nr_of_channels,
                                                  nonlinearity=self.nonlinearity,

@@ -35,8 +35,8 @@ shooting_model_1_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_f
                                                                             state_initializer=state_initializer,
                                                                             costate_initializer=costate_initializer,
                                                                             nr_of_particles=nr_of_particles,particle_size=particle_sizes[0],particle_dimension=nr_of_features[0])
-shooting_model_1_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,nr_of_particles=None)
-shooting_model_1_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,nr_of_particles=None)
+shooting_model_1_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,nr_of_particles=nr_of_particles,is_pass_through=True)
+shooting_model_1_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[0], nonlinearity=nonlinearity,nr_of_particles=nr_of_particles,is_pass_through=True)
 
 
 shooting_model_2_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[1], nonlinearity=nonlinearity,
@@ -44,8 +44,8 @@ shooting_model_2_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_f
                                                                             costate_initializer=costate_initializer,
                                                                             keep_initial_state_parameters_at_zero=True,
                                                                             nr_of_particles=nr_of_particles,particle_size=particle_sizes[1],particle_dimension=nr_of_features[1]-nr_of_features[0])
-shooting_model_2_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[1], nonlinearity=nonlinearity,nr_of_particles=None)
-shooting_model_2_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[1], nonlinearity=nonlinearity,nr_of_particles=None)
+shooting_model_2_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[1], nonlinearity=nonlinearity,nr_of_particles=nr_of_particles,is_pass_through=True)
+shooting_model_2_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[1], nonlinearity=nonlinearity,nr_of_particles=nr_of_particles,is_pass_through=True)
 
 
 shooting_model_3_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[2], nonlinearity=nonlinearity,
@@ -53,8 +53,8 @@ shooting_model_3_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_f
                                                                             costate_initializer=costate_initializer,
                                                                             keep_initial_state_parameters_at_zero=True,
                                                                             nr_of_particles=nr_of_particles,particle_size=particle_sizes[2],particle_dimension=nr_of_features[2]-nr_of_features[1])
-shooting_model_3_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[2], nonlinearity=nonlinearity,nr_of_particles=None)
-shooting_model_3_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[2], nonlinearity=nonlinearity,nr_of_particles=None)
+shooting_model_3_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[2], nonlinearity=nonlinearity,nr_of_particles=nr_of_particles,is_pass_through=True)
+shooting_model_3_3 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=nr_of_features[2], nonlinearity=nonlinearity,nr_of_particles=nr_of_particles,is_pass_through=True)
 
 
 shooting_block_1_1 = shooting_blocks.ShootingBlockBase(name='block1_1', shooting_integrand=shooting_model_1_1, integrator=integrator)

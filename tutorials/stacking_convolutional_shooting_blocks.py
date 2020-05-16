@@ -14,7 +14,7 @@ sample_batch = torch.randn(15,10,25,25)
 
 shooting_model_1 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=10, nonlinearity=nonlinearity,nr_of_particles=10,particle_size=[7,7],particle_dimension=10)
 # this is simply pass through (as no new particles are being created)
-shooting_model_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=10, nonlinearity=nonlinearity,nr_of_particles=None)
+shooting_model_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_features=10, nonlinearity=nonlinearity,nr_of_particles=10,is_pass_through=True)
 
 shooting_block_1 = shooting_blocks.ShootingBlockBase(name='block1', shooting_integrand=shooting_model_1)
 shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2)

@@ -81,8 +81,7 @@ nr_of_classes = 2
 
 net = res_net.BasicResNet(nr_of_image_channels=1,
                           layer_channels=layer_channels,
-                          #nr_of_blocks_per_layer=[2,2],
-                          nr_of_blocks_per_layer=[1,1],
+                          nr_of_blocks_per_layer=[2,2],
                           downsampling_stride=downsampling_stride,
                           particle_sizes=particle_sizes,
                           nr_of_particles=nr_of_particles,

@@ -21,6 +21,7 @@ class ShootingIntegrandBase(nn.Module):
                  optimize_over_data_initial_conditions=False,
                  optimize_over_data_initial_conditions_type='linear',
                  use_rnn_mode=False,
+                 is_pass_through=False,
                  *args, **kwargs):
         """
         Constructor
@@ -28,6 +29,7 @@ class ShootingIntegrandBase(nn.Module):
         :param transpose_state_when_forward: if set to true states get transposed (1,2) at the beginng and end of processing
         :param parameter_weight: weight that gets associated to the kinetic energy for the parameters
         :param use_analytic_solution: if True, then the evolution euqations are not being inferred via autograd, but need to be defined as part of the model (for costate evolution and parameter computation)
+        :param is_pass_through: Should be set to True if this block simply continues integration (from a previous block) and no new parameters are created
         """
         super(ShootingIntegrandBase, self).__init__()
 
@@ -66,6 +68,9 @@ class ShootingIntegrandBase(nn.Module):
         """If called with autodiff option, i.e., use_analytic_solution=False, checks upon first call if an analytic solution has been specified"""
 
         self.transpose_state_when_forward = transpose_state_when_forward
+
+        # pass through
+        self.is_pass_through = is_pass_through
 
         # norm penalty
         self.current_norm_penalty = None
@@ -421,7 +426,7 @@ class ShootingIntegrandBase(nn.Module):
 
     def create_initial_state_parameters_if_needed(self, set_to_zero, *argv, **kwargs):
 
-        if self.nr_of_particles is None or self.particle_size is None or self.particle_dimension is None:
+        if self.nr_of_particles is None or self.particle_size is None or self.particle_dimension is None or self.is_pass_through:
             return None
         else:
             return self.create_initial_state_parameters(set_to_zero=set_to_zero, *argv, **kwargs)
