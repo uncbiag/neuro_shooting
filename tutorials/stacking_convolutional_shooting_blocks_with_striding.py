@@ -2,9 +2,11 @@ import torch
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.striding_block as striding_block
+import neuro_shooting.utils as utils
 
-gpu = 0
-device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
+utils.setup_random_seed(seed=1234)
+utils.setup_device(desired_gpu=0)
+
 nonlinearity = 'tanh'
 
 # create some random input
@@ -21,9 +23,6 @@ shooting_model_2 = shooting_models.AutoShootingIntegrandModelSimpleConv2D(in_fea
 shooting_block_1 = shooting_blocks.ShootingBlockBase(name='block1', shooting_integrand=shooting_model_1)
 shooting_block_2 = shooting_blocks.ShootingBlockBase(name='block2', shooting_integrand=shooting_model_2)
 
-shooting_block_1 = shooting_block_1.to(device)
-shooting_block_2 = shooting_block_2.to(device)
-
 ret1,state_dicts1,costate_dicts1,data_dicts1 = shooting_block_1(x=sample_batch)
 
 striding = striding_block.ShootingStridingBlock(stride=[2,2],stride_dims=[2,3])
@@ -36,5 +35,5 @@ ret2,state_dicts2,costate_dicts2,data_dicts2 = shooting_block_2(data_dict_of_dic
                                                                pass_through_costate_dict_of_dicts=s_costate_dicts)
 
 ret1.sum() # there is only one value, so it returns a tensor
-dummy_loss = ret2['q1'].sum()
+dummy_loss = ret2.sum()
 dummy_loss.backward()

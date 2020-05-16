@@ -2,6 +2,10 @@ import torch
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
+import neuro_shooting.utils as utils
+
+utils.setup_random_seed(seed=1234)
+utils.setup_device(desired_gpu=0)
 
 # create some random input
 sample_batch = torch.randn(50,10,1,15) # time-points, batch-size, particle-dimension (channels), particle-size

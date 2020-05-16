@@ -7,9 +7,7 @@ import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.striding_block as striding_block
 import neuro_shooting.parameter_initialization as parameter_initialization
 import neuro_shooting.activation_functions_and_derivatives as ad
-
-gpu = 0
-device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
+import neuro_shooting.generic_integrator as generic_integrator
 
 class BasicResNet(nn.Module):
 
@@ -33,8 +31,14 @@ class BasicResNet(nn.Module):
         self.nonlinearity = nonlinearity
         self.nl,_ = ad.get_nonlinearity(nonlinearity=nonlinearity)
 
-        self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
-        self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.5)
+        self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.05)
+        self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.05)
+
+        # setup the integrator
+        integrator_options = dict()
+        integrator_options['step_size'] = 0.1
+        self._integrator = generic_integrator.GenericIntegrator(integrator_library='odeint', integrator_name='rk4',
+                                                          integrator_options=integrator_options)
 
         self.nr_of_particles = nr_of_particles
         self.particle_sizes = particle_sizes
@@ -81,7 +85,7 @@ class BasicResNet(nn.Module):
                                                  particle_size=particle_size,
                                                  particle_dimension=particle_dimension)
 
-        shooting_block = shooting_blocks.ShootingBlockBase(name=name, shooting_integrand=shooting_model)
+        shooting_block = shooting_blocks.ShootingBlockBase(name=name, shooting_integrand=shooting_model, integrator=self._integrator)
 
 
         return shooting_block

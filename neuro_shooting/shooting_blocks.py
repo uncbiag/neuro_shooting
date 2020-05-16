@@ -597,12 +597,15 @@ class ShootingBlockBase(nn.Module):
             res_data_dict_of_dicts = scd_utils._concatenate_named_dict_of_dicts_keeping_structure(generic_dict_of_dicts=data_dict_of_dicts,
                                                                                                   concatenation_dim=self.shooting_integrand.data_concatenation_dim,
                                                                                                   block_name=self._block_name)
-            # todo: find a more elegant solution to deal with the output
             if type(res)==torch.Tensor:
                 res_res = res
             else:
                 res_res = scd_utils._concatenate_dict_of_dicts(generic_dict_of_dicts=res,
                                                                concatenation_dim=self.shooting_integrand.data_concatenation_dim)
+                # if we have concatenated this there should only be one key now. Check this and return it, otherwise return the entire structure
+                current_keys = list(res_res.keys())
+                if len(current_keys)==1:
+                    res_res = res_res[current_keys[0]]
         else:
             res_state_dict_of_dicts = state_dict_of_dicts
             res_costate_dict_of_dicts = costate_dict_of_dicts

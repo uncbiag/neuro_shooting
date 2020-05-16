@@ -7,7 +7,9 @@ import neuro_shooting.parameter_initialization as parameter_initialization
 import neuro_shooting.utils as utils
 import neuro_shooting.generic_integrator as generic_integrator
 
+utils.setup_random_seed(seed=1234)
 utils.setup_device(desired_gpu=0)
+
 nonlinearity = 'tanh'
 
 # setup the integrator

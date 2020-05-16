@@ -1,5 +1,6 @@
 import torch
-
+import neuro_shooting.utils as utils
+import torch.optim as optim
 
 def count_print_and_compare_parameters(net,target_parameter_numbers):
 
@@ -35,8 +36,9 @@ def count_print_and_compare_parameters(net,target_parameter_numbers):
 
     return total_number_of_parameters
 
-gpu = 0
-device = torch.device('cuda:' + str(gpu) if torch.cuda.is_available() else 'cpu')
+
+utils.setup_random_seed(seed=1234)
+utils.setup_device(desired_gpu=0)
 nonlinearity = 'tanh'
 
 # create some random input
@@ -79,7 +81,8 @@ nr_of_classes = 2
 
 net = res_net.BasicResNet(nr_of_image_channels=1,
                           layer_channels=layer_channels,
-                          nr_of_blocks_per_layer=[2,2],
+                          #nr_of_blocks_per_layer=[2,2],
+                          nr_of_blocks_per_layer=[1,1],
                           downsampling_stride=downsampling_stride,
                           particle_sizes=particle_sizes,
                           nr_of_particles=nr_of_particles,
@@ -88,8 +91,6 @@ net = res_net.BasicResNet(nr_of_image_channels=1,
 # run it once before to dynamically allocate parameters
 net(images)
 net.parameters()
-# once they have been allocated move everything to the GPU
-net = net.to(device)
 
 conv_filter_size = 3*3
 
@@ -123,7 +124,6 @@ expected_parameters = {
 
 count_print_and_compare_parameters(net=net,target_parameter_numbers=expected_parameters)
 
-import torch.optim as optim
 # just to test that all the paramters here change indeed
 optimizer = optim.SGD(net.parameters(), lr=1.0, momentum=0.9)
 
