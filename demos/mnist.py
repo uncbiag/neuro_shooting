@@ -43,7 +43,7 @@ parser.add_argument('--seed', required=False, type=int, default=1234, help='Sets
 args = parser.parse_args()
 
 utils.setup_random_seed(seed=args.seed)
-utils.setup_device(desired_gpu=args.gpu)
+device = utils.setup_device(desired_gpu=args.gpu)
 
 if args.adjoint:
     from torchdiffeq import odeint_adjoint as odeint
@@ -399,6 +399,8 @@ if __name__ == '__main__':
 
         optimizer.zero_grad()
         x, y = data_gen.__next__()
+        x = x.to(device)
+        y = y.to(device)
         logits = model(x)
         loss = criterion(logits, y)
 

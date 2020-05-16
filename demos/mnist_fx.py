@@ -34,7 +34,7 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
-parser.add_argument('--gpu', type=int, default=8)
+parser.add_argument('--gpu', type=int, default=0)
 
 parser.add_argument('--seed', required=False, type=int, default=1234,
                     help='Sets the random seed which affects data shuffling')
@@ -44,7 +44,7 @@ args = parser.parse_args()
 # random seeds
 utils.setup_random_seed(seed=args.seed)
 # takes care of the GPU setup
-utils.setup_device(desired_gpu=args.gpu)
+device = utils.setup_device(desired_gpu=args.gpu)
 
 def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc=1.0, num_workers=0):
     if data_aug:
@@ -129,6 +129,7 @@ if __name__ == '__main__':
 
     # prepare the model (for first pass, and register parameters)
     images, labels = dataiter.next()
+    images = images.to(device)
     model(images)
     model.parameters()
     print("number of parameters ",sum(p.numel() for p in model.parameters() if p.requires_grad))
@@ -143,6 +144,8 @@ if __name__ == '__main__':
 
         optimizer.zero_grad()
         x, y = data_gen.__next__()
+        x = x.to(device)
+        y = y.to(device)
         logits = model(x)
         loss = criterion(logits, y)
 
