@@ -151,7 +151,6 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
     smodel.set_state_initializer(state_initializer=par_initializer)
     shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel,
                                                        use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
-    shooting_block = shooting_block
 
     return shooting_block
 

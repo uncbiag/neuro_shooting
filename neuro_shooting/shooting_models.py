@@ -3,6 +3,7 @@ import torch.nn as nn
 import neuro_shooting.shooting_integrands as shooting
 import neuro_shooting.overwrite_classes as oc
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
+import neuro_shooting.utils as utils
 
 from torch.nn.parameter import Parameter
 
@@ -392,13 +393,13 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
         weight_dict = p['l1'].get_parameter_weight_dict()
-        par_dict['weight'] = l1/weight_dict['weight']
-        par_dict['bias'] = torch.mean(p1i,dim = 0)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(l1,weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict['bias'])
 
         par_dict2 = p['l2'].get_parameter_dict()
         weight_dict2 = p['l2'].get_parameter_weight_dict()
-        par_dict2['weight'] = l2/weight_dict2['weight']
-        par_dict2['bias'] = (torch.mean(p2i,dim = 0).t())/weight_dict2['bias']
+        par_dict2['weight'] = utils.divide_by_if_not_none(l2,weight_dict2['weight'])
+        par_dict2['bias'] = utils.divide_by_if_not_none(torch.mean(p2i,dim = 0).t(),weight_dict2['bias'])
 
         return p
 
@@ -564,8 +565,8 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
         weight_dict = p['l1'].get_parameter_weight_dict()
-        par_dict['weight'] = (At.t())/weight_dict['weight']
-        par_dict['bias'] = (bt)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(At.t(),weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(bt,weight_dict['bias'])
 
         # ------------------
 
@@ -583,8 +584,8 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
         # results need to be written in the respective parameter variables
         par_dict = p['l2'].get_parameter_dict()
         weight_dict = p['l2'].get_parameter_weight_dict()
-        par_dict['weight'] = (At.t())/weight_dict['weight']
-        par_dict['bias'] = (bt)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(At.t(),weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(bt,weight_dict['bias'])
 
         return p
 
@@ -726,8 +727,8 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         bt = 1 / self.nr_of_particles * pi.sum(dim=0)  # -\sum_i q_i
 
         # results need to be written in the respective parameter variables
-        par_dict['weight'] = (At.t())/weight_dict['weight']
-        par_dict['bias'] = (bt)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(At.t(),weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(bt,weight_dict['bias'])
 
         return p
 
@@ -1110,13 +1111,13 @@ class AutoShootingIntegrandModelUpdownDampenedQ2(shooting.ShootingLinearInParame
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
         weight_dict = p['l1'].get_parameter_weight_dict()
-        par_dict['weight'] = l1/weight_dict['weight']
-        par_dict['bias'] = torch.mean(p1i,dim = 0)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(l1,weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict['bias'])
 
         par_dict2 = p['l2'].get_parameter_dict()
         weight_dict2 = p['l2'].get_parameter_weight_dict()
-        par_dict2['weight'] = l2/weight_dict2['weight']
-        par_dict2['bias'] = (torch.mean(p2i,dim = 0).t())/weight_dict2['bias']
+        par_dict2['weight'] = utils.divide_by_if_not_none(l2,weight_dict2['weight'])
+        par_dict2['bias'] = utils.divide_by_if_not_none(torch.mean(p2i,dim = 0).t(),weight_dict2['bias'])
 
         return p
 
@@ -1294,18 +1295,18 @@ class AutoShootingIntegrandModelUpdownSymmetrized(shooting.ShootingLinearInParam
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
         weight_dict = p['l1'].get_parameter_weight_dict()
-        par_dict['weight'] = l1/weight_dict['weight']
-        par_dict['bias'] = torch.mean(p1i,dim = 0)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(l1,weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict['bias'])
 
         par_dict2 = p['l2'].get_parameter_dict()
         weight_dict2 = p['l2'].get_parameter_weight_dict()
-        par_dict2['weight'] = l2/weight_dict2['weight']
-        par_dict2['bias'] = (torch.mean(p2i,dim = 0).t())/weight_dict2['bias']
+        par_dict2['weight'] = utils.divide_by_if_not_none(l2,weight_dict2['weight'])
+        par_dict2['bias'] = utils.divide_by_if_not_none(torch.mean(p2i,dim = 0).t(),weight_dict2['bias'])
 
         par_dict3 = p['l3'].get_parameter_dict()
         weight_dict3 = p['l3'].get_parameter_weight_dict()
-        par_dict3['weight'] = l3 / weight_dict['weight']
-        par_dict3['bias'] = torch.mean(p3i, dim=0) / weight_dict3['bias']
+        par_dict3['weight'] = utils.divide_by_if_not_none(l3,weight_dict['weight'])
+        par_dict3['bias'] = utils.divide_by_if_not_none(torch.mean(p3i, dim=0),weight_dict3['bias'])
         return p
 
 class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParameterVectorIntegrand):
@@ -1524,17 +1525,17 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         # results need to be written in the respective parameter variables
         par_dict = p['l1'].get_parameter_dict()
         weight_dict = p['l1'].get_parameter_weight_dict()
-        par_dict['weight'] = l1/weight_dict['weight']
-        par_dict['bias'] = torch.mean(p1i,dim = 0)/weight_dict['bias']
+        par_dict['weight'] = utils.divide_by_if_not_none(l1,weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict['bias'])
 
         par_dict2 = p['l2'].get_parameter_dict()
         weight_dict2 = p['l2'].get_parameter_weight_dict()
-        par_dict2['weight'] = l2/weight_dict2['weight']
-        par_dict2['bias'] = (torch.mean(p2i,dim = 0).t())/weight_dict2['bias']
+        par_dict2['weight'] = utils.divide_by_if_not_none(l2,weight_dict2['weight'])
+        par_dict2['bias'] = utils.divide_by_if_not_none(torch.mean(p2i,dim = 0).t(),weight_dict2['bias'])
 
         par_dict3 = p['l3'].get_parameter_dict()
         weight_dict3 = p['l3'].get_parameter_weight_dict()
-        par_dict3['weight'] = l3 / weight_dict3['weight']
+        par_dict3['weight'] = utils.divide_by_if_not_none(l3,weight_dict3['weight'])
         return p
 
 class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):

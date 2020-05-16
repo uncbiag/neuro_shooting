@@ -2,6 +2,12 @@ import torch
 import numpy as np
 import random
 
+def divide_by_if_not_none(t,weight):
+    if weight is None:
+        return t
+    else:
+        return t/weight
+
 def setup_random_seed(seed):
     if seed==-1:
         print('No seed was specified, leaving everthing at random. Use --seed to specify a seed if you want repeatable results.')
