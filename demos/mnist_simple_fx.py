@@ -1,3 +1,8 @@
+
+
+
+
+
 import os
 import argparse
 import logging
@@ -12,6 +17,7 @@ import torchvision.transforms as transforms
 import random
 import neuro_shooting.resnet_fx as resnet
 #import neuro_shooting.res_net as resnet
+import simple_discrete_neural_networks as sdnn
 import neuro_shooting.utils as utils
 
 parser = argparse.ArgumentParser()
@@ -26,9 +32,9 @@ parser.add_argument('--particle_number', type=int, default=10, help='Number of p
 parser.add_argument('--particle_size', type=int, default=6, help='Particle size for shooting.')
 
 parser.add_argument('--downsampling-method', type=str, default='res', choices=['conv', 'res'])
-parser.add_argument('--nepochs', type=int, default=160)
+parser.add_argument('--nepochs', type=int, default=20)
 parser.add_argument('--data_aug', type=eval, default=True, choices=[True, False])
-parser.add_argument('--lr', type=float, default=0.1)
+parser.add_argument('--lr', type=float, default=0.02)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--test_batch_size', type=int, default=1000)
 
@@ -45,7 +51,6 @@ args = parser.parse_args()
 utils.setup_random_seed(seed=args.seed)
 # takes care of the GPU setup
 device = utils.setup_device(desired_gpu=args.gpu)
-
 def get_mnist_loaders(data_aug=False, batch_size=128, test_batch_size=1000, perc=1.0, num_workers=0):
     if data_aug:
         transform_train = transforms.Compose([
@@ -107,19 +112,10 @@ def accuracy(model, dataset_loader):
     return total_correct / len(dataset_loader.dataset)
 
 
-
-
 if __name__ == '__main__':
 
     ## define the model
-    model = resnet.BasicResNet(nr_of_image_channels=1,nr_of_blocks_per_layer=[1],layer_channels=[10],
-                 downsampling_stride=2,
-                 nonlinearity='relu',
-                 particle_sizes=[[6,6]],
-                 nr_of_particles=10,
-                 nr_of_classes=10,parameter_weight=1.0,inflation_factor=1,optimize_over_data_initial_conditions=True,
-                                                                  optimize_over_data_initial_conditions_type="linear")
-
+    model = sdnn.MyCNNResNet(nr_layers = 2,inflation_factor = 4,in_channels = 64)
     train_loader, test_loader, train_eval_loader = get_mnist_loaders(args.data_aug, args.batch_size, args.test_batch_size)
 
     #define the data generator
@@ -151,17 +147,17 @@ if __name__ == '__main__':
 
         loss.backward()
         optimizer.step()
-        if itr%30==0:
+        if itr%500==0:
             print(itr," loss ",loss.item())
 
         if itr % batches_per_epoch == 0:
-            #print(loss.data)
-            # with torch.no_grad():
-            stop = time.time()
-            #train_acc = accuracy(model, train_eval_loader)
-            #val_acc = accuracy(model, test_loader)
-            #if val_acc > best_acc:
-            #    best_acc = val_acc
-            #    print(best_acc)
+            print(loss.data)
+            with torch.no_grad():
+                stop = time.time()
+                train_acc = accuracy(model, train_eval_loader)
+                val_acc = accuracy(model, test_loader)
+                if val_acc > best_acc:
+                    best_acc = val_acc
+                    print(best_acc)
             print("Epoch {:04d} | Time {:.3f} | Train Acc {:.4f} ".format(itr // batches_per_epoch, stop - start, loss.cpu().detach().numpy()))
             start = time.time()
