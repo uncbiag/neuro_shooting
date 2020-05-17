@@ -14,12 +14,17 @@ class BasicResNet(nn.Module):
     def __init__(self,
                  nr_of_image_channels,
                  layer_channels=[64,128,256,512],
-                 nr_of_blocks_per_layer=[3,3,3,3],
+                 nr_of_blocks_per_layer=[1,1,1,1],
                  downsampling_stride=2,
-                 nonlinearity='tanh',
+                 nonlinearity='relu',
                  particle_sizes=[[15,15],[11,11],[7,7],[5,5]],
                  nr_of_particles=10,
-                 nr_of_classes=10
+                 nr_of_classes=10,
+                 state_initializer=None,
+                 costate_initializer=None,
+                 integrator=None,
+                 shooting_model=None,
+                 shooting_model_kwargs=None
                  ):
 
         super(BasicResNet, self).__init__()
@@ -31,14 +36,30 @@ class BasicResNet(nn.Module):
         self.nonlinearity = nonlinearity
         self.nl,_ = ad.get_nonlinearity(nonlinearity=nonlinearity)
 
-        self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.05)
-        self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.05)
+        if state_initializer is not None:
+            print('INFO: Using externally defined state initializer')
+            self._state_initializer = state_initializer
+        else:
+            print('WARNING: Using default state initializer')
+            self._state_initializer =  parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.05)
+
+        if costate_initializer is not None:
+            print('INFO: Using externally defined costate initializer')
+            self._costate_initializer = costate_initializer
+        else:
+            print('WARNING: Using default costate initializer')
+            self._costate_initializer = parameter_initialization.ConvolutionEvolutionParameterInitializer(only_random_initialization=True, random_initialization_magnitude=0.05)
 
         # setup the integrator
-        integrator_options = dict()
-        integrator_options['step_size'] = 0.1
-        self._integrator = generic_integrator.GenericIntegrator(integrator_library='odeint', integrator_name='rk4',
-                                                          integrator_options=integrator_options)
+        if integrator is not None:
+            print('INFO: Using externally defined integrator')
+            self._integrator = integrator
+        else:
+            print('WARNING: Using default integrator')
+            integrator_options = dict()
+            integrator_options['step_size'] = 0.1
+            self._integrator = generic_integrator.GenericIntegrator(integrator_library='odeint', integrator_name='rk4',
+                                                              integrator_options=integrator_options)
 
         self.nr_of_particles = nr_of_particles
         self.particle_sizes = particle_sizes
@@ -52,11 +73,19 @@ class BasicResNet(nn.Module):
 
         downsampling_strides = [downsampling_stride]*(len(layer_channels)-1) + [None]
 
-        self.shooting_model = shooting_models.AutoShootingIntegrandModelSimpleConv2D
+        if shooting_model is not None:
+            self.shooting_model = shooting_model
+        else:
+            self.shooting_model = shooting_models.AutoShootingIntegrandModelSimpleConv2D
+            print('WARNING: Using default shooting model {}'.format(self.shooting_model))
+
+        if shooting_model_kwargs is not None:
+            self._shooting_model_kwargs = shooting_model_kwargs
+        else:
+            self._shooting_model_kwargs = {}
+
         self.shooting_layers = self._create_shooting_layers(layer_channels=self.layer_channels,
                                                             nr_of_blocks_per_layer=self.nr_of_blocks_per_layer)
-
-
 
         self.striding_blocks = self._create_striding_blocks(strides=downsampling_strides)
 
@@ -76,7 +105,8 @@ class BasicResNet(nn.Module):
             shooting_model = self.shooting_model(in_features=nr_of_channels,
                                                  nonlinearity=self.nonlinearity,
                                                  nr_of_particles=nr_of_particles,
-                                                 is_pass_through=True)
+                                                 is_pass_through=True,
+                                                 **self._shooting_model_kwargs)
         else:
             shooting_model = self.shooting_model(in_features=nr_of_channels,
                                                  nonlinearity=self.nonlinearity,
@@ -84,7 +114,8 @@ class BasicResNet(nn.Module):
                                                  costate_initializer=self._costate_initializer,
                                                  nr_of_particles=nr_of_particles,
                                                  particle_size=particle_size,
-                                                 particle_dimension=particle_dimension)
+                                                 particle_dimension=particle_dimension,
+                                                 **self._shooting_model_kwargs)
 
         shooting_block = shooting_blocks.ShootingBlockBase(name=name, shooting_integrand=shooting_model, integrator=self._integrator)
 
@@ -176,8 +207,6 @@ class BasicResNet(nn.Module):
 
 # batch_size = 5
 # sample_cifar_data = torch.zeros(batch_size,3,32,32)
-#
-# # todo: if one only uses one layer the return data is not properly done, but returns a SortedDict. Needs to be fixed within shooting block.
 #
 # res_net = BasicResNet(nr_of_image_channels=3,nr_of_blocks_per_layer=[2,2,2,2])
 # ret = res_net(sample_cifar_data)
