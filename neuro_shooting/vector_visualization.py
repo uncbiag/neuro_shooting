@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
+import neuro_shooting.figure_settings as figure_settings
+import neuro_shooting.figure_utils as figure_utils
+
 # Visualization
 # TODO: revamp
 
@@ -327,7 +330,16 @@ def visualize(true_y, pred_y, sim_time, odefunc, itr, is_higher_order_model=True
 
     plt.show()
 
-def plot_temporal_data(data, block_name):
+def _plot_temporal_data(data, block_name, args=None, visualize=True, print=False):
+
+    if visualize and print:
+        raise ValueError('Only visualize or print can be set to True at the same time.')
+
+    if not visualize and not print:
+        return
+
+    if print:
+        previous_backend, rcsettings = figure_settings.setup_pgf_plotting()
 
     # time
     t = np.asarray(data['t'])
@@ -339,7 +351,13 @@ def plot_temporal_data(data, block_name):
     plt.plot(t,energy)
     plt.xlabel('time')
     plt.ylabel('energy')
-    plt.show()
+
+    if print:
+        figure_utils.save_all_formats(output_directory=args.output_directory,
+                                      filename='{}-energy'.format(args.output_basename))
+
+    if visualize:
+        plt.show()
 
     # exclude list (what not to plot, partial initial match is fine)
     do_not_plot = ['t', 'energy', 'dot_state','dot_costate','dot_data']
@@ -364,5 +382,27 @@ def plot_temporal_data(data, block_name):
                 plt.plot(t,cur_vals)
 
             plt.xlabel('time')
-            plt.ylabel(k)
-            plt.show()
+            if print:
+                plt.ylabel(figure_utils.escape_underscores(k))
+            else:
+                plt.ylabel(k)
+
+            if print:
+                figure_utils.save_all_formats(output_directory=args.output_directory,
+                                              filename='{}-{}'.format(args.output_basename, k))
+
+            if visualize:
+                plt.show()
+
+    if print:
+        figure_settings.reset_pgf_plotting(backend=previous_backend, rcsettings=rcsettings)
+
+
+def plot_temporal_data(data, block_name, args=None):
+    if args is None:
+        _plot_temporal_data(data=data, block_name=block_name, args=args)
+    else:
+        if args.viz:
+            _plot_temporal_data(data=data, block_name=block_name, args=args, visualize=True, print=False)
+        if args.save_figures:
+            _plot_temporal_data(data=data, block_name=block_name, args=args, visualize=False, print=True)

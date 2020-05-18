@@ -68,10 +68,29 @@ def compute_number_of_parameters(model, print_parameters=False):
 
     return nr_of_pars
 
-def freeze_parameters(shooting_block,parameters_to_freeze):
+
+def _freeze_or_unfreeze_parameters(shooting_block, parameters, requires_grad_val):
+    pass
 
     # get all the parameters that we are optimizing over
-    pars = shooting_block.state_dict()
-    for pn in parameters_to_freeze:
-        print('Freezing {}'.format(pn))
-        pars[pn].requires_grad = False
+    pars_list = list(shooting_block.named_parameters())
+
+    # put them all in a dictionary
+    pars = dict()
+    for v in pars_list:
+        pars[v[0]] = v[1]
+
+    for pn in parameters:
+        if requires_grad_val:
+            print('Unfreezing {}'.format(pn))
+        else:
+            print('Freezing {}'.format(pn))
+        pars[pn].requires_grad = requires_grad_val
+
+
+def unfreeze_parameters(shooting_block,parameters_to_unfreeze):
+    _freeze_or_unfreeze_parameters(shooting_block=shooting_block, parameters=parameters_to_unfreeze, requires_grad_val=True)
+
+def freeze_parameters(shooting_block,parameters_to_freeze):
+    _freeze_or_unfreeze_parameters(shooting_block=shooting_block, parameters=parameters_to_freeze, requires_grad_val=False)
+
