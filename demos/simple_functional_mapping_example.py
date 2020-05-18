@@ -52,7 +52,7 @@ sys.path.insert(0, '../neuro_shooting')
 
 
 def setup_cmdline_parsing():
-    parser = argparse.ArgumentParser('Shooting spiral')
+    parser = argparse.ArgumentParser('Simple functional mapping')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams', 'rk4'], default='rk4', help='Selects the desired integrator')
     parser.add_argument('--batch_size', type=int, default=100)
     parser.add_argument('--niters', type=int, default=1000)
@@ -78,6 +78,9 @@ def setup_cmdline_parsing():
     parser.add_argument('--clamp_range', action='store_true', help='Clamps the range of the q1 particles to [-xrange,xrange]')
 
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
+    parser.add_argument('--optimize_over_data_initial_conditions_type', type=str,
+                        choices=['direct', 'linear', 'mini_nn'], default='linear',
+                        help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
 
     parser.add_argument('--custom_parameter_freezing', action='store_true', default=False,
                         help='Enable custom code for parameter freezing -- development mode')
@@ -399,7 +402,8 @@ if __name__ == '__main__':
                                 'particle_dimension': 1,
                                 'particle_size': 1,
                                 'costate_initializer':pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1),
-                                'optimize_over_data_initial_conditions': args.optimize_over_data_initial_conditions}
+                                'optimize_over_data_initial_conditions': args.optimize_over_data_initial_conditions,
+                                'optimize_over_data_initial_conditions_type': args.optimize_over_data_initial_conditions_type}
 
     inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
     use_particle_rnn_mode = args.use_particle_rnn_mode
