@@ -55,22 +55,22 @@ sys.path.insert(0, '../neuro_shooting')
 def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Simple functional mapping')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams', 'rk4'], default='rk4', help='Selects the desired integrator')
-    parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=1000)
+    parser.add_argument('--batch_size', type=int, default=50)
+    parser.add_argument('--niters', type=int, default=250)
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
-    parser.add_argument('--lr', type=float, default=0.05, help='Learning rate for optimizer')
+    parser.add_argument('--lr', type=float, default=0.01, help='Learning rate for optimizer')
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
-    parser.add_argument('--norm_weight', type=float, default=0.01, help='Weight for the similarity measure')
-    parser.add_argument('--nr_of_particles', type=int, default=10, help='Number of particles to parameterize the initial condition')
-    parser.add_argument('--inflation_factor', type=int, default=10, help='Multiplier for state dimension for updown shooting model types')
+    parser.add_argument('--norm_weight', type=float, default=1.0, help='Weight for the similarity measure')
+    parser.add_argument('--nr_of_particles', type=int, default=20, help='Number of particles to parameterize the initial condition')
+    parser.add_argument('--inflation_factor', type=int, default=16, help='Multiplier for state dimension for updown shooting model types')
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
@@ -99,7 +99,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_simple_resnet',action='store_true')
     parser.add_argument('--use_neural_ode',action='store_true')
 
-    parser.add_argument('--test_freq', type=int, default=10)
+    parser.add_argument('--test_freq', type=int, default=10, help='With what frequencies test data is evaluated (affects the scheduler)')
+    parser.add_argument('--viz_freq', type=int, default=25, help='With what frequency visualizations are created')
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--verbose', action='store_true', default=False)
 
@@ -126,7 +127,7 @@ def setup_optimizer_and_scheduler(params,lr=0.1, weight_decay=0):
     optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
 
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True,factor=0.5)
 
     return optimizer, scheduler
 
@@ -169,7 +170,7 @@ class FunctionDataset(Dataset):
 
         return sample
 
-def get_function_data_loaders(training_samples=2000,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=100, num_workers=0, max_x=1.0, fcn_type='cubic'):
+def get_function_data_loaders(training_samples=500,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=100, num_workers=0, max_x=1.0, fcn_type='cubic'):
 
     train_loader = DataLoader(
         FunctionDataset(nr_of_samples=training_samples,uniform_sample=False, max_x=max_x, fcn_type=fcn_type), batch_size=batch_size,
@@ -613,7 +614,7 @@ if __name__ == '__main__':
                     print('q1 = {}'.format(q1.detach().cpu().numpy()))
 
         # now compute testing evaluation loss
-        if itr % args.test_freq == 0:
+        if (itr % args.test_freq == 0) or (itr % args.viz_freq == 0) or (itr == args.niters):
 
             with torch.no_grad():
                 dataiter = iter(train_eval_loader)
@@ -625,31 +626,35 @@ if __name__ == '__main__':
                                                                                sblock=sblock, func=func,
                                                                                batch_in=batch_in,
                                                                                batch_out=batch_out)
+                if ( itr % args.test_freq == 0):
 
-                try:
-                    scheduler.step()
-                except:
-                    scheduler.step(loss)
+                    try:
+                        scheduler.step()
+                    except:
+                        scheduler.step(loss)
 
-                if args.viz or args.save_figures:
+                    if use_shooting:
+                        print(
+                            '\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(
+                                itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
+                    else:
+                        print('Iter {:04d} | Loss {:.6f}'.format(itr, loss.item()))
+
+                if (args.viz or args.save_figures) and ((itr % args.viz_freq == 0) or ( itr==args.niters )):
                     show_figure(args=args, iter=itr, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock, fcn_type=args.fcn)
 
-                if use_shooting:
-                    print('\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
-                else:
-                    print('Iter {:04d} | Loss {:.6f}'.format(itr, loss.item()))
 
     # now print the parameters
     if not use_shooting:
         if args.use_neural_ode:
-            utils.compute_number_of_parameters(func,print_parameters=True)
+            nr_of_parameters = utils.compute_number_of_parameters(func,print_parameters=True)
         else:
-            utils.compute_number_of_parameters(simple_resnet,print_parameters=True)
+            nr_of_parameters = utils.compute_number_of_parameters(simple_resnet,print_parameters=True)
 
             if args.use_double_resnet:
                 collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
-        utils.compute_number_of_parameters(sblock,print_parameters=True)
+        nr_of_parameters = utils.compute_number_of_parameters(sblock,print_parameters=True)
 
     # get the data for final testing, there will only be one batch
     dataiter = iter(test_loader)
@@ -658,6 +663,7 @@ if __name__ == '__main__':
 
     values_to_save = dict()
     values_to_save['args'] = args._get_kwargs()
+    values_to_save['nr_of_parameters'] = nr_of_parameters
 
     with torch.no_grad():
         loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
