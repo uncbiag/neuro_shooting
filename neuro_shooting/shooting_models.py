@@ -468,19 +468,23 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         linear11 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight)
         linear12 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features,weight=self.parameter_weight, bias=False)
         linear13 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features,weight=self.parameter_weight, bias=False)
+        linear14 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight, bias=False)
 
         linear21 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight)
         linear22 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight, bias=False)
         linear23 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight, bias=False)
+        linear24 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight, bias=False)
+
 
         parameter_objects['l11'] = linear11
         parameter_objects['l12'] = linear12
         parameter_objects['l13'] = linear13
+        parameter_objects['l14'] = linear14
 
         parameter_objects['l21'] = linear21
         parameter_objects['l22'] = linear22
         parameter_objects['l23'] = linear23
-
+        parameter_objects['l24'] = linear24
 
         return parameter_objects
 
@@ -494,8 +498,8 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         # rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
         # rhs['dot_q2'] = p['l2'](input=s['q1'])
 
-        rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1']))
-        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2']))
+        rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1'])) + p['l14'](input=s['q2'])
+        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=s['q1'])
 
         return rhs
 
