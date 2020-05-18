@@ -37,6 +37,7 @@ import neuro_shooting.vector_visualization as vector_visualization
 import neuro_shooting.validation_measures as validation_measures
 import neuro_shooting.utils as utils
 import neuro_shooting.figure_settings as figure_settings
+import neuro_shooting.figure_utils as figure_utils
 
 import simple_discrete_neural_networks as sdnn
 
@@ -103,6 +104,7 @@ def setup_cmdline_parsing():
 
     parser.add_argument('--save_figures', action='store_true', help='If specified figures are saved (in current output directory) instead of displayed')
     parser.add_argument('--output_directory', type=str, default='results_simple_functional_mapping', help='Directory in which the results are saved')
+    parser.add_argument('--output_basename', type=str, default='sfm', help='Directory in which the results are saved')
 
     args = parser.parse_args()
 
@@ -354,17 +356,19 @@ def compute_loss(args, use_shooting, integrator, sblock, func, batch_in, batch_o
 
     return loss, sim_loss, norm_loss, norm_penalty, pred_y,
 
-
-def show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock):
+def _show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock):
 
     fig = plt.figure(figsize=(8, int(np.ceil(8 * (args.xrange ** 3) / args.xrange))), facecolor='white')
     ax = fig.add_subplot(111, frameon=True)
     ax.set_aspect('equal')
     # ax.cla()
-    ax.plot(batch_in.detach().cpu().numpy().squeeze(), batch_out.detach().cpu().numpy().squeeze(), 'g+')
+    ax.plot(batch_in.detach().cpu().numpy().squeeze(), batch_out.detach().cpu().numpy().squeeze(), 'b+')
     ax.plot(batch_in.detach().cpu().numpy().squeeze(), pred_y.detach().cpu().numpy().squeeze(), 'r*')
     ax.set_xlim(-args.xrange, args.xrange)
     ax.set_ylim(-args.xrange ** 3, args.xrange ** 3)
+
+    plt.xlabel('x')
+    plt.ylabel('y')
 
     if use_shooting:
         sd = sblock.state_dict()
@@ -374,7 +378,19 @@ def show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock):
             ax.plot([v, v], [-args.xrange ** 3, args.xrange ** 3], 'k-')
 
     figure_settings.set_font_size_for_axis(ax, fontsize=20)
-    plt.show()
+
+
+def show_figure(args, iter, batch_in, batch_out, pred_y, use_shooting, sblock):
+
+    # save_figures
+    if args.save_figures:
+        previous_backend, rcsettings = figure_settings.setup_pgf_plotting()
+        _show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+        figure_utils.save_all_formats(output_directory=args.output_directory,filename='{}-xcubed-iter-{:04d}'.format(args.output_basename,iter))
+        figure_settings.reset_pgf_plotting(backend=previous_backend, rcsettings=rcsettings)
+    if args.viz:
+        _show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+        plt.show()
 
 if __name__ == '__main__':
 
@@ -489,17 +505,20 @@ if __name__ == '__main__':
 
         sblock(x=sample_batch_in)
 
+        # first get the state dictionary of the shooting block which contains all parameters
+        ss_sd = sblock.state_dict()
+
+        # get initial positions on the trajectory (to place the particles there)
+
         # custom initialization
         if args.custom_parameter_initialization:
-            # first get the state dictionary of the shooting block which contains all parameters
-            ss_sd = sblock.state_dict()
-
-            # get initial positions on the trajectory (to place the particles there)
             init_q1, _ = get_uniform_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange)
-            with torch.no_grad():
-                ss_sd['q1'].copy_(init_q1)
+        else:
+            # just initialize it with a random data batch
+            init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange)
 
-            # init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
+        with torch.no_grad():
+            ss_sd['q1'].copy_(init_q1)
 
         uses_particles = not args.use_particle_free_rnn_mode
         if uses_particles:
@@ -587,8 +606,8 @@ if __name__ == '__main__':
                 except:
                     scheduler.step(loss)
 
-                if args.viz:
-                    show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+                if args.viz or args.save_figures:
+                    show_figure(args=args, iter=itr, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
 
                 if use_shooting:
                     print('\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
@@ -610,7 +629,22 @@ if __name__ == '__main__':
     # get the data for final testing, there will only be one batch
     dataiter = iter(test_loader)
     test_batch = dataiter.next()
-    uniform_batch_in, uniform_batch_out = test_batch['input'], test_batch['output']
+    test_batch_in, test_batch_out = test_batch['input'], test_batch['output']
+
+    values_to_save = dict()
+    values_to_save['args'] = args._get_kwargs()
+
+    with torch.no_grad():
+        loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
+                                                                       integrator=integrator,
+                                                                       sblock=sblock, func=func,
+                                                                       batch_in=test_batch_in,
+                                                                       batch_out=test_batch_out)
+
+        values_to_save['test_loss'] = loss.item()
+        values_to_save['sim_loss'] = sim_loss.item()
+        values_to_save['norm_loss'] = norm_loss.item()
+        values_to_save['norm_penalty'] = norm_loss.item()
 
     # for visualization
     dataiter = iter(visualization_loader)
@@ -627,25 +661,23 @@ if __name__ == '__main__':
         loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
                                                                        integrator=integrator,
                                                                        sblock=sblock, func=func,
-                                                                       batch_in=uniform_batch_in,
-                                                                       batch_out=uniform_batch_out)
+                                                                       batch_in=visualization_batch_in,
+                                                                       batch_out=visualization_batch_out)
         hook.remove()
 
         log_complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
         print('Validation measures = {}'.format(log_complexity_measures))
 
-        # now repeat this for visualization
+        values_to_save['log_complexity_measures'] = log_complexity_measures
 
-        # get measures
-        custom_hook_data = defaultdict(list)
-        hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
-        sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
-        loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
-                                                                       integrator=integrator,
-                                                                       sblock=sblock, func=func,
-                                                                       batch_in=visualization_batch_in,
-                                                                       batch_out=visualization_batch_out)
-        hook.remove()
+        vector_visualization.plot_temporal_data(args=args,data=custom_hook_data, block_name=block_name)
 
-        vector_visualization.plot_temporal_data(data=custom_hook_data, block_name=block_name)
+    if args.save_figures:
+        # in this case we also save the results
+        if not os.path.exists(args.output_directory):
+            os.mkdir(args.output_directory)
+
+        result_filename = os.path.join(args.output_directory,'{}-results.pt'.format(args.output_basename))
+        print('Saving results in {}'.format(result_filename))
+        torch.save(values_to_save,result_filename)
