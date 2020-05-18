@@ -403,6 +403,141 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         return p
 
+class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
+
+    def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
+                 *args, **kwargs):
+
+        super(AutoShootingIntegrandModelGeneralUpDown, self).__init__(in_features=in_features,
+                                                               nonlinearity=nonlinearity,
+                                                               transpose_state_when_forward=transpose_state_when_forward,
+                                                               concatenate_parameters=concatenate_parameters,
+                                                               nr_of_particles=nr_of_particles,
+                                                               particle_dimension=particle_dimension,
+                                                               particle_size=particle_size,
+                                                               parameter_weight=parameter_weight,
+                                                               *args, **kwargs)
+
+        self.inflation_factor = inflation_factor
+
+        if self.optimize_over_data_initial_conditions:
+
+            supported_initial_condition_optimization_modes = ['direct','linear','mini_nn']
+            if self.optimize_over_data_initial_conditions_type.lower() not in supported_initial_condition_optimization_modes:
+                raise ValueError('Requested mode {} which is not one of the options {}'.format(self.optimize_over_data_initial_conditions_type,supported_initial_condition_optimization_modes))
+
+            if self.optimize_over_data_initial_conditions_type.lower()=='direct':
+                self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                # self.simple_init = nn.Linear(2,2*inflation_factor)
+                # TODO: shouldn't hard code this
+                self.simple_init = nn.Linear(in_features, in_features*inflation_factor)
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                # self.init_l1 = nn.Linear(2, 10)
+                # TODO: shouldn't hard code this
+                self.init_l1 = nn.Linear(in_features,10)
+                self.init_l2 = nn.Linear(10, in_features * inflation_factor)
+            else:
+                raise ValueError('Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))
+        else:
+            self.data_q20 = None
+
+
+    def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+
+        state_dict['q1'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=self.particle_size,
+                                                                     particle_dimension=self.particle_dimension,
+                                                                     set_to_zero=set_to_zero)
+
+        # make the dimension of this state 5 times bigger
+        state_dict['q2'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=self.particle_size*self.inflation_factor,
+                                                                     particle_dimension=self.particle_dimension,
+                                                                     set_to_zero=set_to_zero)
+
+        return state_dict
+
+    def create_default_parameter_objects(self):
+
+        parameter_objects = SortedDict()
+
+        linear11 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight)
+        linear12 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features,weight=self.parameter_weight, bias=False)
+        linear13 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features,weight=self.parameter_weight, bias=False)
+
+        linear21 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight)
+        linear22 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight, bias=False)
+        linear23 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight, bias=False)
+
+        parameter_objects['l11'] = linear11
+        parameter_objects['l12'] = linear12
+        parameter_objects['l13'] = linear13
+
+        parameter_objects['l21'] = linear21
+        parameter_objects['l22'] = linear22
+        parameter_objects['l23'] = linear23
+
+
+        return parameter_objects
+
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
+
+        rhs = SortedDict()
+
+        s = state_dict_or_dict_of_dicts
+        p = parameter_objects
+
+        # rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
+        # rhs['dot_q2'] = p['l2'](input=s['q1'])
+
+        rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1']))
+        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2']))
+
+        return rhs
+
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data dict from given data tensor
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+
+        if self.optimize_over_data_initial_conditions:
+
+            if self.optimize_over_data_initial_conditions_type.lower()=='direct':
+                # just repeat it for all the data
+                szq20 = list(self.data_q20.shape)
+                szx = list(x.shape)
+                dim_diff = len(szx)-len(szq20)
+                data_q20 = self.data_q20.view([1]*dim_diff+szq20)
+                data_q20_replicated = data_q20.expand(szx[0:dim_diff]+[-1]*len(szq20))
+
+                data_dict['q2'] = data_q20_replicated
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                q20 = self.simple_init(x)
+                data_dict['q2'] = q20
+            elif self.optimize_over_data_initial_conditions_type.lower()=='mini_nn':
+                # predict the initial condition based on a simple neural network
+                q20 = self.init_l2(self.nl(self.init_l1(x)))
+                data_dict['q2'] = q20
+
+        else:
+            # standard approach of initializing with zero
+            z = torch.zeros_like(x)
+            sz = [1] * len(z.shape)
+            sz[-1] = self.inflation_factor
+
+            data_dict['q2'] = z.repeat(sz)
+
+        return data_dict
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+
+
 class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,

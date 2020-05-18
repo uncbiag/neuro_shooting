@@ -64,7 +64,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--lr', type=float, default=0.05, help='Learning rate for optimizer')
 
     # shooting model parameters
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','dampened_updown','simple', '2nd_order', 'updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
@@ -77,6 +77,7 @@ def setup_cmdline_parsing():
 
     parser.add_argument('--xrange', type=float, default=1.5, help='Desired range in x direction')
     parser.add_argument('--clamp_range', action='store_true', help='Clamps the range of the q1 particles to [-xrange,xrange]')
+    parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
 
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions_type', type=str,
@@ -112,6 +113,14 @@ def setup_cmdline_parsing():
 
 # --shooting_model updown --nr_of_particles 5 --pw 0.1 --viz --niters 100 --nonlinearity relu
 
+def fcn(x,fcn_type):
+    if fcn_type=='cubic':
+        return x**3
+    elif fcn_type=='quadratic':
+        return x**2 + 3./(1. + x**2)
+    else:
+        raise ValueError('Unknownn fcn_type {}'.format(fcn_type))
+
 def setup_optimizer_and_scheduler(params,lr=0.1, weight_decay=0):
 
     optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
@@ -121,22 +130,21 @@ def setup_optimizer_and_scheduler(params,lr=0.1, weight_decay=0):
 
     return optimizer, scheduler
 
-def get_sample_batch(nr_of_samples=10,max_x=1):
+def get_sample_batch(nr_of_samples=10,max_x=1,fcn_type='cubic'):
 
     sample_batch_in = (2*max_x)*torch.rand([nr_of_samples,1,1])-max_x # creates uniform samples in [-2,2]
-    sample_batch_out = sample_batch_in**3 # and takes them to the power of three for the output
-
+    sample_batch_out = fcn(x=sample_batch_in,fcn_type=fcn_type) # and applies the desired fcn
     return sample_batch_in, sample_batch_out
 
-def get_uniform_sample_batch(nr_of_samples=10,max_x=1):
+def get_uniform_sample_batch(nr_of_samples=10,max_x=1,fcn_type='cubic'):
 
     sample_batch_in = (torch.linspace(-max_x,max_x,nr_of_samples)).view([nr_of_samples,1,1]) # creates uniform samples in [-2,2]
-    sample_batch_out = sample_batch_in**3 # and takes them to the power of three for the output
+    sample_batch_out = fcn(x=sample_batch_in,fcn_type=fcn_type) # and applies the desired fcn
 
     return sample_batch_in, sample_batch_out
 
 class FunctionDataset(Dataset):
-    def __init__(self, nr_of_samples, uniform_sample=False, max_x=1):
+    def __init__(self, nr_of_samples, uniform_sample=False, max_x=1, fcn_type='cubic'):
         """
         Args:
 
@@ -146,9 +154,9 @@ class FunctionDataset(Dataset):
         self.nr_of_samples = nr_of_samples
         # create these samples, we create them once and for all
         if uniform_sample:
-            self.input, self.output = get_uniform_sample_batch(nr_of_samples=nr_of_samples, max_x=max_x)
+            self.input, self.output = get_uniform_sample_batch(nr_of_samples=nr_of_samples, max_x=max_x, fcn_type=fcn_type)
         else:
-            self.input, self.output = get_sample_batch(nr_of_samples=nr_of_samples, max_x=max_x)
+            self.input, self.output = get_sample_batch(nr_of_samples=nr_of_samples, max_x=max_x, fcn_type=fcn_type)
 
     def __len__(self):
         return self.nr_of_samples
@@ -161,25 +169,25 @@ class FunctionDataset(Dataset):
 
         return sample
 
-def get_function_data_loaders(training_samples=2000,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=100, num_workers=0, max_x=1.0):
+def get_function_data_loaders(training_samples=2000,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=100, num_workers=0, max_x=1.0, fcn_type='cubic'):
 
     train_loader = DataLoader(
-        FunctionDataset(nr_of_samples=training_samples,uniform_sample=False, max_x=max_x), batch_size=batch_size,
+        FunctionDataset(nr_of_samples=training_samples,uniform_sample=False, max_x=max_x, fcn_type=fcn_type), batch_size=batch_size,
         shuffle=True, num_workers=num_workers, drop_last=True
     )
 
     train_eval_loader = DataLoader(
-        FunctionDataset(nr_of_samples=training_evaluation_samples,uniform_sample=False, max_x=max_x),
+        FunctionDataset(nr_of_samples=training_evaluation_samples,uniform_sample=False, max_x=max_x, fcn_type=fcn_type),
         batch_size=training_evaluation_samples, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     test_loader = DataLoader(
-        FunctionDataset(nr_of_samples=testing_samples,uniform_sample=True, max_x=max_x),
+        FunctionDataset(nr_of_samples=testing_samples,uniform_sample=True, max_x=max_x, fcn_type=fcn_type),
         batch_size=testing_samples, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     visualization_loader = DataLoader(
-        FunctionDataset(nr_of_samples=visualization_samples, uniform_sample=True, max_x=max_x),
+        FunctionDataset(nr_of_samples=visualization_samples, uniform_sample=True, max_x=max_x, fcn_type=fcn_type),
         batch_size=visualization_samples, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
@@ -356,16 +364,29 @@ def compute_loss(args, use_shooting, integrator, sblock, func, batch_in, batch_o
 
     return loss, sim_loss, norm_loss, norm_penalty, pred_y,
 
-def _show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock):
+def _show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock, fcn_type='cubic'):
 
-    fig = plt.figure(figsize=(8, int(np.ceil(8 * (args.xrange ** 3) / args.xrange))), facecolor='white')
+    # for auto-scaling, assume that maximum happens somewhere at the boundary
+    l_y = fcn(-args.xrange, fcn_type=fcn_type)
+    r_y = fcn(args.xrange, fcn_type=fcn_type)
+    max_y = max(abs(l_y), abs(r_y))
+
+    if fcn_type=='cubic':
+        min_y = -max_y
+    elif fcn_type=='quadratic':
+        min_y = 2.25
+    else:
+        raise ValueError('Unknonw fcn type')
+
+    fig = plt.figure(figsize=(8, int(np.ceil(8 * ((max_y-min_y) / (2*args.xrange))))), facecolor='white')
     ax = fig.add_subplot(111, frameon=True)
     ax.set_aspect('equal')
     # ax.cla()
     ax.plot(batch_in.detach().cpu().numpy().squeeze(), batch_out.detach().cpu().numpy().squeeze(), 'b+')
     ax.plot(batch_in.detach().cpu().numpy().squeeze(), pred_y.detach().cpu().numpy().squeeze(), 'r*')
     ax.set_xlim(-args.xrange, args.xrange)
-    ax.set_ylim(-args.xrange ** 3, args.xrange ** 3)
+
+    ax.set_ylim(min_y, max_y)
 
     plt.xlabel('x')
     plt.ylabel('y')
@@ -375,21 +396,21 @@ def _show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock):
         q1 = sd['q1'].detach().cpu().numpy().squeeze()
 
         for v in q1:
-            ax.plot([v, v], [-args.xrange ** 3, args.xrange ** 3], 'k-')
+            ax.plot([v, v], [min_y, max_y], 'k-')
 
     figure_settings.set_font_size_for_axis(ax, fontsize=20)
 
 
-def show_figure(args, iter, batch_in, batch_out, pred_y, use_shooting, sblock):
+def show_figure(args, iter, batch_in, batch_out, pred_y, use_shooting, sblock, fcn_type='cubic'):
 
     # save_figures
     if args.save_figures:
         previous_backend, rcsettings = figure_settings.setup_pgf_plotting()
-        _show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+        _show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock, fcn_type=fcn_type)
         figure_utils.save_all_formats(output_directory=args.output_directory,filename='{}-xcubed-iter-{:04d}'.format(args.output_basename,iter))
         figure_settings.reset_pgf_plotting(backend=previous_backend, rcsettings=rcsettings)
     if args.viz:
-        _show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+        _show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock, fcn_type=fcn_type)
         plt.show()
 
 if __name__ == '__main__':
@@ -403,7 +424,7 @@ if __name__ == '__main__':
     utils.setup_device(desired_gpu=args.gpu)
 
     # create the data immediately after setting the random seed to make sure it is always consistent across the experiments
-    train_loader, test_loader, train_eval_loader, visualization_loader = get_function_data_loaders(batch_size=args.batch_size, max_x=args.xrange)
+    train_loader, test_loader, train_eval_loader, visualization_loader = get_function_data_loaders(batch_size=args.batch_size, max_x=args.xrange, fcn_type=args.fcn)
 
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
@@ -438,6 +459,10 @@ if __name__ == '__main__':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'updown':
         smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
+    elif args.shooting_model == 'general_updown':
+        smodel = smodels.AutoShootingIntegrandModelGeneralUpDown(**shootingintegrand_kwargs,use_analytic_solution=False, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
+    elif args.shooting_model == 'periodic':
+        smodel = smodels.AutoShootingIntegrandModelUpdownPeriodic(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'dampened_updown':
         smodel = smodels.AutoShootingIntegrandModelDampenedUpDown(**shootingintegrand_kwargs, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'universal':
@@ -499,9 +524,9 @@ if __name__ == '__main__':
             params = simple_resnet.parameters()
     else:
 
-        sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size, max_x=args.xrange)
+        sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size, max_x=args.xrange, fcn_type=args.fcn)
         if use_fixed_sample_batch:
-            fixed_batch_in, fixed_batch_out = get_sample_batch(nr_of_samples=args.batch_size, max_x=args.xrange)
+            fixed_batch_in, fixed_batch_out = get_sample_batch(nr_of_samples=args.batch_size, max_x=args.xrange, fcn_type=args.fcn)
 
         sblock(x=sample_batch_in)
 
@@ -512,10 +537,10 @@ if __name__ == '__main__':
 
         # custom initialization
         if args.custom_parameter_initialization:
-            init_q1, _ = get_uniform_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange)
+            init_q1, _ = get_uniform_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange, fcn_type=args.fcn)
         else:
             # just initialize it with a random data batch
-            init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange)
+            init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange, fcn_type=args.fcn)
 
         with torch.no_grad():
             ss_sd['q1'].copy_(init_q1)
@@ -607,7 +632,7 @@ if __name__ == '__main__':
                     scheduler.step(loss)
 
                 if args.viz or args.save_figures:
-                    show_figure(args=args, iter=itr, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+                    show_figure(args=args, iter=itr, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock, fcn_type=args.fcn)
 
                 if use_shooting:
                     print('\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
