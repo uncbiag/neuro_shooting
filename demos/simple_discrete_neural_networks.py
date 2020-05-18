@@ -137,3 +137,43 @@ class ODESimpleFunc(nn.Module):
 
     def forward(self, t, y):
         return self.net(y)
+
+
+class CNNResNetBlock(nn.Module):
+
+    def __init__(self,in_channels = 28,inflation_factor = 5,nr_layers=3):
+        super(CNNResNetBlock,self).__init__()
+        self.in_channels = in_channels
+        self.nr_layers = nr_layers
+        self.inflation_factor = inflation_factor
+        self.conv1 = nn.Conv2d(self.in_channels,self.in_channels * self.inflation_factor,kernel_size = 3,stride= 1,padding_mode='zeros',padding=1)
+        self.conv2 = nn.Conv2d(self.in_channels * self.inflation_factor,self.in_channels ,kernel_size=3,stride = 1,padding_mode='zeros',padding=1)
+
+    def forward(self,x):
+        temp = self.conv1(x)
+        return x + 1./self.nr_layers * self.conv2(F.relu(temp))
+
+
+class MyCNNResNet(nn.Module):
+
+    def __init__(self,nr_layers = 3,inflation_factor = 5,in_channels = 32):
+        super(MyCNNResNet,self).__init__()
+        self.nr_layers = nr_layers
+        self.inflation_factor = inflation_factor
+        self.in_channels = in_channels
+        self.last_linear = nn.Linear(in_channels, 10)
+        self.conv0 = nn.Conv2d(1, self.in_channels, kernel_size=3,stride = 1,padding = 1,padding_mode = "zeros")
+        modules = replicate_modules(module=CNNResNetBlock, nr_of_layers=self.nr_layers,
+                                    inflation_factor=self.inflation_factor,in_channels = self.in_channels,nr_layers = self.nr_layers)
+        self.model = nn.Sequential(modules)
+
+    def forward(self,x):
+        temp = self.conv0(x)
+        ret = self.model(temp)
+
+        ret = nn.AdaptiveMaxPool2d(1)(ret)
+        ret = ret.view(ret.size(0), -1)
+        ret = self.last_linear(ret)
+        return ret
+
+
