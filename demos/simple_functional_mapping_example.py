@@ -8,6 +8,9 @@ import random
 import argparse
 import numpy as np
 import torch
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
 
 try:
     from tqdm import trange
@@ -31,14 +34,16 @@ import neuro_shooting.generic_integrator as gi
 import neuro_shooting.parameter_initialization as pi
 import neuro_shooting.shooting_hooks as sh
 import neuro_shooting.vector_visualization as vector_visualization
-
 import neuro_shooting.validation_measures as validation_measures
 import neuro_shooting.utils as utils
+import neuro_shooting.figure_settings as figure_settings
 
 import simple_discrete_neural_networks as sdnn
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+figure_settings.setup_plotting()
+
 
 import os
 
@@ -50,11 +55,12 @@ def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Shooting spiral')
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams', 'rk4'], default='rk4', help='Selects the desired integrator')
     parser.add_argument('--batch_size', type=int, default=100)
-    parser.add_argument('--niters', type=int, default=2000)
+    parser.add_argument('--niters', type=int, default=1000)
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--adjoint', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--stepsize', type=float, default=0.1, help='Step size for the integrator (if not adaptive).')
+    parser.add_argument('--lr', type=float, default=0.05, help='Learning rate for optimizer')
 
     # shooting model parameters
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','dampened_updown','simple', '2nd_order', 'updown'])
@@ -67,6 +73,9 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
+
+    parser.add_argument('--xrange', type=float, default=1.5, help='Desired range in x direction')
+    parser.add_argument('--clamp_range', action='store_true', help='Clamps the range of the q1 particles to [-xrange,xrange]')
 
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
 
@@ -84,28 +93,91 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_simple_resnet',action='store_true')
     parser.add_argument('--use_neural_ode',action='store_true')
 
-    parser.add_argument('--test_freq', type=int, default=100)
+    parser.add_argument('--test_freq', type=int, default=10)
     parser.add_argument('--viz', action='store_true')
     parser.add_argument('--verbose', action='store_true', default=False)
+
+    parser.add_argument('--save_figures', action='store_true', help='If specified figures are saved (in current output directory) instead of displayed')
+    parser.add_argument('--output_directory', type=str, default='results_simple_functional_mapping', help='Directory in which the results are saved')
+
     args = parser.parse_args()
 
     return args
 
 # --shooting_model updown --nr_of_particles 5 --pw 0.1 --viz --niters 100 --nonlinearity relu
 
-def get_sample_batch(nr_of_samples=10):
+def setup_optimizer_and_scheduler(params,lr=0.1, weight_decay=0):
 
-    sample_batch_in = 4*torch.rand([nr_of_samples,1,1])-2 # creates uniform samples in [-2,2]
+    optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
+
+    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
+
+    return optimizer, scheduler
+
+def get_sample_batch(nr_of_samples=10,max_x=1):
+
+    sample_batch_in = (2*max_x)*torch.rand([nr_of_samples,1,1])-max_x # creates uniform samples in [-2,2]
     sample_batch_out = sample_batch_in**3 # and takes them to the power of three for the output
 
     return sample_batch_in, sample_batch_out
 
-def get_uniform_sample_batch(nr_of_samples=10):
+def get_uniform_sample_batch(nr_of_samples=10,max_x=1):
 
-    sample_batch_in = (torch.linspace(-2,2,nr_of_samples)).view([nr_of_samples,1,1]) # creates uniform samples in [-2,2]
+    sample_batch_in = (torch.linspace(-max_x,max_x,nr_of_samples)).view([nr_of_samples,1,1]) # creates uniform samples in [-2,2]
     sample_batch_out = sample_batch_in**3 # and takes them to the power of three for the output
 
     return sample_batch_in, sample_batch_out
+
+class FunctionDataset(Dataset):
+    def __init__(self, nr_of_samples, uniform_sample=False, max_x=1):
+        """
+        Args:
+
+        :param nr_of_samples: number of samples to create for this dataset
+        :param uniform_sample: if set to False input samples will be random, otherwise they will be uniform in [-2,2]
+        """
+        self.nr_of_samples = nr_of_samples
+        # create these samples, we create them once and for all
+        if uniform_sample:
+            self.input, self.output = get_uniform_sample_batch(nr_of_samples=nr_of_samples, max_x=max_x)
+        else:
+            self.input, self.output = get_sample_batch(nr_of_samples=nr_of_samples, max_x=max_x)
+
+    def __len__(self):
+        return self.nr_of_samples
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        sample = {'input': self.input[idx,...], 'output': self.output[idx, ...]}
+
+        return sample
+
+def get_function_data_loaders(training_samples=5000,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=128, num_workers=0, max_x=1.0):
+
+    train_loader = DataLoader(
+        FunctionDataset(nr_of_samples=training_samples,uniform_sample=False, max_x=max_x), batch_size=batch_size,
+        shuffle=True, num_workers=num_workers, drop_last=True
+    )
+
+    train_eval_loader = DataLoader(
+        FunctionDataset(nr_of_samples=training_evaluation_samples,uniform_sample=False, max_x=max_x),
+        batch_size=training_evaluation_samples, shuffle=False, num_workers=num_workers, drop_last=True
+    )
+
+    test_loader = DataLoader(
+        FunctionDataset(nr_of_samples=testing_samples,uniform_sample=True, max_x=max_x),
+        batch_size=testing_samples, shuffle=False, num_workers=num_workers, drop_last=True
+    )
+
+    visualization_loader = DataLoader(
+        FunctionDataset(nr_of_samples=visualization_samples, uniform_sample=True, max_x=max_x),
+        batch_size=visualization_samples, shuffle=False, num_workers=num_workers, drop_last=True
+    )
+
+    return train_loader, test_loader, train_eval_loader, visualization_loader
 
 
 def collect_and_sort_parameter_values_across_layers(model):
@@ -237,6 +309,68 @@ def collect_and_sort_parameter_values_across_layers(model):
 
     fig.show()
 
+def compute_loss(args, use_shooting, integrator, sblock, func, batch_in, batch_out):
+    if not use_shooting:
+        if args.use_neural_ode:
+
+            pred_y = integrator.integrate(func=func, x0=batch_in, t=torch.tensor([0, 1]).float())
+            pred_y = pred_y[1, :, :, :]  # need prediction at time 1
+
+        elif args.use_double_resnet or args.use_double_resnet_rnn:
+            x20 = torch.zeros_like(batch_in)
+            sz = [1] * len(x20.shape)
+            sz[-1] = inflation_factor
+            x20 = x20.repeat(sz)
+            x1x2 = (batch_in, x20)
+            pred_y, pred_y2 = simple_resnet(x1x2)
+        else:
+            pred_y = simple_resnet(x=batch_in)
+    else:
+        # set integration time
+        # sblock.set_integration_time(time_to=1.0) # try to do this mapping in unit time
+        pred_y, _, _, _ = sblock(x=batch_in)
+
+    if use_shooting:
+        sim_loss = args.sim_weight * torch.mean((pred_y - batch_out) ** 2)
+
+        norm_penalty = sblock.get_norm_penalty()
+
+        if args.do_not_use_parameter_penalty_energy:
+            norm_loss = torch.tensor([0])
+        else:
+            norm_loss = args.norm_weight * norm_penalty
+
+        loss = sim_loss + norm_loss
+
+    else:
+        sim_loss = args.sim_weight*torch.mean((pred_y - batch_out) ** 2)
+        norm_penalty = torch.tensor([0])
+        norm_loss = args.norm_weight * norm_penalty
+        loss = sim_loss
+
+    return loss, sim_loss, norm_loss, norm_penalty, pred_y,
+
+
+def show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock):
+
+    fig = plt.figure(figsize=(8, int(np.ceil(8 * (args.xrange ** 3) / args.xrange))), facecolor='white')
+    ax = fig.add_subplot(111, frameon=True)
+    ax.set_aspect('equal')
+    # ax.cla()
+    ax.plot(batch_in.detach().cpu().numpy().squeeze(), batch_out.detach().cpu().numpy().squeeze(), 'g+')
+    ax.plot(batch_in.detach().cpu().numpy().squeeze(), pred_y.detach().cpu().numpy().squeeze(), 'r*')
+    ax.set_xlim(-args.xrange, args.xrange)
+    ax.set_ylim(-args.xrange ** 3, args.xrange ** 3)
+
+    if use_shooting:
+        sd = sblock.state_dict()
+        q1 = sd['q1'].detach().cpu().numpy().squeeze()
+
+        for v in q1:
+            ax.plot([v, v], [-args.xrange ** 3, args.xrange ** 3], 'k-')
+
+    figure_settings.set_font_size_for_axis(ax, fontsize=20)
+    plt.show()
 
 if __name__ == '__main__':
 
@@ -248,10 +382,13 @@ if __name__ == '__main__':
     utils.setup_random_seed(seed=args.seed)
     utils.setup_device(desired_gpu=args.gpu)
 
+    # create the data immediately after setting the random seed to make sure it is always consistent across the experiments
+    train_loader, test_loader, train_eval_loader, visualization_loader = get_function_data_loaders(batch_size=args.batch_size, max_x=args.xrange)
+
     par_init = pi.VectorEvolutionSampleBatchParameterInitializer(
         only_random_initialization=True,
         random_initialization_magnitude=0.1, 
-        sample_batch = torch.linspace(0,1,args.nr_of_particles))
+        sample_batch = torch.linspace(-args.xrange,args.xrange,args.nr_of_particles))
 
 
     shootingintegrand_kwargs = {'in_features': 1,
@@ -296,30 +433,28 @@ if __name__ == '__main__':
     )
 
     use_shooting = False
+    integrator = None
+    func = None
+
     if args.use_rnn:
         weight_decay = 0.0001
-        lr = 1e-3
         print('Using ResNetRNN: weight = {}'.format(weight_decay))
         simple_resnet = sdnn.ResNetRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_double_resnet_rnn:
         weight_decay = 0.025
-        lr = 1e-3
         print('Using DoubleResNetRNN: weight = {}'.format(weight_decay))
         simple_resnet = sdnn.DoubleResNetUpDownRNN(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_updown:
         weight_decay = 0.01
-        lr = 1e-3
         print('Using ResNetUpDown: weight = {}'.format(weight_decay))
         simple_resnet = sdnn.ResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_simple_resnet:
         weight_decay = 0.0001
-        lr = 1e-2
         print('Using ResNet: weight = {}'.format(weight_decay))
         simple_resnet = sdnn.ResNet(nr_of_layers=args.nr_of_layers)
     elif args.use_double_resnet:
         #weight_decay = 0.025
         weight_decay = 0.01
-        lr = 1e-2
         print('Using DoubleResNetUpDown: weight = {}'.format(weight_decay))
         simple_resnet = sdnn.DoubleResNetUpDown(nr_of_layers=args.nr_of_layers, inflation_factor=inflation_factor)
     elif args.use_neural_ode:
@@ -338,14 +473,14 @@ if __name__ == '__main__':
 
     if not use_shooting:
         if args.use_neural_ode:
-            optimizer = optim.RMSprop(func.parameters(), lr=1e-2)
+            params = func.parameters()
         else:
-            optimizer = optim.Adam(simple_resnet.parameters(), lr=lr, weight_decay=weight_decay)
+            params = simple_resnet.parameters()
     else:
 
-        sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+        sample_batch_in, sample_batch_out = get_sample_batch(nr_of_samples=args.batch_size, max_x=args.xrange)
         if use_fixed_sample_batch:
-            fixed_batch_in, fixed_batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+            fixed_batch_in, fixed_batch_out = get_sample_batch(nr_of_samples=args.batch_size, max_x=args.xrange)
 
         sblock(x=sample_batch_in)
 
@@ -355,7 +490,7 @@ if __name__ == '__main__':
             ss_sd = sblock.state_dict()
 
             # get initial positions on the trajectory (to place the particles there)
-            init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles)
+            init_q1, _ = get_uniform_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange)
             with torch.no_grad():
                 ss_sd['q1'].copy_(init_q1)
 
@@ -366,96 +501,92 @@ if __name__ == '__main__':
             if args.custom_parameter_freezing:
                 utils.freeze_parameters(sblock, ['q1'])
 
-        optimizer = optim.Adam(sblock.parameters(), lr=1e-2)
+        params = sblock.parameters()
+        weight_decay = 0.0
 
-    # fig = plt.figure(figsize=(12, 4), facecolor='white')
-    # ax = fig.add_subplot(111, frameon=False)
-    # plt.show(block=False)
+    # create optimizer
+    optimizer, scheduler = setup_optimizer_and_scheduler(params=params, lr=args.lr, weight_decay=weight_decay)
+
+    # now iterate over the data
 
     track_loss = []
 
     if write_out_first_five_gradients:
         max_iter = 5
-    else:
-        max_iter = args.niters
+        current_itr = 0
 
-    for itr in range_command(1, max_iter + 1):
+    for itr in range_command(0, args.niters + 1): # number of epochs
 
-        # get current batch data
-        if use_fixed_sample_batch:
-            batch_in = fixed_batch_in
-            batch_out = fixed_batch_out
-        else:
-            batch_in, batch_out = get_sample_batch(nr_of_samples=args.batch_size)
+        # now iterate over the entire training dataset
+        for itr_batch, sampled_batch in enumerate(train_loader):
 
-        optimizer.zero_grad()
-
-        if not use_shooting:
-            if args.use_neural_ode:
-
-                pred_y = integrator.integrate(func=func, x0=batch_in, t=torch.tensor([0, 1]).float())
-                pred_y = pred_y[1, :, :, :] # need prediction at time 1
-
-            elif args.use_double_resnet or args.use_double_resnet_rnn:
-                x20 = torch.zeros_like(batch_in)
-                sz = [1] * len(x20.shape)
-                sz[-1] = inflation_factor
-                x20 = x20.repeat(sz)
-                x1x2 = (batch_in, x20)
-                pred_y, pred_y2 = simple_resnet(x1x2)
+            # get current batch data
+            if use_fixed_sample_batch:
+                # force it back to the fixed value; this is just for debugging!
+                batch_in = fixed_batch_in
+                batch_out = fixed_batch_out
             else:
-                pred_y = simple_resnet(x=batch_in)
-        else:
-            # set integration time
-            # sblock.set_integration_time(time_to=1.0) # try to do this mapping in unit time
-            pred_y, _, _, _ = sblock(x=batch_in)
+                batch_in, batch_out = sampled_batch['input'], sampled_batch['output']
 
-        if use_shooting:
-            sim_loss = args.sim_weight*torch.mean((pred_y - batch_out)**2)
+            optimizer.zero_grad()
 
-            norm_penalty = sblock.get_norm_penalty()
+            loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting, integrator=integrator,
+                                                                   sblock=sblock, func=func, batch_in=batch_in, batch_out=batch_out)
 
-            if args.do_not_use_parameter_penalty_energy:
-                norm_loss = torch.tensor([0])
-            else:
-                norm_loss = args.norm_weight * norm_penalty
-            loss = sim_loss + norm_loss
+            loss.backward()
 
-        else:
-            loss = torch.mean((pred_y - batch_out)**2)
+            if write_out_first_five_gradients:
+                # save gradient
+                grad_dict = dict()
+                for n,v in sblock.named_parameters():
+                    grad_dict[n] = v
+                    grad_dict['{}_grad'.format(n)] = v.grad
 
-        loss.backward()
+                torch.save(grad_dict,'grad_iter_{}_analytic_{}.pt'.format(current_itr,use_analytic_solution))
+                current_itr += 1
+                if current_itr>=max_iter:
+                    exit() # end, this is just for debugging
 
-        if write_out_first_five_gradients:
-            # save gradient
-            grad_dict = dict()
-            for n,v in sblock.named_parameters():
-                grad_dict[n] = v
-                grad_dict['{}_grad'.format(n)] = v.grad
 
-            torch.save(grad_dict,'grad_iter_{}_analytic_{}.pt'.format(itr,use_analytic_solution))
+            track_loss.append(loss.item())
+            optimizer.step()
 
-        track_loss.append(loss.item())
-        optimizer.step()
+            if args.clamp_range:
+                if use_shooting:
+                    # clip q1 if needed
+                    sd = sblock.state_dict()
+                    q1 = sd['q1']
+                    q1.data.clamp_(min=-args.xrange, max=args.xrange)
+                    print('q1 = {}'.format(q1.detach().cpu().numpy()))
 
+        # now compute testing evaluation loss
         if itr % args.test_freq == 0:
-            fig = plt.figure(figsize=(8, 12), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-            #ax.cla()
-            ax.plot(batch_in.detach().numpy().squeeze(),batch_out.detach().numpy().squeeze(),'g+')
-            ax.plot(batch_in.detach().numpy().squeeze(),pred_y.detach().numpy().squeeze(),'r*')
-            ax.set_xlim(-2, 2)
-            ax.set_ylim(-8, 8)
-            plt.draw()
-            #plt.pause(0.001)
-            plt.show()
 
-            if use_shooting:
-                print('\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
-            else:
-                print('Iter {:04d} | Loss {:.6f}'.format(itr, loss.item()))
+            with torch.no_grad():
+                dataiter = iter(train_eval_loader)
+                train_eval_batch = dataiter.next()
+                batch_in, batch_out = train_eval_batch['input'], train_eval_batch['output']
 
-    # now print the paramerers
+                loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
+                                                                               integrator=integrator,
+                                                                               sblock=sblock, func=func,
+                                                                               batch_in=batch_in,
+                                                                               batch_out=batch_out)
+
+                try:
+                    scheduler.step()
+                except:
+                    scheduler.step(loss)
+
+                if args.viz:
+                    show_figure(args=args, batch_in=batch_in, batch_out=batch_out, pred_y=pred_y, use_shooting=use_shooting, sblock=sblock)
+
+                if use_shooting:
+                    print('\nIter {:04d} | Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
+                else:
+                    print('Iter {:04d} | Loss {:.6f}'.format(itr, loss.item()))
+
+    # now print the parameters
     if not use_shooting:
         if args.use_neural_ode:
             utils.compute_number_of_parameters(func,print_parameters=True)
@@ -465,17 +596,47 @@ if __name__ == '__main__':
             if args.use_double_resnet:
                 collect_and_sort_parameter_values_across_layers(simple_resnet)
     else:
-        #utils.print_all_parameters(sblock)
         utils.compute_number_of_parameters(sblock,print_parameters=True)
 
+    # get the data for final testing, there will only be one batch
+    dataiter = iter(test_loader)
+    test_batch = dataiter.next()
+    uniform_batch_in, uniform_batch_out = test_batch['input'], test_batch['output']
+
+    # for visualization
+    dataiter = iter(visualization_loader)
+    test_batch = dataiter.next()
+    visualization_batch_in, visualization_batch_out = test_batch['input'], test_batch['output']
 
     if use_shooting:
+
+        # get measures
         custom_hook_data = defaultdict(list)
         hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
         sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
-        uniform_batch_in, uniform_batch_out = get_uniform_sample_batch(nr_of_samples=args.batch_size)
-        pred_y, _, _, _ = sblock(x=uniform_batch_in)
+        loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
+                                                                       integrator=integrator,
+                                                                       sblock=sblock, func=func,
+                                                                       batch_in=uniform_batch_in,
+                                                                       batch_out=uniform_batch_out)
+        hook.remove()
+
+        log_complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
+        print('Validation measures = {}'.format(log_complexity_measures))
+
+        # now repeat this for visualization
+
+        # get measures
+        custom_hook_data = defaultdict(list)
+        hook = sblock.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
+        sblock.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+
+        loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
+                                                                       integrator=integrator,
+                                                                       sblock=sblock, func=func,
+                                                                       batch_in=visualization_batch_in,
+                                                                       batch_out=visualization_batch_out)
         hook.remove()
 
         vector_visualization.plot_temporal_data(data=custom_hook_data, block_name=block_name)

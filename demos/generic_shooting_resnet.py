@@ -405,11 +405,15 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
+        if itr%50==0:
+            print(itr," loss ",loss.item())
+
         # todo: maybe only do this every couple of iterations
-        try:
-            scheduler.step()
-        except:
-            scheduler.step(loss)
+        if itr % 100 == 0:
+            try:
+                scheduler.step()
+            except:
+                scheduler.step(loss)
 
         batch_time_meter.update(time.time() - end)
 

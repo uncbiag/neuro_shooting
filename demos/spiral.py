@@ -40,6 +40,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
     parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
+    parser.add_argument('--lr', type-float, default=0.05, help='Learning rate for optimizer')
     parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
     parser.add_argument('--batch_validation_size', type=int, default=25, help='Length of the samples for validation.')
     parser.add_argument('--seed', required=False, type=int, default=-1,
@@ -154,10 +155,10 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
 
     return shooting_block
 
-def setup_optimizer_and_scheduler(params):
+def setup_optimizer_and_scheduler(params,lr=0.1):
 
     #optimizer = optim.Adam(params, lr=0.025)
-    optimizer = optim.Adam(params, lr=0.1)
+    optimizer = optim.Adam(params, lr=lr)
 
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,verbose=True)
@@ -371,7 +372,7 @@ if __name__ == '__main__':
         if args.custom_parameter_freezing:
             utils.freeze_parameters(shooting_block,['q1'])
 
-    optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters())
+    optimizer, scheduler = setup_optimizer_and_scheduler(params=shooting_block.parameters(), lr=args.lr)
     nr_of_pars = utils.compute_number_of_parameters(model=shooting_block)
 
     for itr in range_command(0, args.niters+1):
