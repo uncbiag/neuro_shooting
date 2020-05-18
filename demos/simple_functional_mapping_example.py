@@ -81,6 +81,7 @@ def setup_cmdline_parsing():
 
     parser.add_argument('--custom_parameter_freezing', action='store_true', default=False,
                         help='Enable custom code for parameter freezing -- development mode')
+    parser.add_argument('--unfreeze_parameters_at_iter', type=int, default=-1, help='Allows unfreezing parameters later during the iterations')
     parser.add_argument('--custom_parameter_initialization', action='store_true', default=False,
                         help='Enable custom code for parameter initialization -- development mode')
 
@@ -155,7 +156,7 @@ class FunctionDataset(Dataset):
 
         return sample
 
-def get_function_data_loaders(training_samples=5000,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=128, num_workers=0, max_x=1.0):
+def get_function_data_loaders(training_samples=2000,training_evaluation_samples=1000, testing_samples=1000, visualization_samples=50, batch_size=100, num_workers=0, max_x=1.0):
 
     train_loader = DataLoader(
         FunctionDataset(nr_of_samples=training_samples,uniform_sample=False, max_x=max_x), batch_size=batch_size,
@@ -516,6 +517,10 @@ if __name__ == '__main__':
         current_itr = 0
 
     for itr in range_command(0, args.niters + 1): # number of epochs
+
+        if uses_particles and args.custom_parameter_freezing:
+            if itr==args.unfreeze_parameters_at_iter:
+                utils.unfreeze_parameters(sblock, ['q1'])
 
         # now iterate over the entire training dataset
         for itr_batch, sampled_batch in enumerate(train_loader):
