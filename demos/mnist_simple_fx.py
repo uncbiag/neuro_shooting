@@ -115,7 +115,7 @@ def accuracy(model, dataset_loader):
 if __name__ == '__main__':
 
     ## define the model
-    model = sdnn.MyCNNResNet(nr_layers = 2,inflation_factor = 4,in_channels = 64)
+    model = sdnn.MyCNNResNet(nr_layers = 10,inflation_factor = 4,in_channels = 64)
     train_loader, test_loader, train_eval_loader = get_mnist_loaders(args.data_aug, args.batch_size, args.test_batch_size)
 
     #define the data generator
@@ -159,5 +159,5 @@ if __name__ == '__main__':
                 if val_acc > best_acc:
                     best_acc = val_acc
                     print(best_acc)
-            print("Epoch {:04d} | Time {:.3f} | Train Acc {:.4f} ".format(itr // batches_per_epoch, stop - start, loss.cpu().detach().numpy()))
+            print("Epoch {:04d} | Time {:.3f} | Train Acc {:.4f} ".format(itr // batches_per_epoch, stop - start, val_acc))
             start = time.time()
