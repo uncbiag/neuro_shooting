@@ -9,6 +9,7 @@ def save_all_formats(output_directory, filename):
     if not os.path.exists(output_directory):
         os.mkdir(output_directory)
 
+    plt.tight_layout()
     formats = ['png','pdf','pgf']
     for f in formats:
         current_filename = '{}.{}'.format(filename,f)

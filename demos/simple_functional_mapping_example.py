@@ -106,7 +106,7 @@ def setup_cmdline_parsing():
 
     parser.add_argument('--save_figures', action='store_true', help='If specified figures are saved (in current output directory) instead of displayed')
     parser.add_argument('--output_directory', type=str, default='results_simple_functional_mapping', help='Directory in which the results are saved')
-    parser.add_argument('--output_basename', type=str, default='sfm', help='Directory in which the results are saved')
+    parser.add_argument('--output_basename', type=str, default='sfm', help='Base name for the resulting figures.')
 
     args = parser.parse_args()
 
