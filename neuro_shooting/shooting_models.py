@@ -503,7 +503,7 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         # rhs['dot_q2'] = p['l2'](input=s['q1'])
 
         rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1'])) + p['l14'](input=s['q2'])
-        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=s['q1'])
+        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=self.nl(s['q1']))
 
         return rhs
 
