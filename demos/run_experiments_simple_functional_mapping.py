@@ -50,7 +50,7 @@ if __name__ == '__main__':
     run_args_template = {
         'shooting_model': args.shooting_model,
         #'viz': None,
-        'niters': 1,
+        'niters': 250,
         'unfreeze_parameters_at_iter': 50,
         'save_figures': None,
         'viz_freq': 300,
