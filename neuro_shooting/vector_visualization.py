@@ -383,7 +383,7 @@ def _plot_temporal_data(data, block_name, args=None, visualize=True, print=False
 
             plt.xlabel('time')
             if print:
-                plt.ylabel(figure_utils.escape_underscores(k))
+                plt.ylabel(figure_utils.escape_latex_special_characters(k))
             else:
                 plt.ylabel(k)
 

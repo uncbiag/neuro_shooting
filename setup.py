@@ -32,6 +32,7 @@ REQUIRED = [
     "torchvision",
     "tb-nightly",
     "matplotlib",
+    "pandas",
     "scipy",
     "scikit-learn",
     "sphinx",
