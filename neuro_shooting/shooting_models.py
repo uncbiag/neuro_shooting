@@ -499,9 +499,6 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
-        # rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
-        # rhs['dot_q2'] = p['l2'](input=s['q1'])
-
         rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1'])) + p['l14'](input=s['q2'])
         rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=self.nl(s['q1']))
 
@@ -583,24 +580,18 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
 
 
         # now compute the parameters
+        q2 = s['q2']
+        q1 = s['q1']
+        p1 = c['p_q1']
+        p2 = c['p_q2']
 
-        q2i = s['q2']
-        p1i = c['p_q1']
-        p2i = c['p_q2']
 
-        # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
-        #dot_qt = torch.matmul(self.nl(qi), A.t()) + bt
-
-        # now we can also compute the rhs of the costate (based on the manually computed shooting equations)
-        # for i in range(self.nr_of_particles):
-        #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
-        temp = - torch.matmul(p1i,l3)
-        #dot_p2t = - self.dnl(torch.sin(3.1415927410125732 * t) * q2i) * torch.matmul(p1i,l1)
-        dot_p2t = - self.dnl(  q2i) * torch.matmul(p1i,l1)
-        dot_p1t = - torch.matmul(p2i,l2) + temp
-        rhs['dot_p_q1'] =  dot_p1t #+ self.dampening_factor * p1i
-        #rhs['dot_p_q2'] =  torch.sin(3.1415927410125732 * t) * dot_p2t - self.dampening_factor * p2i
-        rhs['dot_p_q2'] =  dot_p2t #- self.dampening_factor * p2i
+        dot_p2t = - self.dnl(q2) * (torch.matmul(p1,l11) + torch.matmul(p2,l23))
+        temp_dot_p2t = - torch.matmul(p1,l14) - torch.matmul(p2,l22)
+        dot_p1t = - torch.matmul(p2,l21) - torch.matmul(p1,l12)
+        temp_dot_p1t = - self.dnl(q1) * (torch.matmul(p1,l13) + torch.matmul(p2,l24))
+        rhs['dot_p_q1'] =  dot_p1t + temp_dot_p1t
+        rhs['dot_p_q2'] =  dot_p2t + temp_dot_p2t
 
         return rhs
 
@@ -628,13 +619,29 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         p2i = c['p_q2'].transpose(1,2)
 
         temp = torch.matmul(self.nl(q2i),p1i)
-        l1 = torch.mean(temp,dim = 0).t()
-
-        temp2 = torch.matmul(p2i,q1i)
-        l2 = torch.mean(temp2,dim = 0)
+        l11 = torch.mean(temp,dim = 0).t()
 
         temp3 = torch.matmul(q1i.transpose(1,2),p1i)
-        l3 = torch.mean(temp3,dim = 0).t()
+        l12 = torch.mean(temp3,dim = 0).t()
+
+        temp3 = torch.matmul(self.nl(q1i.transpose(1,2)),p1i)
+        l13 = torch.mean(temp3,dim = 0).t()
+
+        temp3 = torch.matmul(q2i,p1i)
+        l14 = torch.mean(temp3,dim = 0).t()
+
+        temp2 = torch.matmul(p2i,q1i)
+        l21 = torch.mean(temp2,dim = 0)
+
+        temp2 = torch.matmul(p2i,q2i.transpose(1,2))
+        l22 = torch.mean(temp2,dim = 0)
+
+        temp = torch.matmul(self.nl(q2i),p2i.transpose(1,2))
+        l23 = torch.mean(temp,dim = 0).t()
+
+        temp2 = torch.matmul(p2i,self.nl(q1i))
+        l24 = torch.mean(temp2,dim = 0)
+
         # particles are saved as rows
         #At = torch.zeros(self.in_features, self.in_features)
         #for i in range(self.nr_of_particles):
@@ -645,44 +652,37 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         # results need to be written in the respective parameter variables
         par_dict11 = p['l11'].get_parameter_dict()
         weight_dict11 = p['l11'].get_parameter_weight_dict()
-        par_dict11['weight'] = utils.divide_by_if_not_none(l1,weight_dict11['weight'])
+        par_dict11['weight'] = utils.divide_by_if_not_none(l11,weight_dict11['weight'])
         par_dict11['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict11['bias'])
 
         par_dict12 = p['l12'].get_parameter_dict()
         weight_dict12 = p['l12'].get_parameter_weight_dict()
-        par_dict12['weight'] = utils.divide_by_if_not_none(l1, weight_dict12['weight'])
-        par_dict12['bias'] = utils.divide_by_if_not_none(torch.mean(p1i, dim=0), weight_dict12['bias'])
+        par_dict12['weight'] = utils.divide_by_if_not_none(l12, weight_dict12['weight'])
 
         par_dict13 = p['l13'].get_parameter_dict()
         weight_dict13 = p['l13'].get_parameter_weight_dict()
-        par_dict13['weight'] = utils.divide_by_if_not_none(l1, weight_dict13['weight'])
-        par_dict13['bias'] = utils.divide_by_if_not_none(torch.mean(p1i, dim=0), weight_dict13['bias'])
+        par_dict13['weight'] = utils.divide_by_if_not_none(l13, weight_dict13['weight'])
 
         par_dict14 = p['l14'].get_parameter_dict()
         weight_dict14 = p['l14'].get_parameter_weight_dict()
-        par_dict14['weight'] = utils.divide_by_if_not_none(l1, weight_dict14['weight'])
-        par_dict14['bias'] = utils.divide_by_if_not_none(torch.mean(p1i, dim=0), weight_dict14['bias'])
-
+        par_dict14['weight'] = utils.divide_by_if_not_none(l14, weight_dict14['weight'])
 
         par_dict21 = p['l21'].get_parameter_dict()
         weight_dict21 = p['l21'].get_parameter_weight_dict()
-        par_dict21['weight'] = utils.divide_by_if_not_none(l1,weight_dict21['weight'])
-        par_dict21['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict21['bias'])
+        par_dict21['weight'] = utils.divide_by_if_not_none(l21,weight_dict21['weight'])
+        par_dict21['bias'] = utils.divide_by_if_not_none(torch.mean(p2i.transpose(1,2),dim = 0),weight_dict21['bias'])
 
         par_dict22 = p['l22'].get_parameter_dict()
         weight_dict22 = p['l22'].get_parameter_weight_dict()
-        par_dict22['weight'] = utils.divide_by_if_not_none(l2, weight_dict22['weight'])
-        par_dict22['bias'] = utils.divide_by_if_not_none(torch.mean(p2i, dim=0), weight_dict22['bias'])
+        par_dict22['weight'] = utils.divide_by_if_not_none(l22, weight_dict22['weight'])
 
         par_dict23 = p['l23'].get_parameter_dict()
         weight_dict23 = p['l23'].get_parameter_weight_dict()
-        par_dict23['weight'] = utils.divide_by_if_not_none(l2, weight_dict23['weight'])
-        par_dict23['bias'] = utils.divide_by_if_not_none(torch.mean(p2i, dim=0), weight_dict23['bias'])
+        par_dict23['weight'] = utils.divide_by_if_not_none(l23, weight_dict23['weight'])
 
         par_dict24 = p['l24'].get_parameter_dict()
         weight_dict24 = p['l24'].get_parameter_weight_dict()
-        par_dict24['weight'] = utils.divide_by_if_not_none(l2, weight_dict24['weight'])
-        par_dict24['bias'] = utils.divide_by_if_not_none(torch.mean(p2i, dim=0), weight_dict24['bias'])
+        par_dict24['weight'] = utils.divide_by_if_not_none(l24, weight_dict24['weight'])
         return p
 
 
