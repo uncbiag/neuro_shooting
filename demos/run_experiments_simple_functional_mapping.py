@@ -76,7 +76,7 @@ if __name__ == '__main__':
     # now go over all these parameter structures and run the experiments
     for d in swept_parameter_list:
         for sidx, seed in enumerate(seeds):
-            basename = 'run_{:02d}_{}'.format(sidx,args.fcn)
+            basename = 'run_{:02d}_{}_{}'.format(sidx,args.fcn,args.shooting_model)
             experiment_name = create_experiment_name(basename,d)
             output_directory = os.path.join(output_base_directory,experiment_name)
             log_file = os.path.join(output_directory,'runlog.log')
