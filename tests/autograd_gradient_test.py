@@ -23,20 +23,20 @@ def zero_grads(pars):
 
 # particle setup
 nonlinearity = 'tanh'
-nr_of_particles = 10
-parameter_weight = 0.1
+nr_of_particles = 8
+parameter_weight = 1.0
 
 # create a simple integrator
 stepsize = 0.1
 integrator_options = {'step_size': stepsize}
-in_features_size = 1
+in_features_size = 3
 
 #check_models = ['updown']
 #check_models = ['DEBUG']
 #check_models = ['simple']
 #check_models = ['universal']
 
-check_models = ['updown','DEBUG','simple'] #,"universal"]
+check_models = ['updown','DEBUG','simple',"general"]
 
 number_of_tests_passed = 0
 number_of_tests_attempted = 0
@@ -83,6 +83,18 @@ for current_model in check_models:
                                                                           particle_dimension=1,
                                                                           particle_size=in_features_size,
                                                                           parameter_weight=parameter_weight)
+
+
+    elif current_model=="general":
+        shooting_model = shooting_models.AutoShootingIntegrandModelGeneralUpDown(in_features=in_features_size, nonlinearity=nonlinearity,
+                                                                          nr_of_particles=nr_of_particles,particle_dimension = 1,
+                                                                          particle_size = in_features_size,
+                                                                          parameter_weight=parameter_weight,
+                                                                          inflation_factor=5)
+
+
+
+
     else:
         raise ValueError('Unknown model to check: {}'.format( current_model ))
 

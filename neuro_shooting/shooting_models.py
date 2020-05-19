@@ -9,6 +9,7 @@ from torch.nn.parameter import Parameter
 
 from sortedcontainers import SortedDict
 
+
 class AutoShootingIntegrandModelDampenedUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -125,6 +126,7 @@ class AutoShootingIntegrandModelDampenedUpDown(shooting.ShootingLinearInParamete
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
+
 class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVectorIntegrand):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                 nr_of_particles=10, particle_dimension=1, particle_size=2,parameter_weight=None,
@@ -191,6 +193,7 @@ class AutoShootingIntegrandModelSecondOrder(shooting.ShootingLinearInParameterVe
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts, 'q1')
+
 
 class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -403,6 +406,7 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
 
         return p
 
+
 class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -495,11 +499,8 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         s = state_dict_or_dict_of_dicts
         p = parameter_objects
 
-        # rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
-        # rhs['dot_q2'] = p['l2'](input=s['q1'])
-
         rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1'])) + p['l14'](input=s['q2'])
-        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=s['q1'])
+        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=self.nl(s['q1']))
 
         return rhs
 
@@ -540,6 +541,149 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+
+    def optional_rhs_advect_costate_analytic(self, t, state_dict_or_dict_of_dicts, costate_dict_or_dict_of_dicts, parameter_objects):
+        """
+        This is optional. We do not need to define this. But if we do, we can sidestep computing the co-state evolution via
+        auto-diff. We can use this for example to test if the autodiff shooting approach properly recovers the analytic evolution equations.
+
+        :param t:
+        :param state_dict_of_dicts:
+        :param costate_dict_of_dicts:
+        :param parameter_objects:
+        :return:
+        """
+
+        rhs = SortedDict()
+
+        s = state_dict_or_dict_of_dicts
+        c = costate_dict_or_dict_of_dicts
+        p = parameter_objects
+
+        par_dict11 = p['l11'].get_parameter_dict()
+        l11 = par_dict11['weight']
+        par_dict12 = p['l12'].get_parameter_dict()
+        l12 = par_dict12['weight']
+        par_dict13 = p['l13'].get_parameter_dict()
+        l13 = par_dict13['weight']
+        par_dict14 = p['l14'].get_parameter_dict()
+        l14 = par_dict14['weight']
+
+        par_dict21 = p['l21'].get_parameter_dict()
+        l21 = par_dict21['weight']
+        par_dict22 = p['l22'].get_parameter_dict()
+        l22 = par_dict22['weight']
+        par_dict23 = p['l23'].get_parameter_dict()
+        l23 = par_dict23['weight']
+        par_dict24 = p['l24'].get_parameter_dict()
+        l24 = par_dict24['weight']
+
+
+        # now compute the parameters
+        q2 = s['q2']
+        q1 = s['q1']
+        p1 = c['p_q1']
+        p2 = c['p_q2']
+
+
+        dot_p2t = - self.dnl(q2) * (torch.matmul(p1,l11) + torch.matmul(p2,l23))
+        temp_dot_p2t = - torch.matmul(p1,l14) - torch.matmul(p2,l22)
+        dot_p1t = - torch.matmul(p2,l21) - torch.matmul(p1,l12)
+        temp_dot_p1t = - self.dnl(q1) * (torch.matmul(p1,l13) + torch.matmul(p2,l24))
+        rhs['dot_p_q1'] =  dot_p1t + temp_dot_p1t
+        rhs['dot_p_q2'] =  dot_p2t + temp_dot_p2t
+
+        return rhs
+
+
+    def optional_compute_parameters_analytic(self,t,state_dict, costate_dict):
+        """
+        This is optional. We can prescribe an analytic computation of the parameters (where we do not need to do this via autodiff).
+        This is optional, but can be used for testing.
+
+        :param t:
+        :param parameter_objects:
+        :param state_dict:
+        :param costate_dict:
+        :return:
+        """
+
+        s = state_dict
+        c = costate_dict
+        p = self.create_default_parameter_objects_on_consistent_device()
+
+        # now compute the parameters
+        q1i = s['q1']
+        p1i = c['p_q1']
+        q2i = s['q2'].transpose(1,2)
+        p2i = c['p_q2'].transpose(1,2)
+
+        temp = torch.matmul(self.nl(q2i),p1i)
+        l11 = torch.mean(temp,dim = 0).t()
+
+        temp3 = torch.matmul(q1i.transpose(1,2),p1i)
+        l12 = torch.mean(temp3,dim = 0).t()
+
+        temp3 = torch.matmul(self.nl(q1i.transpose(1,2)),p1i)
+        l13 = torch.mean(temp3,dim = 0).t()
+
+        temp3 = torch.matmul(q2i,p1i)
+        l14 = torch.mean(temp3,dim = 0).t()
+
+        temp2 = torch.matmul(p2i,q1i)
+        l21 = torch.mean(temp2,dim = 0)
+
+        temp2 = torch.matmul(p2i,q2i.transpose(1,2))
+        l22 = torch.mean(temp2,dim = 0)
+
+        temp = torch.matmul(self.nl(q2i),p2i.transpose(1,2))
+        l23 = torch.mean(temp,dim = 0).t()
+
+        temp2 = torch.matmul(p2i,self.nl(q1i))
+        l24 = torch.mean(temp2,dim = 0)
+
+        # particles are saved as rows
+        #At = torch.zeros(self.in_features, self.in_features)
+        #for i in range(self.nr_of_particles):
+        #    At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
+        #At = 1 / self._overall_number_of_state_parameters * At  # because of the mean in the Lagrangian multiplier
+        #bt = 1 / self._overall_number_of_state_parameters * pi.sum(dim=0)  # -\sum_i q_i
+
+        # results need to be written in the respective parameter variables
+        par_dict11 = p['l11'].get_parameter_dict()
+        weight_dict11 = p['l11'].get_parameter_weight_dict()
+        par_dict11['weight'] = utils.divide_by_if_not_none(l11,weight_dict11['weight'])
+        par_dict11['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict11['bias'])
+
+        par_dict12 = p['l12'].get_parameter_dict()
+        weight_dict12 = p['l12'].get_parameter_weight_dict()
+        par_dict12['weight'] = utils.divide_by_if_not_none(l12, weight_dict12['weight'])
+
+        par_dict13 = p['l13'].get_parameter_dict()
+        weight_dict13 = p['l13'].get_parameter_weight_dict()
+        par_dict13['weight'] = utils.divide_by_if_not_none(l13, weight_dict13['weight'])
+
+        par_dict14 = p['l14'].get_parameter_dict()
+        weight_dict14 = p['l14'].get_parameter_weight_dict()
+        par_dict14['weight'] = utils.divide_by_if_not_none(l14, weight_dict14['weight'])
+
+        par_dict21 = p['l21'].get_parameter_dict()
+        weight_dict21 = p['l21'].get_parameter_weight_dict()
+        par_dict21['weight'] = utils.divide_by_if_not_none(l21,weight_dict21['weight'])
+        par_dict21['bias'] = utils.divide_by_if_not_none(torch.mean(p2i.transpose(1,2),dim = 0),weight_dict21['bias'])
+
+        par_dict22 = p['l22'].get_parameter_dict()
+        weight_dict22 = p['l22'].get_parameter_weight_dict()
+        par_dict22['weight'] = utils.divide_by_if_not_none(l22, weight_dict22['weight'])
+
+        par_dict23 = p['l23'].get_parameter_dict()
+        weight_dict23 = p['l23'].get_parameter_weight_dict()
+        par_dict23['weight'] = utils.divide_by_if_not_none(l23, weight_dict23['weight'])
+
+        par_dict24 = p['l24'].get_parameter_dict()
+        weight_dict24 = p['l24'].get_parameter_weight_dict()
+        par_dict24['weight'] = utils.divide_by_if_not_none(l24, weight_dict24['weight'])
+        return p
 
 
 class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
@@ -741,6 +885,7 @@ class DEBUGAutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVe
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
+
 class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -882,6 +1027,7 @@ class AutoShootingIntegrandModelSimple(shooting.ShootingLinearInParameterVectorI
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
+
 class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -953,6 +1099,7 @@ class AutoShootingIntegrandModelSimpleConv2D(shooting.ShootingLinearInParameterC
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+
 
 class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
@@ -1029,6 +1176,7 @@ class AutoShootingIntegrandModelConv2DBatch(shooting.ShootingLinearInParameterCo
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
 
+
 class AutoShootingOptimalTransportSimple(shooting.OptimalTransportNonLinearInParameter):
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=1,
@@ -1090,6 +1238,7 @@ class AutoShootingOptimalTransportSimple(shooting.OptimalTransportNonLinearInPar
     def disassemble(self,input,dim=1):
         state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
         return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+
 
 class AutoShootingIntegrandModelUpdownDampenedQ2(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -1259,6 +1408,7 @@ class AutoShootingIntegrandModelUpdownDampenedQ2(shooting.ShootingLinearInParame
         par_dict2['bias'] = utils.divide_by_if_not_none(torch.mean(p2i,dim = 0).t(),weight_dict2['bias'])
 
         return p
+
 
 class AutoShootingIntegrandModelUpdownSymmetrized(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -1447,6 +1597,7 @@ class AutoShootingIntegrandModelUpdownSymmetrized(shooting.ShootingLinearInParam
         par_dict3['weight'] = utils.divide_by_if_not_none(l3,weight_dict['weight'])
         par_dict3['bias'] = utils.divide_by_if_not_none(torch.mean(p3i, dim=0),weight_dict3['bias'])
         return p
+
 
 class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParameterVectorIntegrand):
 
@@ -1677,6 +1828,7 @@ class AutoShootingIntegrandModelUpdownPeriodic(shooting.ShootingLinearInParamete
         par_dict3['weight'] = utils.divide_by_if_not_none(l3,weight_dict3['weight'])
         return p
 
+
 class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterConvolutionIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -1773,18 +1925,19 @@ class AutoShootingIntegrandModelUpDownConv2D(shooting.ShootingLinearInParameterC
         data_dict['q1'] = x
         if self.optimize_over_data_initial_conditions:
 
-            if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
-                # just repeat it for all the data
-                szq20 = list(self.data_q20.shape)
-                szx = list(x.shape)
-                dim_diff = len(szx) - len(szq20)
-                data_q20 = self.data_q20.view([1] * dim_diff + szq20)
-                data_q20_replicated = data_q20.expand(szx[0:dim_diff] + [-1] * len(szq20))
-
-                data_dict['q2'] = data_q20_replicated
-            elif self.optimize_over_data_initial_conditions_type.lower() == 'linear':
+            # if self.optimize_over_data_initial_conditions_type.lower() == 'direct':
+            #     # just repeat it for all the data
+            #     szq20 = list(self.data_q20.shape)
+            #     szx = list(x.shape)
+            #     dim_diff = len(szx) - len(szq20)
+            #     data_q20 = self.data_q20.view([1] * dim_diff + szq20)
+            #     data_q20_replicated = data_q20.expand(szx[0:dim_diff] + [-1] * len(szq20))
+            #
+            #     data_dict['q2'] = data_q20_replicated
+            if self.optimize_over_data_initial_conditions_type.lower() == 'linear':
                 q20 = self.simple_init(x)
-                data_dict['q2'] = q20
+                #data_dict['q2'] = q20
+                data_dict['q2'] = x
             elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
                 # predict the initial condition based on a simple neural network
                 q20 = self.init_l2(self.nl(self.init_l1(x)))
