@@ -355,6 +355,7 @@ def _plot_temporal_data(data, block_name, args=None, visualize=True, print=False
     if print:
         figure_utils.save_all_formats(output_directory=args.output_directory,
                                       filename='{}-energy'.format(args.output_basename))
+        plt.close()
 
     if visualize:
         plt.show()
@@ -390,6 +391,7 @@ def _plot_temporal_data(data, block_name, args=None, visualize=True, print=False
             if print:
                 figure_utils.save_all_formats(output_directory=args.output_directory,
                                               filename='{}-{}'.format(args.output_basename, k))
+                plt.close()
 
             if visualize:
                 plt.show()
