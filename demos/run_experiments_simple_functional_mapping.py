@@ -9,7 +9,7 @@ import argparse
 def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Simple functional mapping')
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
-    parser.add_argument('--conda_environment', type=str, default='neuro_shooting', help='Name of the conda environment that will be activated via conda activate.')
+    parser.add_argument('--path_to_python', type=str, default=os.system('which python'), help='Full path to python in your conda environment.')
     parser.add_argument('--nr_of_seeds', type=int, default=1, help='Number of consecutive random seeds which we should run; i.e., number of random runs')
     parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
     args = parser.parse_args()
@@ -89,8 +89,9 @@ if __name__ == '__main__':
 
             ce.run_command_with_args(python_script=python_script,
                                      run_args=run_args,
-                                     conda_environment=args.conda_environment,
+                                     path_to_python=args.path_to_python,
                                      cuda_visible_devices=args.gpu,
                                      log_file=log_file)
+            print('Hello')
 
     print('Done processing')

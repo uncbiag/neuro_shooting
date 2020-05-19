@@ -27,13 +27,13 @@ def recursively_sweep_parameters(pars_to_sweep,par_dict=OrderedDict(),swept_para
 
     return swept_parameter_list
 
-def run_command_with_args(python_script,run_args,conda_environment,cuda_visible_devices=0,log_file=None):
+def run_command_with_args(python_script,run_args,path_to_python,cuda_visible_devices=0,log_file=None):
 
     # now run the command
     cmd_arg_list = _make_arg_list(run_args)
     current_python_script = python_script
 
-    pre_command = 'conda activate {}'.format(conda_environment)
+    pre_command = 'alias python="{}"'.format(path_to_python) #'conda activate {}'.format(conda_environment)
 
     entire_pre_command = get_bash_precommand(cuda_visible_devices=cuda_visible_devices,pre_command=pre_command)
     execute_python_script_via_bash(current_python_script, cmd_arg_list, pre_command=entire_pre_command, log_file=log_file)
@@ -127,13 +127,13 @@ def execute_python_script_via_bash( python_script, arguments_as_list, pre_comman
 
   str = get_string_argument_from_list(['python'] + [python_script] + arguments_as_list)
   if pre_command is not None and log_file is not None:
-    bash_command = 'bash -l -c "{:s} {:s} > >(tee {:s}) 2>&1"'.format(pre_command,str,log_file)
+    bash_command = 'bash -c "{:s} {:s} > >(tee {:s}) 2>&1"'.format(pre_command,str,log_file)
   elif pre_command is not None and log_file is None:
-    bash_command = 'bash -l -c "{:s} {:s}"'.format(pre_command, str)
+    bash_command = 'bash -c "{:s} {:s}"'.format(pre_command, str)
   elif pre_command is None and log_file is not None:
-    bash_command = 'bash -l -c "{:s} > >(tee {:s}) 2>&1"'.format(str, log_file)
+    bash_command = 'bash -c "{:s} > >(tee {:s}) 2>&1"'.format(str, log_file)
   else:
-    bash_command = 'bash -l -c "{:s}"'.format(str)
+    bash_command = 'bash -c "{:s}"'.format(str)
 
   print('\nExecuting command:')
   print('         ' + bash_command)
