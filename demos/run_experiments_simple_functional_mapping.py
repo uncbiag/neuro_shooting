@@ -6,8 +6,8 @@ import os
 
 import argparse
 
-def setup_cmdline_parsing():
-    parser = argparse.ArgumentParser('Simple functional mapping')
+def setup_cmdline_parsing(title='Simple functional mappping'):
+    parser = argparse.ArgumentParser(title)
     parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
     parser.add_argument('--path_to_python', type=str, default=os.popen('which python').read().rstrip(), help='Full path to python in your conda environment.')
     parser.add_argument('--nr_of_seeds', type=int, default=1, help='Number of consecutive random seeds which we should run; i.e., number of random runs')
@@ -39,9 +39,6 @@ def merge_args(run_args_template,add_args):
             merged_args[k] = v
 
     return merged_args
-
-def run_experiment(pars_template,pars):
-    pass
 
 if __name__ == '__main__':
 

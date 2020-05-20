@@ -394,10 +394,11 @@ def _show_figure(args, batch_in, batch_out, pred_y, use_shooting, sblock, fcn_ty
 
     if use_shooting:
         sd = sblock.state_dict()
-        q1 = sd['q1'].detach().cpu().numpy().squeeze()
+        if 'q1' in sd:
+            q1 = sd['q1'].detach().cpu().numpy().squeeze()
 
-        for v in q1:
-            ax.plot([v, v], [min_y, max_y], 'k-')
+            for v in q1:
+                ax.plot([v, v], [min_y, max_y], 'k-')
 
     figure_settings.set_font_size_for_axis(ax, fontsize=20)
 
@@ -543,10 +544,12 @@ if __name__ == '__main__':
             # just initialize it with a random data batch
             init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange, fcn_type=args.fcn)
 
-        with torch.no_grad():
-            ss_sd['q1'].copy_(init_q1)
-
         uses_particles = not args.use_particle_free_rnn_mode
+
+        if uses_particles:
+            with torch.no_grad():
+                ss_sd['q1'].copy_(init_q1)
+
         if uses_particles:
             if args.custom_parameter_freezing:
                 utils.freeze_parameters(sblock, ['q1'])

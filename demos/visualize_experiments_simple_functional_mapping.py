@@ -43,7 +43,7 @@ def convert_to_flat_dictionary(d,d_keys=['args']):
 
     return d_ret
 
-def _plot_data(data,xname,yname,visualize=True,save_figure_directory=None,save_figure_name=None):
+def _plot_data(data,xname,yname,title_string,visualize=True,save_figure_directory=None,save_figure_name=None):
 
     if not visualize and not save_figure_name and not save_figure_directory:
         return
@@ -81,10 +81,11 @@ def _plot_data(data,xname,yname,visualize=True,save_figure_directory=None,save_f
 
     if do_printing:
         xlabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
-        ylabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
+        ylabel_name = figure_utils.escape_latex_special_characters(ylabel_name)
 
     ax.set_xlabel(xlabel_name)
     ax.set_ylabel(ylabel_name)
+    ax.set_title(title_string)
 
     # Create the boxplot
     labels = [str(q) for q in unique_values]
@@ -103,19 +104,19 @@ def _plot_data(data,xname,yname,visualize=True,save_figure_directory=None,save_f
         plt.show()
 
 
-def plot_data(data,xname,yname,visualize=True,save_figure_directory=None,save_figure_name=None):
+def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None):
 
     if len(data)==0:
         print('INFO: empty data for {}/{} -- not plotting'.format(xname,yname))
         return
 
     if not visualize and save_figure_directory is None and save_figure_name is None:
-        _plot_data(data=data, xname=xname,yname=yname,visualize=True)
+        _plot_data(data=data, xname=xname,yname=yname,title_string=title_string,visualize=True)
     else:
         if visualize:
-            _plot_data(data=data, xname=xname, yname=yname, visualize=True, save_figure_directory=None, save_figure_name=None)
+            _plot_data(data=data, xname=xname, yname=yname, title_string=title_string, visualize=True, save_figure_directory=None, save_figure_name=None)
         if save_figure_directory is not None:
-            _plot_data(data=data, xname=xname, yname=yname, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name)
+            _plot_data(data=data, xname=xname, yname=yname, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name)
 
 
 def _translate_label(label_name):
@@ -174,10 +175,11 @@ if __name__ == '__main__':
         xname = 'args.inflation_factor'
         data = model_data.loc[model_data['args.nr_of_particles'] == nr_of_particles]
 
+        title_string = '{} particles'.format(nr_of_particles)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
         for yname in ynames:
             save_figure_name = 'plot_{}_over_{}_for_{}_particles'.format(yname,xname,nr_of_particles)
-            plot_data(data=data,xname=xname, yname=yname, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
+            plot_data(data=data,xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
 
     # create plots for a particular inflation factor
     for inflation_factor in all_inflation_factors:
@@ -185,7 +187,8 @@ if __name__ == '__main__':
         xname = 'args.nr_of_particles'
         data = model_data.loc[model_data['args.inflation_factor'] == inflation_factor]
 
+        title_string = 'inflation factor = {}'.format(inflation_factor)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
         for yname in ynames:
             save_figure_name = 'plot_{}_over_{}_for_inflation_factor_{}'.format(yname,xname,inflation_factor)
-            plot_data(data=data, xname=xname, yname=yname, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
+            plot_data(data=data, xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
