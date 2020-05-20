@@ -11,7 +11,8 @@ import argparse
 
 def setup_cmdline_parsing():
     parser = argparse.ArgumentParser('Simple functional mapping')
-    parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that results have been stored in')
+    parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that results have been stored in.')
+    parser.add_argument('--figure_base_directory', type=str, default='results', help='Directory that the resulting figures will be in.')
     parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
     parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
     args = parser.parse_args()
@@ -165,7 +166,7 @@ if __name__ == '__main__':
     fcn_name = args.fcn
     model_name = args.shooting_model
 
-    save_figure_directory = 'figures_model_{}_fcn_{}'.format(model_name,fcn_name)
+    save_figure_directory = '{}_figures_model_{}_fcn_{}'.format(args.figure_base_directory,model_name,fcn_name)
 
     model_data = data.loc[(data['args.shooting_model']==model_name) & (data['args.fcn']==fcn_name)]
 

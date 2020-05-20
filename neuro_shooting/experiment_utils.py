@@ -8,7 +8,7 @@ def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title
     if cmdline_title is None:
         cmdline_title = cmdline_type
 
-    supported_types = ['simple_functional_mapping']
+    supported_types = ['simple_functional_mapping','simple_functional_weighting']
     if cmdline_type not in supported_types:
         raise ValueError('Unsupported command line type {}'.format(cmdline_type))
 
@@ -19,7 +19,21 @@ def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title
         parser.add_argument('--nr_of_seeds', type=int, default=1, help='Number of consecutive random seeds which we should run; i.e., number of random runs')
         parser.add_argument('--starting_seed_id', type=int, default=0, help='Seed that we start with.')
         parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
-        parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
+        parser.add_argument('--shooting_model', type=str, default='updown', choices=['updown_univeral', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
+        parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that the results will be stored in')
+        args = parser.parse_args()
+
+        return args
+
+    if cmdline_type=='simple_functional_weighting':
+        parser = argparse.ArgumentParser(cmdline_title)
+        parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
+        parser.add_argument('--path_to_python', type=str, default=os.popen('which python').read().rstrip(), help='Full path to python in your conda environment.')
+        parser.add_argument('--nr_of_seeds', type=int, default=1, help='Number of consecutive random seeds which we should run; i.e., number of random runs')
+        parser.add_argument('--starting_seed_id', type=int, default=0, help='Seed that we start with.')
+        parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
+        parser.add_argument('--sweep_updown', action='store_true', default=False)
+        parser.add_argument('--sweep_updown_universal', action='store_true', default=False)
         parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that the results will be stored in')
         args = parser.parse_args()
 
@@ -61,7 +75,22 @@ def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='sim
     # now go over all these parameter structures and run the experiments
     for d in swept_parameter_list:
         for sidx, seed in enumerate(seeds):
-            basename = 'run_{:02d}_{}_{}'.format(sidx, args.fcn, args.shooting_model)
+
+            if 'shooting_model' in d: # we are sweeping over it
+                current_shooting_model = d['shooting_model']
+            elif 'shooting_model' in run_args_template:
+                current_shooting_model = run_args_template['shooting_model']
+            else:
+                current_shooting_model = args.shooting_model
+
+            if 'fcn' in d:  # we are sweeping over it
+                current_fcn = d['fcn']
+            elif 'fcn' in run_args_template:
+                current_fcn = run_args_template['fcn']
+            else:
+                current_fcn = args.fcn
+
+            basename = 'run_{:02d}_{}_{}'.format(sidx, current_fcn, current_shooting_model)
             experiment_name = create_experiment_name(basename, d)
             output_directory = os.path.join(output_base_directory, experiment_name)
             log_file = os.path.join(output_directory, 'runlog.log')

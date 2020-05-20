@@ -64,7 +64,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--lr', type=float, default=0.01, help='Learning rate for optimizer')
 
     # shooting model parameters
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown', choices=['updown_universal', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
     parser.add_argument('--nonlinearity', type=str, default='relu', choices=['identity', 'relu', 'tanh', 'sigmoid',"softmax"], help='Nonlinearity for shooting.')
     parser.add_argument('--pw', type=float, default=1.0, help='parameter weight')
     parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
@@ -74,6 +74,9 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
+
+    # experimental
+    parser.add_argument('--optional_weight', type=float, default=1.0, help='Optional weight (meaning is model dependent) that we can use to sweep across additional model-specific settings.')
 
     parser.add_argument('--xrange', type=float, default=1.5, help='Desired range in x direction')
     parser.add_argument('--clamp_range', action='store_true', help='Clamps the range of the q1 particles to [-xrange,xrange]')
@@ -442,7 +445,8 @@ if __name__ == '__main__':
                                 'particle_size': 1,
                                 'costate_initializer':pi.VectorEvolutionParameterInitializer(random_initialization_magnitude=0.1),
                                 'optimize_over_data_initial_conditions': args.optimize_over_data_initial_conditions,
-                                'optimize_over_data_initial_conditions_type': args.optimize_over_data_initial_conditions_type}
+                                'optimize_over_data_initial_conditions_type': args.optimize_over_data_initial_conditions_type,
+                                'optional_weight': args.optional_weight}
 
     inflation_factor = args.inflation_factor  # for the up-down models (i.e., how much larger is the internal state; default is 5)
     use_particle_rnn_mode = args.use_particle_rnn_mode
@@ -461,6 +465,8 @@ if __name__ == '__main__':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'updown':
         smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
+    elif args.shooting_model == 'updown_univeral':
+        smodel = smodels.AutoShootingIntegrandModelUpDownUniversal(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution,inflation_factor=inflation_factor,use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'general_updown':
         smodel = smodels.AutoShootingIntegrandModelGeneralUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'periodic':
