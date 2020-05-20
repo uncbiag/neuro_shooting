@@ -407,6 +407,229 @@ class AutoShootingIntegrandModelUpDown(shooting.ShootingLinearInParameterVectorI
         return p
 
 
+class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParameterVectorIntegrand):
+
+    def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
+                 nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
+                 *args, **kwargs):
+
+        super(AutoShootingIntegrandModelUpDownUniversal, self).__init__(in_features=in_features,
+                                                               nonlinearity=nonlinearity,
+                                                               transpose_state_when_forward=transpose_state_when_forward,
+                                                               concatenate_parameters=concatenate_parameters,
+                                                               nr_of_particles=nr_of_particles,
+                                                               particle_dimension=particle_dimension,
+                                                               particle_size=particle_size,
+                                                               parameter_weight=parameter_weight,
+                                                               *args, **kwargs)
+
+        self.inflation_factor = inflation_factor
+        self.weighting_factor = 0.2
+        if self.optimize_over_data_initial_conditions:
+
+            supported_initial_condition_optimization_modes = ['direct','linear','mini_nn']
+            if self.optimize_over_data_initial_conditions_type.lower() not in supported_initial_condition_optimization_modes:
+                raise ValueError('Requested mode {} which is not one of the options {}'.format(self.optimize_over_data_initial_conditions_type,supported_initial_condition_optimization_modes))
+
+            if self.optimize_over_data_initial_conditions_type.lower()=='direct':
+                self.data_q20 = Parameter(torch.zeros([particle_dimension,particle_size*inflation_factor]))
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                # self.simple_init = nn.Linear(2,2*inflation_factor)
+                # TODO: shouldn't hard code this
+                self.simple_init = nn.Linear(in_features, in_features*inflation_factor)
+            elif self.optimize_over_data_initial_conditions_type.lower() == 'mini_nn':
+                # self.init_l1 = nn.Linear(2, 10)
+                # TODO: shouldn't hard code this
+                self.init_l1 = nn.Linear(in_features,10)
+                self.init_l2 = nn.Linear(10, in_features * inflation_factor)
+            else:
+                raise ValueError('Unknown initial condition prediction mode {}'.format(self.optimize_over_data_initial_conditions_type))
+        else:
+            self.data_q20 = None
+
+
+    def create_initial_state_parameters(self, set_to_zero, *args, **kwargs):
+        # creates these as a sorted dictionary and returns it (need to be in the same order!!)
+        state_dict = SortedDict()
+
+        state_dict['q1'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=self.particle_size,
+                                                                     particle_dimension=self.particle_dimension,
+                                                                     set_to_zero=set_to_zero)
+
+        # make the dimension of this state 5 times bigger
+        state_dict['q2'] = self._state_initializer.create_parameters(nr_of_particles=self.nr_of_particles,
+                                                                     particle_size=self.particle_size*self.inflation_factor,
+                                                                     particle_dimension=self.particle_dimension,
+                                                                     set_to_zero=set_to_zero)
+
+        return state_dict
+
+    def create_default_parameter_objects(self):
+
+        parameter_objects = SortedDict()
+
+        linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight)
+        linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight)
+        linear3 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight,bias = False)
+
+        parameter_objects['l1'] = linear1
+        parameter_objects['l2'] = linear2
+        parameter_objects['l3'] = linear3
+
+        return parameter_objects
+
+    def rhs_advect_state(self, t, state_dict_or_dict_of_dicts, parameter_objects):
+
+        rhs = SortedDict()
+
+        s = state_dict_or_dict_of_dicts
+        p = parameter_objects
+
+        rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
+        rhs['dot_q2'] = p['l2'](input=s['q1']) + self.weighting_factor * p["l3"](input=self.nl(s['q2']))
+
+        return rhs
+
+    def get_initial_data_dict_from_data_tensor(self, x):
+        # Initial data dict from given data tensor
+        data_dict = SortedDict()
+        data_dict['q1'] = x
+
+        if self.optimize_over_data_initial_conditions:
+
+            if self.optimize_over_data_initial_conditions_type.lower()=='direct':
+                # just repeat it for all the data
+                szq20 = list(self.data_q20.shape)
+                szx = list(x.shape)
+                dim_diff = len(szx)-len(szq20)
+                data_q20 = self.data_q20.view([1]*dim_diff+szq20)
+                data_q20_replicated = data_q20.expand(szx[0:dim_diff]+[-1]*len(szq20))
+
+                data_dict['q2'] = data_q20_replicated
+            elif self.optimize_over_data_initial_conditions_type.lower()=='linear':
+                q20 = self.simple_init(x)
+                data_dict['q2'] = q20
+            elif self.optimize_over_data_initial_conditions_type.lower()=='mini_nn':
+                # predict the initial condition based on a simple neural network
+                q20 = self.init_l2(self.nl(self.init_l1(x)))
+                data_dict['q2'] = q20
+
+        else:
+            # standard approach of initializing with zero
+            z = torch.zeros_like(x)
+            sz = [1] * len(z.shape)
+            sz[-1] = self.inflation_factor
+
+            data_dict['q2'] = z.repeat(sz)
+
+        return data_dict
+
+    def disassemble(self,input,dim=1):
+        state_dict, costate_dict, data_dicts = self.disassemble_tensor(input, dim=dim)
+        return scd_utils.extract_key_from_dict_of_dicts(data_dicts,'q1')
+
+    def optional_rhs_advect_costate_analytic(self, t, state_dict_or_dict_of_dicts, costate_dict_or_dict_of_dicts, parameter_objects):
+        """
+        This is optional. We do not need to define this. But if we do, we can sidestep computing the co-state evolution via
+        auto-diff. We can use this for example to test if the autodiff shooting approach properly recovers the analytic evolution equations.
+
+        :param t:
+        :param state_dict_of_dicts:
+        :param costate_dict_of_dicts:
+        :param parameter_objects:
+        :return:
+        """
+
+        rhs = SortedDict()
+
+        s = state_dict_or_dict_of_dicts
+        c = costate_dict_or_dict_of_dicts
+        p = parameter_objects
+
+        par_dict1 = p['l1'].get_parameter_dict()
+        par_dict2 = p['l2'].get_parameter_dict()
+        par_dict3 = p['l3'].get_parameter_dict()
+        l1 = par_dict1['weight']
+        l2 = par_dict2['weight']
+        l3 = par_dict3['weight']
+
+        # now compute the parameters
+
+        q2i = s['q2']
+        p1i = c['p_q1']
+        p2i = c['p_q2']
+
+        # we are computing based on the transposed quantities here (this makes the use of torch.matmul possible
+        #dot_qt = torch.matmul(self.nl(qi), A.t()) + bt
+
+        # now we can also compute the rhs of the costate (based on the manually computed shooting equations)
+        # for i in range(self.nr_of_particles):
+        #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
+        dot_p2t = - self.dnl(q2i) * (torch.matmul(p1i,l1) + self.weighting_factor * torch.matmul(p2i,l3))
+        dot_p1t = - torch.matmul(p2i,l2)
+        rhs['dot_p_q1'] = dot_p1t
+        rhs['dot_p_q2'] = dot_p2t
+        return rhs
+
+
+    def optional_compute_parameters_analytic(self,t,state_dict, costate_dict):
+        """
+        This is optional. We can prescribe an analytic computation of the parameters (where we do not need to do this via autodiff).
+        This is optional, but can be used for testing.
+
+        :param t:
+        :param parameter_objects:
+        :param state_dict:
+        :param costate_dict:
+        :return:
+        """
+
+        s = state_dict
+        c = costate_dict
+        p = self.create_default_parameter_objects_on_consistent_device()
+
+        # now compute the parameters
+        q1i = s['q1']
+        p1i = c['p_q1']
+        q2i = s['q2'].transpose(1,2)
+        p2i = c['p_q2'].transpose(1,2)
+
+        temp = torch.matmul(self.nl(q2i),p1i)
+        l1 = torch.mean(temp,dim = 0).t()
+
+        temp2 = torch.matmul(p2i,q1i)
+        l2 = torch.mean(temp2,dim = 0)
+
+        temp = torch.matmul(self.nl(q2i),p2i.transpose(1,2))
+        l3 = self.weighting_factor*torch.mean(temp,dim = 0).t()
+
+        # particles are saved as rows
+        #At = torch.zeros(self.in_features, self.in_features)
+        #for i in range(self.nr_of_particles):
+        #    At = At + (pi[i, ...].t() * self.nl(qi[i, ...])).t()
+        #At = 1 / self._overall_number_of_state_parameters * At  # because of the mean in the Lagrangian multiplier
+        #bt = 1 / self._overall_number_of_state_parameters * pi.sum(dim=0)  # -\sum_i q_i
+
+        # results need to be written in the respective parameter variables
+        par_dict = p['l1'].get_parameter_dict()
+        weight_dict = p['l1'].get_parameter_weight_dict()
+        par_dict['weight'] = utils.divide_by_if_not_none(l1,weight_dict['weight'])
+        par_dict['bias'] = utils.divide_by_if_not_none(torch.mean(p1i,dim = 0),weight_dict['bias'])
+
+        par_dict2 = p['l2'].get_parameter_dict()
+        weight_dict2 = p['l2'].get_parameter_weight_dict()
+        par_dict2['weight'] = utils.divide_by_if_not_none(l2,weight_dict2['weight'])
+        par_dict2['bias'] = utils.divide_by_if_not_none(torch.mean(p2i,dim = 0).t(),weight_dict2['bias'])
+
+        par_dict3 = p['l3'].get_parameter_dict()
+        weight_dict3 = p['l3'].get_parameter_weight_dict()
+        par_dict3['weight'] = utils.divide_by_if_not_none(l3,weight_dict3['weight'])
+
+
+        return p
+
+
 class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameterVectorIntegrand):
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
@@ -424,7 +647,7 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
                                                                *args, **kwargs)
 
         self.inflation_factor = inflation_factor
-
+        self.dampening_factor = 0.0
         if self.optimize_over_data_initial_conditions:
 
             supported_initial_condition_optimization_modes = ['direct','linear','mini_nn']
@@ -500,7 +723,7 @@ class AutoShootingIntegrandModelGeneralUpDown(shooting.ShootingLinearInParameter
         p = parameter_objects
 
         rhs['dot_q1'] = p['l11'](input=self.nl(s['q2'])) + p['l12'](input=s['q1']) + p['l13'](input=self.nl(s['q1'])) + p['l14'](input=s['q2'])
-        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=self.nl(s['q1']))
+        rhs['dot_q2'] = p['l21'](input=s['q1']) + p['l22'](input=s['q2']) + p['l23'](input=self.nl(s['q2'])) + p['l24'](input=self.nl(s['q1'])) - self.dampening_factor * s["q2"]
 
         return rhs
 
