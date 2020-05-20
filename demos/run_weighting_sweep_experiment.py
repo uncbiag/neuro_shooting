@@ -6,9 +6,9 @@ if __name__ == '__main__':
 
     run_args_template_updown = {
         'shooting_model': 'updown',
-        'niters': 100,
+        'niters': 150,
         'custom_parameter_freezing': None,
-        'unfreeze_parameters_at_iter': 25,
+        'unfreeze_parameters_at_iter': 50,
         'save_figures': None,
         'viz_freq': 300,
         'fcn': args.fcn,
@@ -17,9 +17,9 @@ if __name__ == '__main__':
 
     run_args_template_updown_universal = {
         'shooting_model': 'updown_universal',
-        'niters': 100,
+        'niters': 150,
         'custom_parameter_freezing': None,
-        'unfreeze_parameters_at_iter': 25,
+        'unfreeze_parameters_at_iter': 50,
         'save_figures': None,
         'viz_freq': 300,
         'fcn': args.fcn,
@@ -28,12 +28,12 @@ if __name__ == '__main__':
 
     # we do not need to sweep over particles for the particle-free method, so just set it to 2
     run_args_to_sweep_updown = {
-        'nr_of_particles': [10,20],  # number of particles needs to be at least 2
+        'nr_of_particles': [20,30],  # number of particles needs to be at least 2
         'inflation_factor': [8, 16, 32],
     }
 
     run_args_to_sweep_updown_universal = {
-        'nr_of_particles': [10,20], # number of particles needs to be at least 2
+        'nr_of_particles': [20,30], # number of particles needs to be at least 2
         'inflation_factor': [8,16,32],
         'optional_weight': [0.001, 0.01, 0.1, 1.0]
     }
@@ -42,7 +42,7 @@ if __name__ == '__main__':
         eu.sweep_parameters(args, run_args_to_sweep_updown, run_args_template_updown,
                             python_script='simple_functional_mapping_example.py',output_dir_prefix='test_updown_')
 
-    if args.sweep_updown_univeral:
+    if args.sweep_updown_universal:
         eu.sweep_parameters(args, run_args_to_sweep_updown_universal, run_args_template_updown_universal,
                             python_script='simple_functional_mapping_example.py',output_dir_prefix='test_univeral_updown_')
 
