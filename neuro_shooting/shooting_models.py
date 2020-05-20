@@ -411,6 +411,7 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                  nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
+                 optional_weight=0.2,
                  *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDownUniversal, self).__init__(in_features=in_features,
@@ -424,7 +425,7 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
                                                                *args, **kwargs)
 
         self.inflation_factor = inflation_factor
-        self.weighting_factor = 0.2
+        self.weighting_factor = optional_weight
         if self.optimize_over_data_initial_conditions:
 
             supported_initial_condition_optimization_modes = ['direct','linear','mini_nn']

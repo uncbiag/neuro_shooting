@@ -465,7 +465,7 @@ if __name__ == '__main__':
         smodel = smodels.AutoShootingIntegrandModelSecondOrder(**shootingintegrand_kwargs, use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'updown':
         smodel = smodels.AutoShootingIntegrandModelUpDown(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
-    elif args.shooting_model == 'updown_univeral':
+    elif args.shooting_model == 'updown_universal':
         smodel = smodels.AutoShootingIntegrandModelUpDownUniversal(**shootingintegrand_kwargs,use_analytic_solution=use_analytic_solution,inflation_factor=inflation_factor,use_rnn_mode=use_particle_rnn_mode)
     elif args.shooting_model == 'general_updown':
         smodel = smodels.AutoShootingIntegrandModelGeneralUpDown(**shootingintegrand_kwargs,use_analytic_solution=True, inflation_factor=inflation_factor, use_rnn_mode=use_particle_rnn_mode)
