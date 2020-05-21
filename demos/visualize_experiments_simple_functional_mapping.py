@@ -50,10 +50,9 @@ def convert_to_flat_dictionary(d,d_keys=['args']):
 
     return d_ret
 
-def get_plot_values_and_names(data,xname,yname):
+def get_plot_values_and_names(data,xname,yname,default_xval=None):
 
-    all_vals = []
-    all_names = []
+    # first get all the values there are for the query key (xname)
     all_unique_values = None
 
     for current_data,current_name in data:
@@ -66,16 +65,25 @@ def get_plot_values_and_names(data,xname,yname):
         else:
             all_unique_values = np.concatenate((all_unique_values,unique_values),axis=0)
 
+    all_unique_values = np.sort(np.unique(all_unique_values))
+
+    all_vals = []
+    all_names = []
+    for current_data, current_name in data:
+
         vals = []
         for v in unique_values:
             # current_vals = data.loc[data[xname]==v][yname].to_numpy()
             current_vals = current_data.loc[current_data[xname]==v][yname].to_numpy()
+            if (len(current_vals)==0) & (default_xval is not None):
+                print('WARNING: replacing value for key {}: {} -> {}'.format(xname,v,default_xval))
+                current_vals = current_data.loc[current_data[xname] == default_xval][yname].to_numpy()
+
             vals.append(current_vals)
 
         all_vals.append(vals)
         all_names.append(current_name)
 
-    all_unique_values = np.sort(np.unique(all_unique_values))
 
     return all_vals,all_names,all_unique_values
 
@@ -97,7 +105,7 @@ def find_nonempty_values_and_positions(vals,pos):
 
     return ne_vals,ne_pos
 
-def _all_in_one_plot(vals,names,unique_values,do_printing,title_string):
+def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False):
 
     # Create a figure instance
     fig = plt.figure( facecolor='white')
@@ -111,7 +119,8 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string):
     xlabel_name = _translate_label(xname)
     ylabel_name = _translate_label(yname)
 
-    position_offsets = (np.arange(0,nr_of_groups)-nr_of_groups/2)*width
+    position_offsets = np.linspace(0+width/2+width/4,1-width/2-width/4,nr_of_groups)#(np.arange(0,nr_of_groups)-nr_of_groups/2)*width
+    position_offsets = position_offsets-np.mean(position_offsets)
     default_positions = np.arange(1,nr_of_unique_values+1)
 
     if do_printing:
@@ -125,23 +134,32 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string):
     # Create the boxplot
     labels = [str(q) for q in unique_values]
 
-    ax.set_xticks(np.arange(1, len(unique_values) + 1))
-    ax.set_xticklabels(labels)
-
     bps = []
     legend_names = []
+
+    # fill with colors
+    colors = ['silver', 'deepskyblue', 'seagreen']
 
     for n in range(nr_of_groups):
         ne_vals, ne_pos = find_nonempty_values_and_positions(vals=vals[n],pos=default_positions-position_offsets[n])
         if len(ne_vals)>0:
-            bp = ax.violinplot(dataset=ne_vals,widths=width,positions=ne_pos)
-            bps.append(bp['bodies'][0])
+            if use_boxplot:
+                bp = ax.boxplot(x=ne_vals, widths=width, positions=ne_pos, notch=False, patch_artist=True)
+                for patch in bp['boxes']:
+                    patch.set_facecolor(colors[n])
+                bps.append(bp['boxes'][0])
+            else:
+                bp = ax.violinplot(dataset=ne_vals,widths=width, positions=ne_pos, showmedians=True, quantiles=[[0.25,0.75]]*len(ne_vals))
+                bps.append(bp['bodies'][0])
+
             legend_names.append(names[n])
 
+    ax.set_xticks(np.arange(1, len(unique_values) + 1))
+    ax.set_xticklabels(labels)
     ax.legend(bps, legend_names, loc='best')
 
 
-def _side_by_side_plot(vals,names,unique_values,do_printing,title_string):
+def _side_by_side_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False):
     nr_of_subplots = len(names)
     subplot_value = 101 + 10 * nr_of_subplots
 
@@ -149,6 +167,10 @@ def _side_by_side_plot(vals,names,unique_values,do_printing,title_string):
     fig = plt.figure(figsize=(4 * nr_of_subplots, 4), facecolor='white')
 
     ax = dict()
+
+    # fill with colors
+    colors = ['silver', 'deepskyblue', 'seagreen']
+    #colors = ['pink', 'lightblue', 'lightgreen']
 
     for n in range(nr_of_subplots):
 
@@ -169,16 +191,21 @@ def _side_by_side_plot(vals,names,unique_values,do_printing,title_string):
         # Create the boxplot
         labels = [str(q) for q in unique_values]
 
+        ne_vals = find_nonempty_values(vals=vals[n])
+        if len(ne_vals)>0:
+            if use_boxplot:
+                bp = ax.boxplot(x=ne_vals, patch_artist=True)
+                for patch in bp['boxes']:
+                    patch.set_facecolor(colors[n])
+            else:
+                bp = ax[n].violinplot(dataset=ne_vals, showmedians=True, quantiles=[[0.25,0.75]]*len(ne_vals))
+
         ax[n].set_xticks(np.arange(1, len(unique_values) + 1))
         ax[n].set_xticklabels(labels)
 
-        ne_vals = find_nonempty_values(vals=vals[n])
-        if len(ne_vals)>0:
-            bp = ax[n].violinplot(dataset=ne_vals)
-
     fig.suptitle(title_string,y=1.0)
 
-def _plot_data(data,xname,yname,title_string,visualize=True,save_figure_directory=None,save_figure_name=None):
+def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None):
 
     if not visualize and not save_figure_name and not save_figure_directory:
         return
@@ -197,7 +224,7 @@ def _plot_data(data,xname,yname,title_string,visualize=True,save_figure_director
             save_figure_name = 'plot_{}_over_{}'.format(yname,xname)
 
 
-    vals, names, unique_values = get_plot_values_and_names(data=data,xname=xname,yname=yname)
+    vals, names, unique_values = get_plot_values_and_names(data=data,xname=xname,yname=yname,default_xval=default_xval)
 
     #_side_by_side_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
     _all_in_one_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
@@ -213,19 +240,19 @@ def _plot_data(data,xname,yname,title_string,visualize=True,save_figure_director
         plt.show()
 
 
-def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None):
+def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None,default_xval=None):
 
     if len(data)==0:
         print('INFO: empty data for {}/{} -- not plotting'.format(xname,yname))
         return
 
     if not visualize and save_figure_directory is None and save_figure_name is None:
-        _plot_data(data=data, xname=xname,yname=yname,title_string=title_string,visualize=True)
+        _plot_data(data=data, xname=xname,yname=yname,default_xval=default_xval,title_string=title_string,visualize=True)
     else:
         if visualize:
-            _plot_data(data=data, xname=xname, yname=yname, title_string=title_string, visualize=True, save_figure_directory=None, save_figure_name=None)
+            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=True, save_figure_directory=None, save_figure_name=None)
         if save_figure_directory is not None:
-            _plot_data(data=data, xname=xname, yname=yname, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name)
+            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name)
 
 def load_JSON(filename):
     """
@@ -321,7 +348,7 @@ def get_data_range(data,key):
     vals = np.sort(np.unique(vals))
     return vals
 
-def select_data(data,selection):
+def select_data(data,selection,default_val=None):
 
     selected_data = []
 
@@ -331,8 +358,14 @@ def select_data(data,selection):
             if current_selection is None:
                 # e.g.,: data.loc[(data['args.shooting_model']==model_name) & (data['args.fcn']==fcn_name)]
                 current_selection = current_data.loc[current_data[s]==selection[s]] # key s has the value
+                if (len(current_selection)==0) & (default_val is not None):
+                    print('WARNING: replacing value for {}: {} -> {}'.format(s,selection[s],default_val))
+                    current_selection = current_data.loc[current_data[s] == default_val]  # key s has the value
             else:
                 current_selection = current_selection.loc[current_selection[s]==selection[s]] # key s has the value
+                if (len(current_selection) == 0) & (default_val is not None):
+                    print('WARNING: replacing value for {}: {} -> {}'.format(s, selection[s], default_val))
+                    current_selection = current_selection.loc[current_selection[s]==default_val] # key s has the value
 
         selected_data.append((current_selection,current_name))
 
@@ -377,7 +410,7 @@ if __name__ == '__main__':
         # get the current data
         xname = 'args.inflation_factor'
         #data = model_data.loc[model_data['args.nr_of_particles'] == nr_of_particles]
-        data = select_data(data=model_data,selection={'args.nr_of_particles': nr_of_particles})
+        data = select_data(data=model_data,selection={'args.nr_of_particles': nr_of_particles},default_val=2)
 
         title_string = '{} particles'.format(nr_of_particles)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
@@ -396,4 +429,4 @@ if __name__ == '__main__':
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
         for yname in ynames:
             save_figure_name = 'plot_{}_over_{}_for_inflation_factor_{}'.format(yname,xname,inflation_factor)
-            plot_data(data=data, xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
+            plot_data(data=data, xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name,default_xval=2)
