@@ -649,11 +649,14 @@ class ShootingIntegrandBase(nn.Module):
                                                                         costate_dict=costate_dict)
 
         if t == 0:
-            # we only need to compute the kinetic energy here
-            current_kinetic_energy = self.compute_kinetic_energy(t,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
-
-            # we only want it at the initial condition
-            self.current_norm_penalty = current_kinetic_energy
+            if self._externally_managed_rnn_parameters:
+                # this is a static RNN, does not use particles, hence return a zero penalty
+                self.current_norm_penalty = torch.Tensor([0.0])
+            else:
+                # we only need to compute the kinetic energy here
+                current_kinetic_energy = self.compute_kinetic_energy(t,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
+                # we only want it at the initial condition
+                self.current_norm_penalty = current_kinetic_energy
 
         # evolution of state equation is always known (so the same as for the autodiff approach)
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts,
@@ -694,9 +697,12 @@ class ShootingIntegrandBase(nn.Module):
                                                         costate_dict_of_dicts=costate_dict_of_dicts)
 
         if t == 0:
-            # we only want it at the initial condition
-
-            self.current_norm_penalty = self.compute_kinetic_energy(0, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
+            if self._externally_managed_rnn_parameters:
+                # this is a static RNN, does not use particles, hence return a zero penalty
+                self.current_norm_penalty = torch.Tensor([0.0])
+            else:
+                # we only want it at the initial condition
+                self.current_norm_penalty = self.compute_kinetic_energy(0, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
 
 
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts,
