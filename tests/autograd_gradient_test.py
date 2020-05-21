@@ -37,7 +37,7 @@ in_features_size = 3
 #check_models = ['universal']
 
 check_models = ['updown','DEBUG','simple',"general"]
-check_models = ["universal"]
+check_models = ["updown_universal"]
 number_of_tests_passed = 0
 number_of_tests_attempted = 0
 tolerance = 5e-3
@@ -60,7 +60,7 @@ for current_model in check_models:
                                                                           particle_dimension=1,
                                                                           particle_size=in_features_size,
                                                                           parameter_weight=parameter_weight)
-    elif current_model == 'universal':
+    elif current_model == 'updown_universal':
         shooting_model = shooting_models.AutoShootingIntegrandModelUpDownUniversal(in_features=in_features_size,
                                                                           nonlinearity=nonlinearity,
                                                                           nr_of_particles=nr_of_particles,
