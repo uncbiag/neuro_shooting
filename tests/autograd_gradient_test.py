@@ -36,8 +36,8 @@ in_features_size = 3
 #check_models = ['simple']
 #check_models = ['universal']
 
-check_models = ['updown','DEBUG','simple',"general"]
-check_models = ["updown_universal"]
+check_models = ['updown_universal', 'updown','DEBUG','simple','general']
+
 number_of_tests_passed = 0
 number_of_tests_attempted = 0
 tolerance = 5e-3

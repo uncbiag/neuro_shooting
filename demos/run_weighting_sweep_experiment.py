@@ -35,7 +35,7 @@ if __name__ == '__main__':
     run_args_to_sweep_updown_universal = {
         'nr_of_particles': [20,30], # number of particles needs to be at least 2
         'inflation_factor': [8,16,32],
-        'optional_weight': [0.001, 0.01, 0.1, 1.0]
+        'optional_weight': [1.0, 2.0, 5.0, 10.0, 50.0]
     }
 
     if args.sweep_updown:
