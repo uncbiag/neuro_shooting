@@ -7,14 +7,20 @@ import matplotlib.pyplot as plt
 import neuro_shooting.figure_settings as figure_settings
 import neuro_shooting.figure_utils as figure_utils
 
+import json
+
 import argparse
 
 def setup_cmdline_parsing():
+
+    # Example configuration: --output_json_config simple_functional_mapping_experiments.json --output_base_directory current_results --figure_base_directory figure_results --shooting_model updown_universal --fcn cubic
+
     parser = argparse.ArgumentParser('Simple functional mapping')
     parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that results have been stored in.')
+    parser.add_argument('--output_json_config', type=str, default=None, help='Allows to specify a json configuration file for the outputs and the mappings to labels.')
     parser.add_argument('--figure_base_directory', type=str, default='results', help='Directory that the resulting figures will be in.')
     parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
+    parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_universal','univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
     args = parser.parse_args()
 
     return args
@@ -44,6 +50,134 @@ def convert_to_flat_dictionary(d,d_keys=['args']):
 
     return d_ret
 
+def get_plot_values_and_names(data,xname,yname):
+
+    all_vals = []
+    all_names = []
+    all_unique_values = None
+
+    for current_data,current_name in data:
+
+        # plot sorted for name (we will average over the occurrences)
+        unique_values = np.sort(current_data[xname].unique())
+
+        if all_unique_values is None:
+            all_unique_values = unique_values
+        else:
+            all_unique_values = np.concatenate((all_unique_values,unique_values),axis=0)
+
+        vals = []
+        for v in unique_values:
+            # current_vals = data.loc[data[xname]==v][yname].to_numpy()
+            current_vals = current_data.loc[current_data[xname]==v][yname].to_numpy()
+            vals.append(current_vals)
+
+        all_vals.append(vals)
+        all_names.append(current_name)
+
+    all_unique_values = np.sort(np.unique(all_unique_values))
+
+    return all_vals,all_names,all_unique_values
+
+def find_nonempty_values(vals):
+    ne_vals = []
+    for v in vals:
+        if len(v)>0:
+            ne_vals.append(v)
+
+    return ne_vals
+
+def find_nonempty_values_and_positions(vals,pos):
+    ne_vals = []
+    ne_pos = []
+    for v,p in zip(vals,pos):
+        if len(v)>0:
+            ne_vals.append(v)
+            ne_pos.append(p)
+
+    return ne_vals,ne_pos
+
+def _all_in_one_plot(vals,names,unique_values,do_printing,title_string):
+
+    # Create a figure instance
+    fig = plt.figure( facecolor='white')
+    ax = fig.add_subplot(111, frameon=True)
+
+    nr_of_groups = len(names)
+    nr_of_unique_values = len(unique_values)
+
+    width = 1.0/(nr_of_groups+1)
+
+    xlabel_name = _translate_label(xname)
+    ylabel_name = _translate_label(yname)
+
+    position_offsets = (np.arange(0,nr_of_groups)-nr_of_groups/2)*width
+    default_positions = np.arange(1,nr_of_unique_values+1)
+
+    if do_printing:
+        xlabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
+        ylabel_name = figure_utils.escape_latex_special_characters(ylabel_name)
+
+    ax.set_xlabel(xlabel_name)
+    ax.set_ylabel(ylabel_name)
+    ax.set_title(title_string)
+
+    # Create the boxplot
+    labels = [str(q) for q in unique_values]
+
+    ax.set_xticks(np.arange(1, len(unique_values) + 1))
+    ax.set_xticklabels(labels)
+
+    bps = []
+    legend_names = []
+
+    for n in range(nr_of_groups):
+        ne_vals, ne_pos = find_nonempty_values_and_positions(vals=vals[n],pos=default_positions-position_offsets[n])
+        if len(ne_vals)>0:
+            bp = ax.violinplot(dataset=ne_vals,widths=width,positions=ne_pos)
+            bps.append(bp['bodies'][0])
+            legend_names.append(names[n])
+
+    ax.legend(bps, legend_names, loc='best')
+
+
+def _side_by_side_plot(vals,names,unique_values,do_printing,title_string):
+    nr_of_subplots = len(names)
+    subplot_value = 101 + 10 * nr_of_subplots
+
+    # Create a figure instance
+    fig = plt.figure(figsize=(4 * nr_of_subplots, 4), facecolor='white')
+
+    ax = dict()
+
+    for n in range(nr_of_subplots):
+
+        # Create an axes instance
+        ax[n] = fig.add_subplot(subplot_value + n, frameon=True)
+
+        xlabel_name = _translate_label(xname)
+        ylabel_name = _translate_label(yname)
+
+        if do_printing:
+            xlabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
+            ylabel_name = figure_utils.escape_latex_special_characters(ylabel_name)
+
+        ax[n].set_xlabel(xlabel_name)
+        ax[n].set_ylabel(ylabel_name)
+        ax[n].set_title(names[n])
+
+        # Create the boxplot
+        labels = [str(q) for q in unique_values]
+
+        ax[n].set_xticks(np.arange(1, len(unique_values) + 1))
+        ax[n].set_xticklabels(labels)
+
+        ne_vals = find_nonempty_values(vals=vals[n])
+        if len(ne_vals)>0:
+            bp = ax[n].violinplot(dataset=ne_vals)
+
+    fig.suptitle(title_string,y=1.0)
+
 def _plot_data(data,xname,yname,title_string,visualize=True,save_figure_directory=None,save_figure_name=None):
 
     if not visualize and not save_figure_name and not save_figure_directory:
@@ -63,37 +197,11 @@ def _plot_data(data,xname,yname,title_string,visualize=True,save_figure_director
             save_figure_name = 'plot_{}_over_{}'.format(yname,xname)
 
 
-    # plot sorted for xname (we will average over the occurrences)
-    unique_values = np.sort(data[xname].unique())
+    vals, names, unique_values = get_plot_values_and_names(data=data,xname=xname,yname=yname)
 
-    vals = []
-    for v in unique_values:
-        current_vals = data.loc[data[xname]==v][yname].to_numpy()
-        vals.append(current_vals)
+    #_side_by_side_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
+    _all_in_one_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
 
-    # Create a figure instance
-    fig = plt.figure()
-
-    # Create an axes instance
-    ax = fig.add_subplot(111, frameon=True)
-
-    xlabel_name = _translate_label(xname)
-    ylabel_name = _translate_label(yname)
-
-    if do_printing:
-        xlabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
-        ylabel_name = figure_utils.escape_latex_special_characters(ylabel_name)
-
-    ax.set_xlabel(xlabel_name)
-    ax.set_ylabel(ylabel_name)
-    ax.set_title(title_string)
-
-    # Create the boxplot
-    labels = [str(q) for q in unique_values]
-
-    ax.set_xticks(np.arange(1, len(unique_values) + 1))
-    ax.set_xticklabels(labels)
-    bp = ax.violinplot(dataset=vals)
 
     if do_printing:
         figure_utils.save_all_formats(output_directory=save_figure_directory,
@@ -119,6 +227,33 @@ def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_direct
         if save_figure_directory is not None:
             _plot_data(data=data, xname=xname, yname=yname, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name)
 
+def load_JSON(filename):
+    """
+    Loads a JSON configuration file
+
+    :param filename: filename of the configuration to be loaded
+    """
+    try:
+        with open(filename) as data_file:
+            print('Loading parameter file = {}'.format(filename))
+            ret = json.load(data_file)
+            return ret
+    except IOError as e:
+        print('Could not open file = {}; ignoring request.'.format(filename))
+
+
+def write_JSON(filename, data):
+    """
+    Writes the JSON configuration to a file
+
+    :param filename: filename to write the configuration to
+    :param data: data to write out; should be a dictionary
+    """
+
+    with open(filename, 'w') as outfile:
+        print('Writing parameter file = {}'.format(filename))
+        json.dump(data, outfile, indent=4, sort_keys=True)
+
 
 def _translate_label(label_name):
     # mapping of names between labels
@@ -138,43 +273,111 @@ def _translate_label(label_name):
     else:
         return label_name
 
+def get_files(output_base_directory,output_config):
+    # get all the result files
+    if output_config is None:
+        # just flat
+        files = sorted(glob.glob(os.path.join(args.output_base_directory, '**', '*.pt'), recursive=True))
+        return [(files,'')]
+    else:
+        all_files = []
+        for k in output_config:
+            print('Reading directory {} for {}'.format(k,output_config[k]))
+            files = sorted(glob.glob(os.path.join(args.output_base_directory, k, '**', '*.pt'), recursive=True))
+            all_files.append((files,output_config[k]))
+        return all_files
+
+def get_pandas_dataframes(files):
+
+    all_data = []
+
+    for current_files,current_name in files:
+
+        data = None
+        # now read the data and create a pandas data fram
+        for f in current_files:
+            current_data = torch.load(f)
+            current_data = convert_to_flat_dictionary(current_data, ['args', 'nr_of_parameters', 'log_complexity_measures'])
+            if data is None:
+                data = pd.DataFrame([current_data])
+            else:
+                data = data.append([current_data], ignore_index=True)
+
+        all_data.append((data,current_name))
+
+    return all_data
+
+def get_data_range(data,key):
+
+    vals = None
+    for current_data,_ in data:
+        current_vals = current_data[key].unique()
+        if vals is None:
+            vals = current_vals
+        else:
+            vals = np.concatenate((vals,current_vals),axis=0)
+
+    # sort them
+    vals = np.sort(np.unique(vals))
+    return vals
+
+def select_data(data,selection):
+
+    selected_data = []
+
+    for current_data,current_name in data:
+        current_selection = None
+        for s in selection:
+            if current_selection is None:
+                # e.g.,: data.loc[(data['args.shooting_model']==model_name) & (data['args.fcn']==fcn_name)]
+                current_selection = current_data.loc[current_data[s]==selection[s]] # key s has the value
+            else:
+                current_selection = current_selection.loc[current_selection[s]==selection[s]] # key s has the value
+
+        selected_data.append((current_selection,current_name))
+
+    return selected_data
+
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
 
+    if args.output_json_config is not None:
+        output_config = load_JSON(args.output_json_config)
+    else:
+        output_config = None
+
     # get all the result files
-    files = sorted(glob.glob(os.path.join(args.output_base_directory, '**', '*.pt'), recursive=True))
+    files = get_files(output_base_directory=args.output_base_directory,output_config=output_config)
 
-    data = None
+    # create all the pandas dataframes (for the different output file/name tuples)
 
-    # now read the data and create a pandas data fram
-    for f in files:
-        current_data = torch.load(f)
-        current_data = convert_to_flat_dictionary(current_data,['args','nr_of_parameters','log_complexity_measures'])
-        if data is None:
-            data = pd.DataFrame([current_data])
-        else:
-            data = data.append([current_data],ignore_index = True)
+    data = get_pandas_dataframes(files=files)
 
+    all_nr_of_particles = get_data_range(data=data,key='args.nr_of_particles')
+    all_inflation_factors = get_data_range(data=data,key='args.inflation_factor')
 
     # we can now do our desired plots
 
-    # get cubic example
-    all_nr_of_particles = np.sort(data['args.nr_of_particles'].unique())
-    all_inflation_factors = np.sort(data['args.inflation_factor'].unique())
-
+    # get the desired function and model_name
     fcn_name = args.fcn
     model_name = args.shooting_model
 
     save_figure_directory = '{}_figures_model_{}_fcn_{}'.format(args.figure_base_directory,model_name,fcn_name)
 
-    model_data = data.loc[(data['args.shooting_model']==model_name) & (data['args.fcn']==fcn_name)]
+    selection = {
+        'args.shooting_model': model_name,
+        'args.fcn': fcn_name
+    }
+
+    model_data = select_data(data=data,selection=selection)
 
     # create plots for a particular number of particles
     for nr_of_particles in all_nr_of_particles:
         # get the current data
         xname = 'args.inflation_factor'
-        data = model_data.loc[model_data['args.nr_of_particles'] == nr_of_particles]
+        #data = model_data.loc[model_data['args.nr_of_particles'] == nr_of_particles]
+        data = select_data(data=model_data,selection={'args.nr_of_particles': nr_of_particles})
 
         title_string = '{} particles'.format(nr_of_particles)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
@@ -186,7 +389,8 @@ if __name__ == '__main__':
     for inflation_factor in all_inflation_factors:
         # get the current data
         xname = 'args.nr_of_particles'
-        data = model_data.loc[model_data['args.inflation_factor'] == inflation_factor]
+        #data = model_data.loc[model_data['args.inflation_factor'] == inflation_factor]
+        data = select_data(data=model_data,selection={'args.inflation_factor': inflation_factor})
 
         title_string = 'inflation factor = {}'.format(inflation_factor)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']

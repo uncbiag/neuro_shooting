@@ -40,8 +40,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
     parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
-    parser.add_argument('--lr', type-float, default=0.05, help='Learning rate for optimizer')
-    parser.add_argument('--niters', type=int, default=10000, help='Maximum nunber of iterations.')
+    parser.add_argument('--lr', type=float, default=0.05, help='Learning rate for optimizer')
+    parser.add_argument('--niters', type=int, default=2000, help='Maximum nunber of iterations.')
     parser.add_argument('--batch_validation_size', type=int, default=25, help='Length of the samples for validation.')
     parser.add_argument('--seed', required=False, type=int, default=-1,
                         help='Sets the random seed which affects data shuffling')
@@ -54,7 +54,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
     parser.add_argument('--chunk_time', type=int, default=15, help='For a long range valdation solution chunks the solution together in these pieces.')
 
-    parser.add_argument('--shooting_model', type=str, default='updown', choices=['simple', 'updown', 'periodic'])
+    parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_univeral', 'simple', 'updown', 'periodic'])
     parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--pw', type=float, default=1.0, help='Parameter weight; controls the weight internally for the shooting equations; probably best left at zero and to control the weight with --sim_weight and --norm_weight.')
     parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
@@ -114,6 +114,16 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
 
     if shooting_model=='updown':
         smodel = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
+                                                                  parameter_weight=parameter_weight,
+                                                                  inflation_factor=inflation_factor,
+                                                                  nr_of_particles=nr_of_particles, particle_dimension=1,
+                                                                  particle_size=2,
+                                                                  use_analytic_solution=use_analytic_solution,
+                                                                  use_rnn_mode=use_particle_rnn_mode,
+                                                                  optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
+                                                                  optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
+    elif shooting_model == 'updown_universal':
+        smodel = shooting_models.AutoShootingIntegrandModelUpDownUniversal(in_features=2, nonlinearity=nonlinearity,
                                                                   parameter_weight=parameter_weight,
                                                                   inflation_factor=inflation_factor,
                                                                   nr_of_particles=nr_of_particles, particle_dimension=1,
