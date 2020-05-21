@@ -411,7 +411,7 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
 
     def __init__(self, in_features, nonlinearity=None, transpose_state_when_forward=False, concatenate_parameters=True,
                  nr_of_particles=10, particle_dimension=1, particle_size=2, parameter_weight=None, inflation_factor=5,
-                 optional_weight=0.2,
+                 optional_weight=10,
                  *args, **kwargs):
 
         super(AutoShootingIntegrandModelUpDownUniversal, self).__init__(in_features=in_features,
@@ -424,8 +424,19 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
                                                                parameter_weight=parameter_weight,
                                                                *args, **kwargs)
 
+        # optional weight is for the term that has the initial quadratic parameter dependency
+        # require a large penalty as its parameters should be small. otherwise does typically not converge well.
+
         self.inflation_factor = inflation_factor
-        self.weighting_factor = optional_weight
+
+        # Can optionally optimize over this weight, though in practice this did not appear to help
+        optimize_over_optional_weight = False
+        if optimize_over_optional_weight:
+            # initialize with the optional weight, but this will be optimized over
+            self.weighting_factor = Parameter(torch.Tensor([optional_weight]))
+        else:
+            self.weighting_factor = optional_weight
+
         if self.optimize_over_data_initial_conditions:
 
             supported_initial_condition_optimization_modes = ['direct','linear','mini_nn']
@@ -473,6 +484,7 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
         linear1 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features,weight=self.parameter_weight)
         linear2 = oc.SNN_Linear(in_features=self.in_features,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight)
         linear3 = oc.SNN_Linear(in_features=self.in_features*self.inflation_factor,out_features=self.in_features*self.inflation_factor,weight=self.parameter_weight,bias = False)
+        linear3.add_weight('weight',self.weighting_factor)
 
         parameter_objects['l1'] = linear1
         parameter_objects['l2'] = linear2
@@ -488,7 +500,8 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
         p = parameter_objects
 
         rhs['dot_q1'] = p['l1'](input=self.nl(s['q2']))
-        rhs['dot_q2'] = p['l2'](input=s['q1']) + self.weighting_factor * p["l3"](input=self.nl(s['q2']))
+        rhs['dot_q2'] = p['l2'](input=s['q1']) + p["l3"](input=self.nl(s['q2'])) # self.weighting_factor * p["l3"](input=self.nl(s['q2']))
+
 
         return rhs
 
@@ -567,7 +580,7 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
         # now we can also compute the rhs of the costate (based on the manually computed shooting equations)
         # for i in range(self.nr_of_particles):
         #     dot_pt[i, ...] = -self.dnl(qi[i, ...]) * torch.matmul(pi[i, ...], A)
-        dot_p2t = - self.dnl(q2i) * (torch.matmul(p1i,l1) + self.weighting_factor * torch.matmul(p2i,l3))
+        dot_p2t = - self.dnl(q2i) * (torch.matmul(p1i,l1) + torch.matmul(p2i,l3)) # self.weighting_factor * torch.matmul(p2i,l3))
         dot_p1t = - torch.matmul(p2i,l2)
         rhs['dot_p_q1'] = dot_p1t
         rhs['dot_p_q2'] = dot_p2t
@@ -603,7 +616,7 @@ class AutoShootingIntegrandModelUpDownUniversal(shooting.ShootingLinearInParamet
         l2 = torch.mean(temp2,dim = 0)
 
         temp = torch.matmul(self.nl(q2i),p2i.transpose(1,2))
-        l3 = self.weighting_factor*torch.mean(temp,dim = 0).t()
+        l3 = torch.mean(temp,dim = 0).t() # self.weighting_factor*torch.mean(temp,dim = 0).t()
 
         # particles are saved as rows
         #At = torch.zeros(self.in_features, self.in_features)

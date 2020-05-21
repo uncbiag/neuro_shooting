@@ -19,7 +19,7 @@ def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title
         parser.add_argument('--nr_of_seeds', type=int, default=1, help='Number of consecutive random seeds which we should run; i.e., number of random runs')
         parser.add_argument('--starting_seed_id', type=int, default=0, help='Seed that we start with.')
         parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
-        parser.add_argument('--shooting_model', type=str, default='updown', choices=['updown_univeral', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
+        parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_univeral', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
         parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that the results will be stored in')
         args = parser.parse_args()
 
@@ -73,8 +73,8 @@ def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='sim
         os.mkdir(output_base_directory)
 
     # now go over all these parameter structures and run the experiments
-    for d in swept_parameter_list:
-        for sidx, seed in enumerate(seeds):
+    for sidx, seed in enumerate(seeds):
+        for d in swept_parameter_list:
 
             if 'shooting_model' in d: # we are sweeping over it
                 current_shooting_model = d['shooting_model']
@@ -90,7 +90,7 @@ def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='sim
             else:
                 current_fcn = args.fcn
 
-            basename = 'run_{:02d}_{}_{}'.format(sidx, current_fcn, current_shooting_model)
+            basename = 'run_{:02d}_{}_{}'.format(sidx + args.starting_seed_id, current_fcn, current_shooting_model)
             experiment_name = create_experiment_name(basename, d)
             output_directory = os.path.join(output_base_directory, experiment_name)
             log_file = os.path.join(output_directory, 'runlog.log')

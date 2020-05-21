@@ -76,7 +76,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
 
     # experimental
-    parser.add_argument('--optional_weight', type=float, default=1.0, help='Optional weight (meaning is model dependent) that we can use to sweep across additional model-specific settings.')
+    parser.add_argument('--optional_weight', type=float, default=10.0, help='Optional weight (meaning is model dependent) that we can use to sweep across additional model-specific settings.')
 
     parser.add_argument('--xrange', type=float, default=1.5, help='Desired range in x direction')
     parser.add_argument('--clamp_range', action='store_true', help='Clamps the range of the q1 particles to [-xrange,xrange]')
