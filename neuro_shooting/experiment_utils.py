@@ -19,7 +19,7 @@ def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title
         parser.add_argument('--nr_of_seeds', type=int, default=1, help='Number of consecutive random seeds which we should run; i.e., number of random runs')
         parser.add_argument('--starting_seed_id', type=int, default=0, help='Seed that we start with.')
         parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
-        parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_univeral', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
+        parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_universal', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
         parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that the results will be stored in')
         args = parser.parse_args()
 
