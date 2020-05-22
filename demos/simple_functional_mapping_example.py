@@ -77,6 +77,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--nr_of_particle_free_time_dependent_steps', type=int, default=10, help='Number of parameter sets(!) for the time-dependent particle-free mode')
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
 
+    parser.add_argument('--do_not_plot_temporal_data', action='store_true', default=False)
+
     # experimental
     parser.add_argument('--optional_weight', type=float, default=10.0, help='Optional weight (meaning is model dependent) that we can use to sweep across additional model-specific settings.')
 
@@ -714,8 +716,8 @@ if __name__ == '__main__':
 
         values_to_save['log_complexity_measures'] = log_complexity_measures
 
-
-        vector_visualization.plot_temporal_data(args=args,data=custom_hook_data, block_name=block_name)
+        if not args.do_not_plot_temporal_data:
+            vector_visualization.plot_temporal_data(args=args,data=custom_hook_data, block_name=block_name)
 
     if args.save_figures:
         # in this case we also save the results
