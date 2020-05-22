@@ -73,6 +73,8 @@ def setup_cmdline_parsing():
     parser.add_argument('--inflation_factor', type=int, default=16, help='Multiplier for state dimension for updown shooting model types')
     parser.add_argument('--use_particle_rnn_mode', action='store_true', help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true', help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
+    parser.add_argument('--use_particle_free_time_dependent_mode', action='store_true', help='This is directly optimizing over time-dependent parameters -- no particles here; a la Neural ODE')
+    parser.add_argument('--nr_of_particle_free_time_dependent_steps', type=int, default=10, help='Number of parameter sets(!) for the time-dependent particle-free mode')
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
 
     # experimental
@@ -483,6 +485,8 @@ if __name__ == '__main__':
         shooting_integrand=smodel,
         integrator_name=args.method,
         use_particle_free_rnn_mode=use_particle_free_rnn_mode,
+        use_particle_free_time_dependent_mode=args.use_particle_free_time_dependent_mode,
+        nr_of_particle_free_time_dependent_steps=args.nr_of_particle_free_time_dependent_steps,
         integrator_options = {'step_size': args.stepsize}
     )
 
@@ -550,7 +554,7 @@ if __name__ == '__main__':
             # just initialize it with a random data batch
             init_q1, _ = get_sample_batch(nr_of_samples=args.nr_of_particles, max_x=args.xrange, fcn_type=args.fcn)
 
-        uses_particles = not args.use_particle_free_rnn_mode
+        uses_particles = not (args.use_particle_free_rnn_mode or args.use_particle_free_time_dependent_mode)
 
         if uses_particles:
             with torch.no_grad():

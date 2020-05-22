@@ -83,6 +83,7 @@ class ShootingIntegrandBase(nn.Module):
         """Keeps track of how data stuctures are assembled and disassembled"""
 
         self.use_rnn_mode = use_rnn_mode
+        self._rnn_parameter_func = None
         self._rnn_parameters = None
         self._externally_managed_rnn_parameters = False
 
@@ -100,8 +101,8 @@ class ShootingIntegrandBase(nn.Module):
         if not self._externally_managed_rnn_parameters:
             self._rnn_parameters = None
 
-    def set_externally_managed_rnn_parameters(self,rnn_parameters):
-        self._rnn_parameters = rnn_parameters
+    def set_externally_managed_rnn_parameter_func(self,rnn_parameter_func):
+        self._rnn_parameter_func = rnn_parameter_func
         self.use_rnn_mode = True
         self._externally_managed_rnn_parameters = True
 
@@ -299,7 +300,7 @@ class ShootingIntegrandBase(nn.Module):
                 potential_energy = potential_energy + torch.sum(torch.mean(c_costate_dict[kcs]*c_rhs_state_dict[ks],dim=0))
         return potential_energy
 
-    def compute_kinetic_energy(self,t,parameter_objects,states_dict_of_dicts,costate_dict_of_dicts):
+    def compute_kinetic_energy(self,t,parameter_objects,states_dict_of_dicts=None,costate_dict_of_dicts=None):
         """
         Computes the kinetic energy. This is the kinetic energy given the parameters. Will only be relevant if the system is
         nonlinear in its parameters (when a fixed point solution needs to be computed). Otherwise will not be used. By default just
@@ -360,15 +361,18 @@ class ShootingIntegrandBase(nn.Module):
 
         if self.use_rnn_mode:
             # we only compute it the first time
-            if self._rnn_parameters is None:
-                if self._externally_managed_rnn_parameters:
-                    raise ValueError('Externally managed RNN parameters cannot be created here. Should have been assigned before.')
+            if self._externally_managed_rnn_parameters:
+                if self._rnn_parameter_func is None:
+                    raise ValueError('Externally managed RNN parameter function cannot be created here. Should have been assigned before.')
 
-                parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
-                                                            costate_dict_of_dicts=costate_dict_of_dicts)
-                self._rnn_parameters = parameter_objects
+                parameter_objects = self._rnn_parameter_func(t)
             else:
-                parameter_objects = self._rnn_parameters
+                if self._rnn_parameters is None:
+                    parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                                costate_dict_of_dicts=costate_dict_of_dicts)
+                    self._rnn_parameters = parameter_objects
+                else:
+                    parameter_objects = self._rnn_parameters
 
         else:
             # first compute the current parameters
@@ -631,16 +635,18 @@ class ShootingIntegrandBase(nn.Module):
         costate_dict = costate_dict_of_dicts.values()[0]
 
         if self.use_rnn_mode:
-            # we only compute it the first time
-            if self._rnn_parameters is None:
-                if self._externally_managed_rnn_parameters:
-                    raise ValueError(
-                        'Externally managed RNN parameters cannot be created here. Should have been assigned before.')
 
-                parameter_objects = self.optional_compute_parameters_analytic(t=t,state_dict=state_dict,costate_dict=costate_dict)
-                self._rnn_parameters = parameter_objects
+            if self._externally_managed_rnn_parameters:
+                if self._rnn_parameter_func is None:
+                    raise ValueError('Externally managed RNN parameterfunction cannot be created here. Should have been assigned before.')
+                parameter_objects = self._rnn_parameter_func.get_parameters_at_time(t)
             else:
-                parameter_objects = self._rnn_parameters
+                # we only compute it the first time
+                if self._rnn_parameters is None:
+                    parameter_objects = self.optional_compute_parameters_analytic(t=t,state_dict=state_dict,costate_dict=costate_dict)
+                    self._rnn_parameters = parameter_objects
+                else:
+                    parameter_objects = self._rnn_parameters
 
         else:
             # we compute these parameters every time
@@ -649,10 +655,21 @@ class ShootingIntegrandBase(nn.Module):
                                                                         costate_dict=costate_dict)
 
         if t == 0:
-            # we only need to compute the kinetic energy here
-            current_kinetic_energy = self.compute_kinetic_energy(t,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
-            # we only want it at the initial condition
-            self.current_norm_penalty = current_kinetic_energy
+            # we only need to compute the kinetic energy here, it is only to compute the current norm penalty
+            if self._externally_managed_rnn_parameters:
+                # just average the kinetic energy over the parameters
+                if self._rnn_parameter_func is None:
+                    raise ValueError('RNN parameter function should have been specified earlier')
+                par_list = self._rnn_parameter_func.get_time_parameter_list()
+                current_kinetic_energy_sum = torch.Tensor([0.0])
+                for current_parameter_objects in par_list:
+                    current_kinetic_energy = self.compute_kinetic_energy(t, current_parameter_objects)
+                    current_kinetic_energy_sum = current_kinetic_energy_sum + current_kinetic_energy
+                self.current_norm_penalty = current_kinetic_energy_sum/len(par_list)
+            else:
+                current_kinetic_energy = self.compute_kinetic_energy(t,parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
+                # we only want it at the initial condition
+                self.current_norm_penalty = current_kinetic_energy
 
         # evolution of state equation is always known (so the same as for the autodiff approach)
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts,
@@ -674,17 +691,18 @@ class ShootingIntegrandBase(nn.Module):
         # here we compute the rhs of the equations via automatic differentiation
 
         if self.use_rnn_mode:
-            # we only compute it the first time
-            if self._rnn_parameters is None:
-                if self._externally_managed_rnn_parameters:
-                    raise ValueError(
-                        'Externally managed RNN parameters cannot be created here. Should have been assigned before.')
-
-                parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
-                                                    costate_dict_of_dicts=costate_dict_of_dicts)
-                self._rnn_parameters = parameter_objects
+            if self._externally_managed_rnn_parameters:
+                if self._rnn_parameter_func is None:
+                    raise ValueError('Externally managed RNN parameter function cannot be created here. Should have been assigned before.')
+                parameter_objects = self._rnn_parameter_func.get_parameters_at_time(t)
             else:
-                parameter_objects = self._rnn_parameters
+                # we only compute it the first time
+                if self._rnn_parameters is None:
+                    parameter_objects = self.compute_parameters(t=t, state_dict_of_dicts=state_dict_of_dicts,
+                                                        costate_dict_of_dicts=costate_dict_of_dicts)
+                    self._rnn_parameters = parameter_objects
+                else:
+                    parameter_objects = self._rnn_parameters
 
         else:
             # we compute these parameters every time
@@ -693,8 +711,19 @@ class ShootingIntegrandBase(nn.Module):
                                                         costate_dict_of_dicts=costate_dict_of_dicts)
 
         if t == 0:
-            # we only want it at the initial condition
-            self.current_norm_penalty = self.compute_kinetic_energy(0, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
+            if self._externally_managed_rnn_parameters:
+                # just average the kinetic energy over the parameters
+                if self._rnn_parameter_func is None:
+                    raise ValueError('RNN parameter function should have been specified earlier')
+                par_list = self._rnn_parameter_func.get_time_parameter_list()
+                current_kinetic_energy_sum = torch.Tensor([0.0])
+                for current_parameter_objects in par_list:
+                    current_kinetic_energy = self.compute_kinetic_energy(t, current_parameter_objects)
+                    current_kinetic_energy_sum = current_kinetic_energy_sum + current_kinetic_energy
+                self.current_norm_penalty = current_kinetic_energy_sum / len(par_list)
+            else:
+                # we only want it at the initial condition
+                self.current_norm_penalty = self.compute_kinetic_energy(0, parameter_objects,state_dict_of_dicts,costate_dict_of_dicts)
 
 
         dot_state_dict_of_dicts = self.rhs_advect_state_dict_of_dicts(t=t, state_dict_of_dicts=state_dict_of_dicts,

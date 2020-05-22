@@ -415,7 +415,7 @@ if __name__ == '__main__':
         title_string = '{} particles'.format(nr_of_particles)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
         for yname in ynames:
-            save_figure_name = 'plot_{}_over_{}_for_{}_particles'.format(yname,xname,nr_of_particles)
+            save_figure_name = 'plot_{}_{}_{}_over_{}_for_{}_particles'.format(model_name,fcn_name,yname,xname,nr_of_particles)
             plot_data(data=data,xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
 
     # create plots for a particular inflation factor
@@ -428,5 +428,5 @@ if __name__ == '__main__':
         title_string = 'inflation factor = {}'.format(inflation_factor)
         ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
         for yname in ynames:
-            save_figure_name = 'plot_{}_over_{}_for_inflation_factor_{}'.format(yname,xname,inflation_factor)
+            save_figure_name = 'plot_{}_{}_{}_over_{}_for_inflation_factor_{}'.format(model_name,fcn_name,yname,xname,inflation_factor)
             plot_data(data=data, xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name,default_xval=2)

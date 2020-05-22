@@ -8,6 +8,83 @@ from abc import ABCMeta, abstractmethod
 import neuro_shooting.generic_integrator as generic_integrator
 import neuro_shooting.state_costate_and_data_dictionary_utils as scd_utils
 
+class ParticleFreeParameterFunc(object):
+
+    def __init__(self,time_dependent_steps,integration_time,parameter_creation_func):
+
+        self.time_dependent_steps = time_dependent_steps
+        self.integration_time = integration_time
+        self.parameter_creation_func = parameter_creation_func
+
+        self.min_t = self.integration_time[0]
+        self.max_t = self.integration_time[-1]
+
+        if self.time_dependent_steps>1:
+            self.times = (torch.linspace(self.min_t,self.max_t,self.time_dependent_steps+1))[0:-1]
+        else:
+            self.times = [self.integration_time[0]]
+
+        self.time_parameter_list = self.create_time_parameters(times=self.times)
+
+        # this is so we can avoid heavy searching as we assume the pattern will be to advance in time, essentially some form of caching
+        self.last_used_time_idx = 0
+        self.last_used_time = self.times[self.last_used_time_idx]
+
+    def create_time_parameters(self,times):
+
+        time_parameter_list = []
+        for t in times:
+            time_parameter_list.append(self.parameter_creation_func())
+
+        return time_parameter_list
+
+    def get_time_parameter_list(self):
+        return self.time_parameter_list
+
+    def get_parameters_at_time(self,t):
+
+        if len(self.time_parameter_list)==1:
+            # this is the standard static particle-free approach, just return the parameter
+            return self.time_parameter_list[0]
+        else:
+            # here we need to find the one that corresponds to the time-step (i.e., the closest one with the a time <= the requested time
+            if t<self.min_t:
+                print('WARNING: trying to access a time below {}'.format(self.min_t.item()))
+                self.last_used_time = self.times[0]
+                self.last_used_time_idx = 0
+                return self.time_parameter_list[0]
+            elif t>self.max_t:
+                print('WARNING: trying to access a time above {}'.format(self.max_t.item()))
+                self.last_used_time = self.times[-1]
+                self.last_used_time_idx = len(self.time_parameter_list)-1
+                return self.time_parameter_list[-1]
+            else:
+                # now we actually need to access a time in the middle
+
+                if t<self.last_used_time:
+                    # search to the left, and it is not smaller than the first so we can savely go to the left until we find it
+                    while t<self.last_used_time:
+                        self.last_used_time_idx -= 1
+                        self.last_used_time = self.times[self.last_used_time_idx]
+                    return self.time_parameter_list[self.last_used_time_idx]
+                elif t>=self.times[-1]: # last interval
+                    self.last_used_time = self.times[-1]
+                    self.last_used_time_idx = len(self.time_parameter_list) - 1
+                    return self.time_parameter_list[-1]
+                elif t==self.last_used_time:
+                    return self.time_parameter_list[self.last_used_time_idx]
+                elif t>self.last_used_time: # t>=self.last_used_time, search to the right, but does not go outside the range
+                    # first check if it is larger than the largest where we havge a parameter
+                    # search to the right, and it is not greater thatn the last so we can savely go to the right until we find it
+                    while t>self.last_used_time:
+                        self.last_used_time_idx += 1
+                        self.last_used_time = self.times[self.last_used_time_idx]
+                    return self.time_parameter_list[self.last_used_time_idx]
+                else:
+                    raise ValueError('This should never have happend. Uncaught time {}'.format(t.item()))
+
+
+
 
 class ShootingBlockBase(nn.Module):
 
@@ -18,6 +95,8 @@ class ShootingBlockBase(nn.Module):
                  keep_initial_state_parameters_at_zero=False,
                  enlarge_pass_through_states_and_costates=True,
                  use_particle_free_rnn_mode=False,
+                 use_particle_free_time_dependent_mode=False,
+                 nr_of_particle_free_time_dependent_steps=10,
                  *args, **kwargs):
         """
 
@@ -32,6 +111,8 @@ class ShootingBlockBase(nn.Module):
         :param keep_initial_state_parameters_at_zero: If set to true than all the newly created initial state parameters are kept at zero (and not optimized over); this includes state parameters created via state/costate enlargement.
         :param enlarge_pass_through_states_and_costates: all the pass through states/costates are enlarged so they match the dimensions of the states/costates. This assures that parameters can be concatenated.
         :param use_particle_free_rnn_mode: if set to true than the particles are not used to compute the parameterization, instead an RNN model is assumed and the layer parameters are optimized directly, particles will stay as initialized
+        :param use_particle_free_time_dependent_mode: mimicks a more classical resnet, by parameterizing via a finite number of direct transformations
+        :param nr_of_particle_free_time_dependent_steps: specifies the number of steps where the parameterization happens (piecewise constant in the middle)
         :param args:
         :param kwargs:
         """
@@ -92,7 +173,13 @@ class ShootingBlockBase(nn.Module):
 
         self.use_particle_free_rnn_mode = use_particle_free_rnn_mode
         """if set to true than the particles are not used to compute the parameterization, instead an RNN model is assumed and the layer parameters are optimized directly, particles will stay as initialized"""
-        self._particle_free_rnn_parameters = None
+        self._particle_free_rnn_parameter_func = None
+
+        self.use_particle_free_time_dependent_mode = use_particle_free_time_dependent_mode
+        self.nr_of_particle_free_time_dependent_steps = nr_of_particle_free_time_dependent_steps
+
+        if self.use_particle_free_time_dependent_mode and self.use_particle_free_rnn_mode:
+            raise ValueError('use_particle_free_time_depdenent_mode and use_particle_free_rnn_mode cannot be set simultaneosusly')
 
         self._costate_parameter_dict = None
         """Dictionary holding the costates (i.e., adjoints/duals)"""
@@ -110,17 +197,39 @@ class ShootingBlockBase(nn.Module):
 
         # particle-free RNN mode is a direct optimization over the NN parameters (a la Neural ODE)
         # it is included here simply to allow for direct comparisions with the same code
-        if self.use_particle_free_rnn_mode:
-            # those will have the default initialization
-            self._particle_free_rnn_parameters = self.shooting_integrand.create_default_parameter_objects_on_consistent_device()
-            # let's register them for optimization
-            self._particle_free_rnn_parameters = self.register_particle_free_rnn_parameters(rnn_parameters=self._particle_free_rnn_parameters)
+        # if self.use_particle_free_rnn_mode:
+        #     # those will have the default initialization
+        #     self._particle_free_rnn_parameters = self.shooting_integrand.create_default_parameter_objects_on_consistent_device()
+        #     # let's register them for optimization
+        #     self._particle_free_rnn_parameters = self.register_particle_free_rnn_parameters(rnn_parameters=self._particle_free_rnn_parameters)
+        #     # and then associate them with the integrand, so the integrand knows that these are externally managed
+        #     self.shooting_integrand.set_externally_managed_rnn_parameters(self._particle_free_rnn_parameters)
+        #     # we just set them to default, these will not really be needed though (as we are not optimizing over these values)
+        #     self._state_parameter_dict = state_dict
+        #     self._costate_parameter_dict = costate_dict
+
+        if self.use_particle_free_rnn_mode or self.use_particle_free_time_dependent_mode:
+
+            if self.use_particle_free_rnn_mode:
+                time_dependent_steps = 1
+            else:
+                time_dependent_steps = self.nr_of_particle_free_time_dependent_steps
+
+            # create the function that contains the parameters and that we can query for a parameter at a particular time
+            self._particle_free_rnn_parameter_func = ParticleFreeParameterFunc(time_dependent_steps=time_dependent_steps,
+                                                                               integration_time=self.integration_time,
+                                                                               parameter_creation_func=self.shooting_integrand.create_default_parameter_objects_on_consistent_device)
+            # register its parameters
+            pars = self._particle_free_rnn_parameter_func.get_time_parameter_list()
+            for i,p in enumerate(pars):
+                self.register_particle_free_parameters(parameters=p,name_prefix='pf_timestep{}_'.format(i))
+
             # and then associate them with the integrand, so the integrand knows that these are externally managed
-            self.shooting_integrand.set_externally_managed_rnn_parameters(self._particle_free_rnn_parameters)
+            self.shooting_integrand.set_externally_managed_rnn_parameter_func(self._particle_free_rnn_parameter_func)
+
             # we just set them to default, these will not really be needed though (as we are not optimizing over these values)
             self._state_parameter_dict = state_dict
             self._costate_parameter_dict = costate_dict
-
         else:
             self._state_parameter_dict, self._costate_parameter_dict = self.register_state_and_costate_parameters(
                 state_dict=state_dict, costate_dict=costate_dict,
@@ -389,16 +498,16 @@ class ShootingBlockBase(nn.Module):
                 print('Registering integrand parameter {}'.format(pn_eff))
                 self.register_parameter(pn_eff,pv)
 
-    def register_particle_free_rnn_parameters(self,rnn_parameters):
+    def register_particle_free_parameters(self,parameters,name_prefix=''):
 
-        if rnn_parameters is not None:
+        if parameters is not None:
 
             # first loop over parameter objects
-            for pd in rnn_parameters:
-                cur_par_dict = rnn_parameters[pd].get_parameter_dict()
+            for pd in parameters:
+                cur_par_dict = parameters[pd].get_parameter_dict()
                 # now over all the entries
                 for k in cur_par_dict:
-                    cur_name = '{}_{}'.format(pd,k)
+                    cur_name = '{}{}_{}'.format(name_prefix,pd,k)
                     print('Registering particle-free RNN parameter {}'.format(cur_name))
 
                     # first convert this to a parameter
@@ -411,7 +520,7 @@ class ShootingBlockBase(nn.Module):
             # l1 = par_dict1['weight']
             # l2 = par_dict2['weight']
 
-        return rnn_parameters
+        return parameters
 
 
     def register_state_and_costate_parameters(self,state_dict,costate_dict,keep_state_parameters_at_zero):
