@@ -16,12 +16,13 @@ if __name__ == '__main__':
         'save_figures': None,
         'viz_freq': 300,
         'fcn': args.fcn,
+        'do_not_plot_temporal_data': None,
         'optimize_over_data_initial_conditions': None #[True, False]  # we can add binary flags like this
     }
 
     run_args_to_sweep = {
         'nr_of_particles': [2,5,15,25], # number of particles needs to be at least 2
-        'inflation_factor': [4,8,16,32]
+        'inflation_factor': [4,8,16,32,64,128]
     }
 
     # run for particle-free
