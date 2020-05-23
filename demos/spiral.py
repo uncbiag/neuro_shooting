@@ -26,7 +26,6 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
-import neuro_shooting.tensorboard_shooting_hooks as thooks
 import neuro_shooting.shooting_hooks as sh
 import neuro_shooting.vector_visualization as vector_visualization
 import neuro_shooting.validation_measures as validation_measures
@@ -42,7 +41,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
     parser.add_argument('--batch_time', type=int, default=5, help='Length of the training samples.')
-    parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
+    parser.add_argument('--batch_size', type=int, default=100, help='Number of training samples.')
     parser.add_argument('--lr', type=float, default=0.05, help='Learning rate for optimizer')
     parser.add_argument('--niters', type=int, default=2000, help='Maximum nunber of iterations.')
     parser.add_argument('--batch_validation_size', type=int, default=25, help='Length of the samples for validation.')
@@ -65,7 +64,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--pw', type=float, default=1.0, help='Parameter weight; controls the weight internally for the shooting equations; probably best left at zero and to control the weight with --sim_weight and --norm_weight.')
     parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
-    parser.add_argument('--norm_weight', type=float, default=1.0, help='Weight for the similarity measure')
+    parser.add_argument('--norm_weight', type=float, default=0.01, help='Weight for the similarity measure')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
     parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
 
@@ -77,6 +76,8 @@ def setup_cmdline_parsing():
                         help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--use_particle_free_time_dependent_mode', action='store_true',
                         help='This is directly optimizing over time-dependent parameters -- no particles here; a la Neural ODE')
+    parser.add_argument('--nr_of_particle_free_time_dependent_steps', type=int, default=10, help='Number of parameter sets(!) for the time-dependent particle-free mode')
+
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions_type', type=str, choices=['direct','linear','mini_nn'], default='linear', help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
@@ -125,6 +126,7 @@ def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12, nr_o
 def setup_shooting_block(integrator=None, shooting_model='updown', parameter_weight=1.0, nr_of_particles=10,
                          inflation_factor=2, nonlinearity='relu',
                          use_particle_rnn_mode=False, use_particle_free_rnn_mode=False, use_particle_free_time_dependent_mode=False,
+                         nr_of_particle_free_time_dependent_steps=5,
                          optimize_over_data_initial_conditions=False,
                          optimize_over_data_initial_conditions_type='linear',
                          use_analytic_solution=True,
@@ -182,6 +184,7 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
     shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel,
                                                        use_particle_free_rnn_mode=use_particle_free_rnn_mode,
                                                        use_particle_free_time_dependent_mode=use_particle_free_time_dependent_mode,
+                                                       nr_of_particle_free_time_dependent_steps=nr_of_particle_free_time_dependent_steps,
                                                        integrator=integrator)
 
     return shooting_block
@@ -261,9 +264,9 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
     data_size = len(data_dict['t'])
 
     if distance_based_sampling:
-        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=False))
+        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=True))
     else:
-        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=False))
+        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True))
 
     batch_y0 = data_dict['y'][s]  # (M, D)
     batch_t = data_dict['t'][:batch_time]  # (T)
@@ -272,7 +275,7 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
     return batch_y0, batch_t, batch_y
 
 class FunctionDataset(Dataset):
-    def __init__(self, args, data_dict, nr_of_samples, batch_time, distance_based_sampling=True, validation_mode=False):
+    def __init__(self, args, data_dict, nr_of_samples, batch_time, distance_based_sampling=True, validation_mode=False,online_mode=False):
         """
         Args:
 
@@ -282,19 +285,32 @@ class FunctionDataset(Dataset):
         self.data_dict = data_dict
         self.validation_mode = validation_mode
         self.validate_with_long_range = args.validate_with_long_range
+        self.online_mode = online_mode
+        self.distance_based_sampling = distance_based_sampling
+        self.batch_time = batch_time
+        self.nr_of_samples = nr_of_samples
 
+        if not online_mode:
+            self.y0, self.t, self.y = self.create_data(nr_of_samples=nr_of_samples)
+        else:
+            self.y0 = None
+            self.t = None
+            self.y = None
+
+    def create_data(self,nr_of_samples):
         if (self.validation_mode) and (self.validate_with_long_range):
             # just return the entire data trajectory
-            self.nr_of_samples = 1 # we use the entire trajectory
-            self.y0 = data_dict['y0'].unsqueeze(dim=0)
-            self.t = data_dict['t']
-            self.y = data_dict['y'].unsqueeze(dim=1)
+            y0 = self.data_dict['y0'].unsqueeze(dim=0)
+            t = self.data_dict['t']
+            y = self.data_dict['y'].unsqueeze(dim=1)
         else:
             self.nr_of_samples = nr_of_samples
             # create these samples, we create them once and for all
 
-            self.y0, self.t, self.y = get_batch(data_dict=data_dict, batch_size=nr_of_samples,
-                                                batch_time=batch_time, distance_based_sampling=distance_based_sampling)
+            y0, t, y = get_batch(data_dict=self.data_dict, batch_size=nr_of_samples,
+                                 batch_time=self.batch_time, distance_based_sampling=self.distance_based_sampling)
+
+        return y0,t,y
 
     def __len__(self):
         return self.nr_of_samples
@@ -303,12 +319,26 @@ class FunctionDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        sample = {'y0': self.y0[idx,...], 'y': self.y[:,idx,...]}
+        if not self.online_mode:
+            sample = {'y0': self.y0[idx,...], 'y': self.y[:,idx,...]}
+        else:
+            if type(idx)==int:
+                batch_size = 1
+                eff_idx = 0
+            elif type(idx)==list:
+                batch_size = len(idx)
+                eff_idx = list(range(0,batch_size))
+            else:
+                raise ValueError('Unknown index type {}'.format(type(idx)))
+
+            y0, self.t, y = get_batch(data_dict=self.data_dict, batch_size=batch_size,
+                                 batch_time=self.batch_time, distance_based_sampling=self.distance_based_sampling)
+            sample = {'y0': y0[eff_idx, ...], 'y': y[:, eff_idx, ...]}
 
         return sample
 
 def get_function_data_loaders(args, data_dict,
-                              training_samples=100,training_evaluation_samples=100, testing_samples=100,
+                              training_samples=100,training_evaluation_samples=100, short_range_testing_samples=1000, testing_samples=100,
                               num_workers=0):
 
     batch_time = args.batch_time
@@ -320,23 +350,30 @@ def get_function_data_loaders(args, data_dict,
 
     train_loader = DataLoader(
         FunctionDataset(args=args,data_dict=data_dict, nr_of_samples=training_samples, batch_time=batch_time,
-                        distance_based_sampling=distance_based_sampling),
+                        distance_based_sampling=distance_based_sampling,online_mode=True),
         batch_size=batch_size,shuffle=True, num_workers=num_workers, drop_last=True
     )
 
     train_eval_loader = DataLoader(
         FunctionDataset(args=args,data_dict=data_dict, nr_of_samples=training_evaluation_samples, batch_time=batch_time,
-                        distance_based_sampling=distance_based_sampling),
+                        distance_based_sampling=distance_based_sampling,online_mode=False),
         batch_size=training_evaluation_samples, shuffle=False, num_workers=num_workers, drop_last=True
+    )
+
+    short_range_test_loader = DataLoader(
+        FunctionDataset(args=args, data_dict=data_dict, nr_of_samples=short_range_testing_samples,
+                        batch_time=batch_time,
+                        distance_based_sampling=distance_based_sampling, online_mode=False),
+        batch_size=short_range_testing_samples, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
     test_loader = DataLoader(
         FunctionDataset(args=args,data_dict=data_dict, nr_of_samples=testing_samples, batch_time=batch_time,
-                        distance_based_sampling=distance_based_sampling,validation_mode=True),
+                        distance_based_sampling=distance_based_sampling,validation_mode=True,online_mode=False),
         batch_size=testing_samples, shuffle=False, num_workers=num_workers, drop_last=True
     )
 
-    return train_loader, test_loader, train_eval_loader
+    return train_loader, train_eval_loader, short_range_test_loader, test_loader
 
 
 def get_time_chunks(t, chunk_time):
@@ -445,7 +482,7 @@ if __name__ == '__main__':
     data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear)
 
     # create the data immediately after setting the random seed to make sure it is always consistent across the experiments
-    train_loader, test_loader, train_eval_loader = get_function_data_loaders(args=args, data_dict=data)
+    train_loader, train_eval_loader, short_range_test_loader, test_loader = get_function_data_loaders(args=args, data_dict=data)
 
     # create the shooting block
     shooting_block = setup_shooting_block(integrator=integrator,
@@ -457,6 +494,7 @@ if __name__ == '__main__':
                                           use_particle_rnn_mode=args.use_particle_rnn_mode,
                                           use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
                                           use_particle_free_time_dependent_mode=args.use_particle_free_time_dependent_mode,
+                                          nr_of_particle_free_time_dependent_steps=args.nr_of_particle_free_time_dependent_steps,
                                           optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
                                           optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type,
                                           use_analytic_solution=not args.do_not_use_analytic_solution,
@@ -469,6 +507,8 @@ if __name__ == '__main__':
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)
 
+    uses_particles = not (args.use_particle_free_rnn_mode or args.use_particle_free_time_dependent_mode)
+
     # custom initialization
     if args.custom_parameter_initialization:
 
@@ -477,12 +517,13 @@ if __name__ == '__main__':
 
         # get initial positions on the trajectory (to place the particles there)
         init_q1, _, _ = get_batch(data_dict=data, batch_time=1, batch_size=args.nr_of_particles, distance_based_sampling=True)
-        with torch.no_grad():
-            ss_sd['q1'].copy_(init_q1)
+
+        if uses_particles:
+            with torch.no_grad():
+                ss_sd['q1'].copy_(init_q1)
 
         #init.uniform_(shooting_block.state_dict()['q1'],-2,2) # just for initialization experiments, not needed
 
-    uses_particles = not args.use_particle_free_rnn_mode
     if uses_particles:
         if args.custom_parameter_freezing:
             utils.freeze_parameters(shooting_block,['q1'])
@@ -494,7 +535,8 @@ if __name__ == '__main__':
 
         if args.custom_parameter_freezing:
             if itr == args.unfreeze_parameters_at_iter:
-                utils.unfreeze_parameters(shooting_block, ['q1'])
+                if uses_particles:
+                    utils.unfreeze_parameters(shooting_block, ['q1'])
 
         # now iterate over the entire training dataset
         for itr_batch, sampled_batch in enumerate(train_loader):
@@ -605,9 +647,9 @@ if __name__ == '__main__':
     # now with the evaluation data (short range)
     with torch.no_grad():
         # TODO: currently evaluates only based on one batch
-        dataiter = iter(train_eval_loader)
+        dataiter = iter(short_range_test_loader)
         test_batch = dataiter.next()
-        val_batch_t = train_eval_loader.dataset.t
+        val_batch_t = short_range_test_loader.dataset.t
         val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0, 1)
         loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,
                                                                            batch_y0=val_batch_y0,
@@ -661,9 +703,9 @@ if __name__ == '__main__':
         shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
         # run the evaluation for the validation data and record it via the hook
-        dataiter = iter(train_eval_loader)
+        dataiter = iter(short_range_test_loader)
         test_batch = dataiter.next()
-        val_batch_t = train_eval_loader.dataset.t
+        val_batch_t = short_range_test_loader.dataset.t
         val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0, 1)
 
         loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,

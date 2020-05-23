@@ -9,10 +9,10 @@ if __name__ == '__main__':
     run_args_template = {
         'shooting_model': args.shooting_model,
         #'viz': None,
-        'niters': 1000,
+        'niters': 1500,
         'optional_weight': 10, # only used for updown_universal model
         'custom_parameter_freezing': None,
-        'unfreeze_parameters_at_iter': 200,
+        'unfreeze_parameters_at_iter': 50,
         'save_figures': None,
         'viz_freq': 3000,
         'custom_parameter_initialization': None,
@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     run_args_to_sweep = {
         'nr_of_particles': [15,25,50], # number of particles needs to be at least 2
-        'inflation_factor': [8,32,128]
+        'inflation_factor': [16,32,64,128]
     }
 
     # run for particle-free
