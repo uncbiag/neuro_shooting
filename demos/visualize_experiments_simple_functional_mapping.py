@@ -120,7 +120,7 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
     ylabel_name = _translate_label(yname)
 
     position_offsets = np.linspace(0+width/2+width/4,1-width/2-width/4,nr_of_groups)#(np.arange(0,nr_of_groups)-nr_of_groups/2)*width
-    position_offsets = position_offsets-np.mean(position_offsets)
+    position_offsets = -(position_offsets-np.mean(position_offsets))
     default_positions = np.arange(1,nr_of_unique_values+1)
 
     if do_printing:

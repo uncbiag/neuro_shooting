@@ -70,16 +70,19 @@ if __name__ == '__main__':
     # run for particle-free
     eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep_particle_free_rnn,
                         run_args_template=run_args_template_particle_free_rnn,
-                        python_script='simple_functional_mapping_example.py',output_dir_prefix='long_iteration_particle_free_rnn_')
+                        python_script='simple_functional_mapping_example.py',output_dir_prefix='long_iteration_particle_free_rnn_',
+                        do_not_recompute=not args.force_recompute)
 
     # run for particle-free time-dependent model
     eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep_particle_free_time_dependent_rnn,
                         run_args_template=run_args_template_particle_free_time_dependent_rnn,
-                        python_script='simple_functional_mapping_example.py', output_dir_prefix='long_iteration_particle_free_time_dependent_rnn_')
+                        python_script='simple_functional_mapping_example.py', output_dir_prefix='long_iteration_particle_free_time_dependent_rnn_',
+                        do_not_recompute=not args.force_recompute)
 
     # run with particles
     eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep_particle_rnn,
                         run_args_template=run_args_template_particle_rnn,
-                        python_script='simple_functional_mapping_example.py',output_dir_prefix='long_iteration_particle_rnn_')
+                        python_script='simple_functional_mapping_example.py',output_dir_prefix='long_iteration_particle_rnn_',
+                        do_not_recompute=not args.force_recompute)
 
     print('Done processing')

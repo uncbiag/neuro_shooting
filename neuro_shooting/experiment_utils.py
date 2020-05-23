@@ -2,13 +2,14 @@ import argparse
 import copy
 import neuro_shooting.command_line_execution_tools as ce
 import os
+import glob
 
 def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title=None):
 
     if cmdline_title is None:
         cmdline_title = cmdline_type
 
-    supported_types = ['simple_functional_mapping','simple_functional_weighting']
+    supported_types = ['simple_functional_mapping','simple_functional_weighting','spiral']
     if cmdline_type not in supported_types:
         raise ValueError('Unsupported command line type {}'.format(cmdline_type))
 
@@ -21,6 +22,26 @@ def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title
         parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
         parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_universal', 'universal','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
         parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that the results will be stored in')
+        parser.add_argument('--force_recompute', action='store_true', default=False, help='Default behavior is not to recompute if there was a pt file in the output directory. But we can force it.')
+        args = parser.parse_args()
+
+        return args
+
+    if cmdline_type == 'spiral':
+        parser = argparse.ArgumentParser(cmdline_title)
+        parser.add_argument('--gpu', type=int, default=0, help='Enable GPU computation on specified GPU.')
+        parser.add_argument('--path_to_python', type=str, default=os.popen('which python').read().rstrip(),
+                            help='Full path to python in your conda environment.')
+        parser.add_argument('--nr_of_seeds', type=int, default=1,
+                            help='Number of consecutive random seeds which we should run; i.e., number of random runs')
+        parser.add_argument('--starting_seed_id', type=int, default=0, help='Seed that we start with.')
+        parser.add_argument('--shooting_model', type=str, default='updown_universal',
+                            choices=['updown_universal', 'universal', 'periodic', 'dampened_updown', 'simple',
+                                     '2nd_order', 'updown', 'general_updown'])
+        parser.add_argument('--output_base_directory', type=str, default='sfm_results',
+                            help='Main directory that the results will be stored in')
+        parser.add_argument('--force_recompute', action='store_true', default=False,
+                            help='Default behavior is not to recompute if there was a pt file in the output directory. But we can force it.')
         args = parser.parse_args()
 
         return args
@@ -35,6 +56,7 @@ def setup_cmdline_parsing(cmdline_type='simple_functional_mapping',cmdline_title
         parser.add_argument('--sweep_updown', action='store_true', default=False)
         parser.add_argument('--sweep_updown_universal', action='store_true', default=False)
         parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that the results will be stored in')
+        parser.add_argument('--force_recompute', action='store_true', default=False, help='Default behavior is not to recompute if there was a pt file in the output directory. But we can force it.')
         args = parser.parse_args()
 
         return args
@@ -60,7 +82,7 @@ def merge_args(run_args_template,add_args):
 
     return merged_args
 
-def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='simple_functional_mapping_example.py',output_dir_prefix=''):
+def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='simple_functional_mapping_example.py',output_dir_prefix='',do_not_recompute=True):
     swept_parameter_list = ce.recursively_sweep_parameters(pars_to_sweep=run_args_to_sweep)
 
     # base settings
@@ -88,7 +110,10 @@ def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='sim
             elif 'fcn' in run_args_template:
                 current_fcn = run_args_template['fcn']
             else:
-                current_fcn = args.fcn
+                if hasattr(args,'fcn'):
+                    current_fcn = args.fcn
+                else:
+                    current_fcn = ''
 
             basename = 'run_{:02d}_{}_{}'.format(sidx + args.starting_seed_id, current_fcn, current_shooting_model)
             experiment_name = create_experiment_name(basename, d)
@@ -103,10 +128,15 @@ def sweep_parameters(args,run_args_to_sweep,run_args_template,python_script='sim
             run_args['output_directory'] = output_directory
             run_args['seed'] = seed
 
-            print('Running {}'.format(experiment_name))
+            # check if it already contains an output pt file. If so ignore.
+            pt_files = glob.glob(os.path.join(output_directory, '*.pt'), recursive=False)
+            if (len(pt_files)>0) and do_not_recompute:
+                print('Found the following pt files {} in {}. SKIPPING.\n'.format(pt_files,output_directory))
+            else:
+                print('Running {}'.format(experiment_name))
 
-            ce.run_command_with_args(python_script=python_script,
-                                     run_args=run_args,
-                                     path_to_python=args.path_to_python,
-                                     cuda_visible_devices=args.gpu,
-                                     log_file=log_file)
+                ce.run_command_with_args(python_script=python_script,
+                                         run_args=run_args,
+                                         path_to_python=args.path_to_python,
+                                         cuda_visible_devices=args.gpu,
+                                         log_file=log_file)

@@ -40,10 +40,12 @@ if __name__ == '__main__':
 
     if args.sweep_updown:
         eu.sweep_parameters(args, run_args_to_sweep_updown, run_args_template_updown,
-                            python_script='simple_functional_mapping_example.py',output_dir_prefix='test_updown_')
+                            python_script='simple_functional_mapping_example.py',output_dir_prefix='test_updown_',
+                            do_not_recompute=not args.force_recompute)
 
     if args.sweep_updown_universal:
         eu.sweep_parameters(args, run_args_to_sweep_updown_universal, run_args_template_updown_universal,
-                            python_script='simple_functional_mapping_example.py',output_dir_prefix='test_univeral_updown_')
+                            python_script='simple_functional_mapping_example.py',output_dir_prefix='test_univeral_updown_',
+                            do_not_recompute=not args.force_recompute)
 
     print('Done processing')

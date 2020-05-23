@@ -632,6 +632,7 @@ if __name__ == '__main__':
         if (itr % args.test_freq == 0) or (itr % args.viz_freq == 0) or (itr == args.niters):
 
             with torch.no_grad():
+                # TODO: currently evaluates only based on one batch (100 points)
                 dataiter = iter(train_eval_loader)
                 train_eval_batch = dataiter.next()
                 batch_in, batch_out = train_eval_batch['input'], train_eval_batch['output']
@@ -681,6 +682,7 @@ if __name__ == '__main__':
     values_to_save['nr_of_parameters'] = nr_of_parameters
 
     with torch.no_grad():
+        # TODO: currently evaluates only based on one batch (100 points)
         loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args, use_shooting=use_shooting,
                                                                        integrator=integrator,
                                                                        sblock=sblock, func=func,

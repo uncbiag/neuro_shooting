@@ -68,7 +68,7 @@ def plot_higher_order_state(q2,p_q2,ax):
             p_q2.min(), p_q2.max()))
 
 
-def plot_trajectories(val_y, val_pred_y, val_sim_time=None, train_y=None, train_pred_y=None, train_t=None, itr=None, itr_name='iter', ax=None, losses_to_print=None, nr_of_pars=None):
+def plot_trajectories(val_y, val_pred_y, val_sim_time=None, train_y=None, train_pred_y=None, train_t=None, itr=None, itr_name='iter', ax=None, losses_to_print=None, nr_of_pars=None, print=False):
 
     if val_y is not None:
         for n in range(val_y.shape[1]):
@@ -96,6 +96,9 @@ def plot_trajectories(val_y, val_pred_y, val_sim_time=None, train_y=None, train_
     if nr_of_pars is not None:
         current_title += '\n#pars={} = {}(fixed) + {}(optimized)'.format(nr_of_pars['overall'],nr_of_pars['fixed'],nr_of_pars['optimized'])
 
+    if print:
+        current_title = figure_utils.escape_latex_special_characters(current_title)
+
     ax.set_title(current_title)
 
 def convert_to_numpy_from_torch_if_needed(v):
@@ -107,8 +110,18 @@ def convert_to_numpy_from_torch_if_needed(v):
         v_c = v
     return v_c
 
-def basic_visualize(shooting_block, val_y, val_pred_y, val_sim_time, train_y=None, train_pred_y=None, train_t=None, itr=None,
-                    uses_particles=True, losses_to_print=None, nr_of_pars=None):
+def _basic_visualize(shooting_block, val_y, val_pred_y, val_sim_time, train_y=None, train_pred_y=None, train_t=None, itr=None,
+                    uses_particles=True, losses_to_print=None, nr_of_pars=None,
+                    args=None, visualize=True, print=False):
+
+    if visualize and print:
+        raise ValueError('Only visualize or print can be set to True at the same time.')
+
+    if not visualize and not print:
+        return
+
+    if print:
+        previous_backend, rcsettings = figure_settings.setup_pgf_plotting()
 
     # do conversions to numpy if necessary. This is for convencience. Allows calling with or without torch tensor.
     val_y = convert_to_numpy_from_torch_if_needed(val_y)
@@ -127,7 +140,7 @@ def basic_visualize(shooting_block, val_y, val_pred_y, val_sim_time, train_y=Non
         ax_ho = fig.add_subplot(133, frameon=False)
 
         # plot it without any additional information
-        plot_trajectories(val_y, val_pred_y, val_sim_time, train_y, train_pred_y, train_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
+        plot_trajectories(val_y, val_pred_y, val_sim_time, train_y, train_pred_y, train_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars, print=print)
 
         # get all the parameters that we are optimizing over
         pars = shooting_block.state_dict()
@@ -144,9 +157,41 @@ def basic_visualize(shooting_block, val_y, val_pred_y, val_sim_time, train_y=Non
 
         fig = plt.figure(figsize=(4,4), facecolor='white')
         ax = fig.add_subplot(111, frameon=False)
-        plot_trajectories(val_y, val_pred_y, val_sim_time, train_y, train_pred_y, train_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
+        plot_trajectories(val_y, val_pred_y, val_sim_time, train_y, train_pred_y, train_t, itr, ax=ax, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars, print=print)
 
-    plt.show()
+    if print:
+        figure_utils.save_all_formats(output_directory=args.output_directory,
+                                      filename='basic-viz-{}-iter-{:04d}'.format(args.output_basename,itr))
+        plt.close()
+
+    if visualize:
+        plt.show()
+
+    if print:
+        figure_settings.reset_pgf_plotting(backend=previous_backend, rcsettings=rcsettings)
+
+
+def basic_visualize(shooting_block, val_y, val_pred_y, val_sim_time, train_y=None, train_pred_y=None, train_t=None, itr=None,
+                    uses_particles=True, losses_to_print=None, nr_of_pars=None, args=None):
+
+    if args is None:
+        _basic_visualize(shooting_block=shooting_block,
+                         val_y=val_y, val_pred_y=val_pred_y, val_sim_time=val_sim_time,
+                         train_y=train_y, train_pred_y=train_pred_y, train_t=train_t, itr=itr,
+                         uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars, args=args)
+    else:
+        if args.viz:
+            _basic_visualize(shooting_block=shooting_block,
+                             val_y=val_y, val_pred_y=val_pred_y, val_sim_time=val_sim_time,
+                             train_y=train_y, train_pred_y=train_pred_y, train_t=train_t, itr=itr,
+                             uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars, args=args,
+                             visualize=True,print=False)
+        if args.save_figures:
+            _basic_visualize(shooting_block=shooting_block,
+                             val_y=val_y, val_pred_y=val_pred_y, val_sim_time=val_sim_time,
+                             train_y=train_y, train_pred_y=train_pred_y, train_t=train_t, itr=itr,
+                             uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars, args=args,
+                             visualize=False,print=True)
 
 def convert_list_of_np_arrays_into_np_array(lofnp):
     sz = lofnp[0].shape

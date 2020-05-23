@@ -5,6 +5,9 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 import torch.nn.init as init
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
 
 try:
     from tqdm import trange
@@ -38,7 +41,7 @@ def setup_cmdline_parsing():
     parser.add_argument('--method', type=str, choices=['dopri5', 'adams','rk4'], default='rk4', help='Selects the desired integrator')
     parser.add_argument('--stepsize', type=float, default=0.05, help='Step size for the integrator (if not adaptive).')
     parser.add_argument('--data_size', type=int, default=200, help='Length of the simulated data that should be matched.')
-    parser.add_argument('--batch_time', type=int, default=25, help='Length of the training samples.')
+    parser.add_argument('--batch_time', type=int, default=5, help='Length of the training samples.')
     parser.add_argument('--batch_size', type=int, default=50, help='Number of training samples.')
     parser.add_argument('--lr', type=float, default=0.05, help='Learning rate for optimizer')
     parser.add_argument('--niters', type=int, default=2000, help='Maximum nunber of iterations.')
@@ -46,19 +49,23 @@ def setup_cmdline_parsing():
     parser.add_argument('--seed', required=False, type=int, default=-1,
                         help='Sets the random seed which affects data shuffling')
 
+    # experimental
+    parser.add_argument('--optional_weight', type=float, default=10.0,
+                        help='Optional weight (meaning is model dependent) that we can use to sweep across additional model-specific settings.')
+
     parser.add_argument('--linear', action='store_true', help='If specified the ground truth system will be linear, otherwise nonlinear.')
 
     parser.add_argument('--test_freq', type=int, default=100, help='Frequency with which the validation measures are to be computed.')
     parser.add_argument('--viz_freq', type=int, default=100, help='Frequency with which the results should be visualized; if --viz is set.')
 
     parser.add_argument('--validate_with_long_range', action='store_true', help='If selected, a long-range trajectory will be used; otherwise uses batches as for training')
-    parser.add_argument('--chunk_time', type=int, default=15, help='For a long range valdation solution chunks the solution together in these pieces.')
+    parser.add_argument('--chunk_time', type=int, default=5, help='For a long range valdation solution chunks the solution together in these pieces.')
 
-    parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_univeral', 'simple', 'updown', 'periodic'])
+    parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_universal', 'simple', 'updown', 'periodic'])
     parser.add_argument('--nr_of_particles', type=int, default=25, help='Number of particles to parameterize the initial condition')
     parser.add_argument('--pw', type=float, default=1.0, help='Parameter weight; controls the weight internally for the shooting equations; probably best left at zero and to control the weight with --sim_weight and --norm_weight.')
     parser.add_argument('--sim_weight', type=float, default=100.0, help='Weight for the similarity measure')
-    parser.add_argument('--norm_weight', type=float, default=0.01, help='Weight for the similarity measure')
+    parser.add_argument('--norm_weight', type=float, default=1.0, help='Weight for the similarity measure')
     parser.add_argument('--sim_norm', type=str, choices=['l1','l2'], default='l2', help='Norm for the similarity measure.')
     parser.add_argument('--nonlinearity', type=str, choices=['identity', 'relu', 'tanh', 'sigmoid'], default='relu', help='Nonlinearity for shooting.')
 
@@ -68,13 +75,17 @@ def setup_cmdline_parsing():
                         help='When set then parameters are only computed at the initial time and used for the entire evolution; mimicks a particle-based RNN model.')
     parser.add_argument('--use_particle_free_rnn_mode', action='store_true',
                         help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
+    parser.add_argument('--use_particle_free_time_dependent_mode', action='store_true',
+                        help='This is directly optimizing over time-dependent parameters -- no particles here; a la Neural ODE')
     parser.add_argument('--do_not_use_parameter_penalty_energy', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', action='store_true', default=False)
     parser.add_argument('--optimize_over_data_initial_conditions_type', type=str, choices=['direct','linear','mini_nn'], default='linear', help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
 
+
     parser.add_argument('--disable_distance_based_sampling', action='store_true', default=False, help='If specified uses the original trajectory sampling, otherwise samples based on trajectory length.')
 
     parser.add_argument('--custom_parameter_freezing', action='store_true', default=False, help='Enable custom code for parameter freezing -- development mode')
+    parser.add_argument('--unfreeze_parameters_at_iter', type=int, default=-1, help='Allows unfreezing parameters later during the iterations')
     parser.add_argument('--custom_parameter_initialization', action='store_true', default=False, help='Enable custom code for parameter initialization -- development mode')
 
     parser.add_argument('--viz', action='store_true', help='Enable visualization.')
@@ -87,6 +98,12 @@ def setup_cmdline_parsing():
     parser.add_argument('--do_not_use_analytic_solution', action='store_true', help='Use adjoint integrator to avoid storing values during forward pass.')
 
     parser.add_argument('--create_animation', action='store_true', help='Creates animated gif for the evolution of the particles.')
+
+    parser.add_argument('--save_figures', action='store_true',
+                        help='If specified figures are saved (in current output directory) instead of displayed')
+    parser.add_argument('--output_directory', type=str, default='results_spiral',
+                        help='Directory in which the results are saved')
+    parser.add_argument('--output_basename', type=str, default='spiral', help='Base name for the resulting figures.')
 
     args = parser.parse_args()
 
@@ -107,10 +124,11 @@ def setup_integrator(method, use_adjoint, step_size, rtol=1e-8, atol=1e-12, nr_o
 
 def setup_shooting_block(integrator=None, shooting_model='updown', parameter_weight=1.0, nr_of_particles=10,
                          inflation_factor=2, nonlinearity='relu',
-                         use_particle_rnn_mode=False, use_particle_free_rnn_mode=False,
+                         use_particle_rnn_mode=False, use_particle_free_rnn_mode=False, use_particle_free_time_dependent_mode=False,
                          optimize_over_data_initial_conditions=False,
                          optimize_over_data_initial_conditions_type='linear',
-                         use_analytic_solution=True):
+                         use_analytic_solution=True,
+                         optional_weight=10):
 
     if shooting_model=='updown':
         smodel = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
@@ -124,14 +142,15 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                                   optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
     elif shooting_model == 'updown_universal':
         smodel = shooting_models.AutoShootingIntegrandModelUpDownUniversal(in_features=2, nonlinearity=nonlinearity,
-                                                                  parameter_weight=parameter_weight,
-                                                                  inflation_factor=inflation_factor,
-                                                                  nr_of_particles=nr_of_particles, particle_dimension=1,
-                                                                  particle_size=2,
-                                                                  use_analytic_solution=use_analytic_solution,
-                                                                  use_rnn_mode=use_particle_rnn_mode,
-                                                                  optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
-                                                                  optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
+                                                                           parameter_weight=parameter_weight,
+                                                                           inflation_factor=inflation_factor,
+                                                                           nr_of_particles=nr_of_particles, particle_dimension=1,
+                                                                           particle_size=2,
+                                                                           use_analytic_solution=use_analytic_solution,
+                                                                           use_rnn_mode=use_particle_rnn_mode,
+                                                                           optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
+                                                                           optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type,
+                                                                           optional_weight=optional_weight)
     elif shooting_model=='periodic':
         smodel = shooting_models.AutoShootingIntegrandModelUpdownPeriodic(in_features=2, nonlinearity=nonlinearity,
                                                                   parameter_weight=parameter_weight,
@@ -161,7 +180,9 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
 
     smodel.set_state_initializer(state_initializer=par_initializer)
     shooting_block = shooting_blocks.ShootingBlockBase(name='simple', shooting_integrand=smodel,
-                                                       use_particle_free_rnn_mode=use_particle_free_rnn_mode, integrator=integrator)
+                                                       use_particle_free_rnn_mode=use_particle_free_rnn_mode,
+                                                       use_particle_free_time_dependent_mode=use_particle_free_time_dependent_mode,
+                                                       integrator=integrator)
 
     return shooting_block
 
@@ -218,12 +239,8 @@ def generate_data(integrator, data_size, batch_time, linear=False):
     d = dict()
 
     d['y0'] = torch.tensor([[2., 0.]])
-    #d['t'] = torch.linspace(0., 25., data_size)
-
     d['t'] = torch.linspace(0., 10., data_size)
-
     d['A'] = torch.tensor([[-0.1, 2.0], [-2.0, -0.1]])
-    #d['A'] = torch.tensor([[-0.05, 0.025], [-0.025, -0.05]])
 
     # pure slow oscillation
     #d['A'] = torch.tensor([[0, 0.025], [-0.025, 0]])
@@ -244,15 +261,82 @@ def get_batch(data_dict, batch_size, batch_time, distance_based_sampling=True):
     data_size = len(data_dict['t'])
 
     if distance_based_sampling:
-        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=True))
+        s = torch.from_numpy(np.random.choice(data_dict['uniform_sample_indices'], size=batch_size, replace=False))
     else:
-        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=True))
+        s = torch.from_numpy(np.random.choice(np.arange(data_size - batch_time, dtype=np.int64), size=batch_size, replace=False))
 
     batch_y0 = data_dict['y'][s]  # (M, D)
     batch_t = data_dict['t'][:batch_time]  # (T)
     batch_y = torch.stack([data_dict['y'][s + i] for i in range(batch_time)], dim=0)  # (T, M, D)
 
     return batch_y0, batch_t, batch_y
+
+class FunctionDataset(Dataset):
+    def __init__(self, args, data_dict, nr_of_samples, batch_time, distance_based_sampling=True, validation_mode=False):
+        """
+        Args:
+
+        :param nr_of_samples: number of samples to create for this dataset
+        :param uniform_sample: if set to False input samples will be random, otherwise they will be uniform in [-2,2]
+        """
+        self.data_dict = data_dict
+        self.validation_mode = validation_mode
+        self.validate_with_long_range = args.validate_with_long_range
+
+        if (self.validation_mode) and (self.validate_with_long_range):
+            # just return the entire data trajectory
+            self.nr_of_samples = 1 # we use the entire trajectory
+            self.y0 = data_dict['y0'].unsqueeze(dim=0)
+            self.t = data_dict['t']
+            self.y = data_dict['y'].unsqueeze(dim=1)
+        else:
+            self.nr_of_samples = nr_of_samples
+            # create these samples, we create them once and for all
+
+            self.y0, self.t, self.y = get_batch(data_dict=data_dict, batch_size=nr_of_samples,
+                                                batch_time=batch_time, distance_based_sampling=distance_based_sampling)
+
+    def __len__(self):
+        return self.nr_of_samples
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        sample = {'y0': self.y0[idx,...], 'y': self.y[:,idx,...]}
+
+        return sample
+
+def get_function_data_loaders(args, data_dict,
+                              training_samples=100,training_evaluation_samples=100, testing_samples=100,
+                              num_workers=0):
+
+    batch_time = args.batch_time
+    batch_size = args.batch_size
+    distance_based_sampling = not args.disable_distance_based_sampling
+
+    if args.validate_with_long_range:
+        testing_samples = 1
+
+    train_loader = DataLoader(
+        FunctionDataset(args=args,data_dict=data_dict, nr_of_samples=training_samples, batch_time=batch_time,
+                        distance_based_sampling=distance_based_sampling),
+        batch_size=batch_size,shuffle=True, num_workers=num_workers, drop_last=True
+    )
+
+    train_eval_loader = DataLoader(
+        FunctionDataset(args=args,data_dict=data_dict, nr_of_samples=training_evaluation_samples, batch_time=batch_time,
+                        distance_based_sampling=distance_based_sampling),
+        batch_size=training_evaluation_samples, shuffle=False, num_workers=num_workers, drop_last=True
+    )
+
+    test_loader = DataLoader(
+        FunctionDataset(args=args,data_dict=data_dict, nr_of_samples=testing_samples, batch_time=batch_time,
+                        distance_based_sampling=distance_based_sampling,validation_mode=True),
+        batch_size=testing_samples, shuffle=False, num_workers=num_workers, drop_last=True
+    )
+
+    return train_loader, test_loader, train_eval_loader
 
 
 def get_time_chunks(t, chunk_time):
@@ -306,6 +390,34 @@ def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chu
     return val_pred_y, current_norm_penalty
 
 
+def compute_loss(args, batch_y0, batch_t, batch_y, shooting_block, validation_mode=False):
+
+    if validation_mode and args.validate_with_long_range:
+        pred_y, norm_penalty = compute_validation_data(shooting_block=shooting_block, t=batch_t, y0=batch_y0,
+                                                       validate_with_long_range=args.validate_with_long_range,
+                                                       chunk_time=args.chunk_time)
+    else:
+        shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
+        pred_y, _, _, _ = shooting_block(x=batch_y0)
+        norm_penalty = shooting_block.get_norm_penalty()
+
+    if args.sim_norm == 'l1':
+        sim_loss = args.sim_weight * torch.mean(torch.abs(pred_y - batch_y))
+    elif args.sim_norm == 'l2':
+        sim_loss = args.sim_weight * torch.mean(torch.norm(pred_y - batch_y, dim=3))
+    else:
+        raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+
+    if args.do_not_use_parameter_penalty_energy:
+        norm_loss = torch.tensor([0])
+    else:
+        norm_loss = args.norm_weight * norm_penalty
+
+    loss = sim_loss + norm_loss
+
+    return loss, sim_loss, norm_loss, norm_penalty, pred_y
+
+
 if __name__ == '__main__':
 
     # do some initial setup
@@ -326,11 +438,16 @@ if __name__ == '__main__':
     utils.setup_random_seed(seed=args.seed)
     utils.setup_device(desired_gpu=args.gpu)
 
-    use_distance_based_sampling = not args.disable_distance_based_sampling
-
-
+    # setup the integrator
     integrator = setup_integrator(method=args.method, step_size=args.stepsize, use_adjoint=args.adjoint, nr_of_checkpoints=nr_of_checkpoints, checkpointing_time_interval=checkpointing_time_interval)
 
+    # generate the true data that we want to match
+    data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear)
+
+    # create the data immediately after setting the random seed to make sure it is always consistent across the experiments
+    train_loader, test_loader, train_eval_loader = get_function_data_loaders(args=args, data_dict=data)
+
+    # create the shooting block
     shooting_block = setup_shooting_block(integrator=integrator,
                                           shooting_model=args.shooting_model,
                                           parameter_weight=args.pw,
@@ -339,27 +456,15 @@ if __name__ == '__main__':
                                           nonlinearity=args.nonlinearity,
                                           use_particle_rnn_mode=args.use_particle_rnn_mode,
                                           use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
+                                          use_particle_free_time_dependent_mode=args.use_particle_free_time_dependent_mode,
                                           optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
                                           optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type,
-                                          use_analytic_solution=not args.do_not_use_analytic_solution)
-
-    # generate the true data tha we want to match
-    data = generate_data(integrator=integrator, data_size=args.data_size, batch_time=args.batch_time, linear=args.linear)
+                                          use_analytic_solution=not args.do_not_use_analytic_solution,
+                                          optional_weight=args.optional_weight)
 
     # draw an initial batch from it
-    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
-
-    # create validation data
-    if args.validate_with_long_range:
-        print('Validating with long range data')
-        val_y0 = data['y0'].unsqueeze(dim=0)
-        val_t = data['t']
-        val_y = data['y'].unsqueeze(dim=1)
-    else:
-        # draw a FIXED validation batch
-        print('Validating with fixed validation batch of size {} and with {} time-points'.format(args.batch_size,args.batch_time))
-        # TODO: maybe want to support a new validation batch every time
-        val_y0, val_t, val_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
+    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size,
+                                           distance_based_sampling=not args.disable_distance_based_sampling)
 
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)
@@ -387,72 +492,167 @@ if __name__ == '__main__':
 
     for itr in range_command(0, args.niters+1):
 
-        optimizer.zero_grad()
-        batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size, distance_based_sampling=use_distance_based_sampling)
+        if args.custom_parameter_freezing:
+            if itr == args.unfreeze_parameters_at_iter:
+                utils.unfreeze_parameters(shooting_block, ['q1'])
 
-        shooting_block.set_integration_time_vector(integration_time_vector=batch_t, suppress_warning=True)
-        pred_y,_,_,_ = shooting_block(x=batch_y0)
+        # now iterate over the entire training dataset
+        for itr_batch, sampled_batch in enumerate(train_loader):
 
-        if args.sim_norm == 'l1':
-            sim_loss = args.sim_weight*torch.mean(torch.abs(pred_y - batch_y))
-        elif args.sim_norm == 'l2':
-            sim_loss = args.sim_weight*torch.mean(torch.norm(pred_y-batch_y,dim=3))
-        else:
-            raise ValueError('Unknown norm {}.'.format(args.sim_norm))
+            batch_t = train_loader.dataset.t
+            batch_y0, batch_y = sampled_batch['y0'], sampled_batch['y'].transpose(0,1)
 
-        norm_penalty = shooting_block.get_norm_penalty()
+            optimizer.zero_grad()
 
-        if args.do_not_use_parameter_penalty_energy:
-            norm_loss = torch.tensor([0])
-        else:
-            norm_loss = args.norm_weight*norm_penalty
+            loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args,
+                                                                           batch_y0 = batch_y0,
+                                                                           batch_t=batch_t,
+                                                                           batch_y=batch_y,
+                                                                           shooting_block=shooting_block)
 
-        loss = sim_loss + norm_loss
+            loss.backward()
 
-        loss.backward()
+            optimizer.step()
 
-        optimizer.step()
-
-        if itr % args.test_freq == 0:
+        # now compute testing evaluation loss
+        if (itr % args.test_freq == 0) or (itr % args.viz_freq == 0) or (itr == args.niters):
             try:
                 print('\nIter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}; lr = {:.6f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item(), scheduler.get_last_lr()[0]))
-                scheduler.step()
             except:
                 print('\nIter {:04d} | Training Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
-                scheduler.step(loss)
-
-        if itr % args.test_freq == 0:
 
             with torch.no_grad():
+                # TODO: currently evaluates only based on one batch
+                dataiter = iter(train_eval_loader)
+                train_eval_batch = dataiter.next()
+                batch_t = train_eval_loader.dataset.t
+                batch_y0, batch_y = train_eval_batch['y0'], train_eval_batch['y'].transpose(0,1)
 
-                val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
-                                                     t=val_t, y0=val_y0,
-                                                     validate_with_long_range=args.validate_with_long_range,
-                                                     chunk_time=args.chunk_time)
+                loss, sim_loss, norm_loss, norm_penalty, pred_y = compute_loss(args=args,
+                                                                               batch_y0=batch_y0,
+                                                                               batch_t=batch_t,
+                                                                               batch_y=batch_y,
+                                                                               shooting_block=shooting_block)
+                try:
+                    print(
+                        '\nIter {:04d} | Training evaluation loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(
+                            itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
+                    scheduler.step(loss)
+                except:
+                    print(
+                        '\nIter {:04d} | Training evaluation loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}; lr = {:.6f}'.format(
+                            itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item(),
+                            scheduler.get_last_lr()[0]))
+                    scheduler.step()
 
-                if args.sim_norm=='l1':
-                    sim_loss = args.sim_weight*torch.mean(torch.abs(val_pred_y - val_y))
-                elif args.sim_norm=='l2':
-                    sim_loss = args.sim_weight*torch.mean(torch.norm(val_pred_y - val_y, dim=3))
-                else:
-                    raise ValueError('Unknown norm {}.'.format(args.sim_norm))
 
-                norm_penalty = current_norm
-                if args.do_not_use_parameter_penalty_energy:
-                    norm_loss = torch.tensor([0])
-                else:
-                    norm_loss = args.norm_weight*norm_penalty
+        if itr % args.viz_freq == 0:
+            # visualize what is happening based on the validation data
 
-                loss = sim_loss + norm_loss
+            with torch.no_grad():
+                # TODO: currently evaluates only based on one batch
+                dataiter = iter(test_loader)
+                test_batch = dataiter.next()
+                val_batch_t = test_loader.dataset.t
+                val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0,1)
 
-                print('Iter {:04d} | Validation Loss {:.4f}; sim_loss = {:.4f}; norm_loss = {:.4f}; par_norm = {:.4f}'.format(itr, loss.item(), sim_loss.item(), norm_loss.item(), norm_penalty.item()))
+                loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,
+                                                                                   batch_y0=val_batch_y0,
+                                                                                   batch_t=val_batch_t,
+                                                                                   batch_y=val_batch_y,
+                                                                                   shooting_block=shooting_block,
+                                                                                   validation_mode=True
+                                                                                   )
 
-            if itr % args.viz_freq == 0:
+            losses_to_print = {'model_name': args.shooting_model, 'loss': loss.item(), 'sim_loss': sim_loss.item(), 'norm_loss': norm_loss.item(), 'par_norm': norm_penalty.item()}
 
-                losses_to_print = {'model_name': args.shooting_model, 'loss': loss.item(), 'sim_loss': sim_loss.item(), 'norm_loss': norm_loss.item(), 'par_norm': norm_penalty.item()}
+            vector_visualization.basic_visualize(shooting_block, val_batch_y, val_pred_y, val_batch_t, batch_y, pred_y, batch_t, itr,
+                                                 uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars,args=args)
 
-                vector_visualization.basic_visualize(shooting_block, val_y, val_pred_y, val_t, batch_y, pred_y, batch_t, itr, uses_particles=uses_particles, losses_to_print=losses_to_print, nr_of_pars=nr_of_pars)
+    # now print the parameters
+    nr_of_parameters = utils.compute_number_of_parameters(shooting_block, print_parameters=True)
 
+    values_to_save = dict()
+    values_to_save['args'] = args._get_kwargs()
+    values_to_save['nr_of_parameters'] = nr_of_parameters
+
+    if args.validate_with_long_range:
+        with torch.no_grad():
+            # TODO: currently evaluates only based on one batch
+            dataiter = iter(test_loader)
+            test_batch = dataiter.next()
+            val_batch_t = test_loader.dataset.t
+            val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0,1)
+            loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,
+                                                                               batch_y0=val_batch_y0,
+                                                                               batch_t=val_batch_t,
+                                                                               batch_y=val_batch_y,
+                                                                               shooting_block=shooting_block,
+                                                                               validation_mode=True)
+
+
+
+            values_to_save['test_loss'] = loss.item()
+            values_to_save['sim_loss'] = sim_loss.item()
+            values_to_save['norm_loss'] = norm_loss.item()
+            values_to_save['norm_penalty'] = norm_loss.item()
+
+            vector_visualization.basic_visualize(shooting_block, val_batch_y, val_pred_y, val_batch_t, batch_y, pred_y,
+                                                 batch_t, itr,
+                                                 uses_particles=uses_particles, losses_to_print=losses_to_print,
+                                                 nr_of_pars=nr_of_pars,args=args)
+
+    # now with the evaluation data (short range)
+    with torch.no_grad():
+        # TODO: currently evaluates only based on one batch
+        dataiter = iter(train_eval_loader)
+        test_batch = dataiter.next()
+        val_batch_t = train_eval_loader.dataset.t
+        val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0, 1)
+        loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,
+                                                                           batch_y0=val_batch_y0,
+                                                                           batch_t=val_batch_t,
+                                                                           batch_y=val_batch_y,
+                                                                           shooting_block=shooting_block,
+                                                                           validation_mode=True)
+
+        values_to_save['short_range_test_loss'] = loss.item()
+        values_to_save['short_range_sim_loss'] = sim_loss.item()
+        values_to_save['short_range_norm_loss'] = norm_loss.item()
+        values_to_save['short_range_norm_penalty'] = norm_loss.item()
+
+    if args.validate_with_long_range:
+        with torch.no_grad():
+
+            # now evaluate the evolution over time
+            custom_hook_data = defaultdict(list)
+            hook = shooting_block.shooting_integrand.register_lagrangian_gradient_hook(sh.parameter_evolution_hook)
+            shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
+
+            # run the evaluation for the validation data and record it via the hook
+            dataiter = iter(test_loader)
+            test_batch = dataiter.next()
+            val_batch_t = test_loader.dataset.t
+            val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0,1)
+
+            loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,
+                                                                               batch_y0=val_batch_y0,
+                                                                               batch_t=val_batch_t,
+                                                                               batch_y=val_batch_y,
+                                                                               shooting_block=shooting_block,
+                                                                               validation_mode=True)
+            hook.remove()
+
+            log_complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
+            print('Validation measures = {}'.format(log_complexity_measures))
+
+            values_to_save['log_complexity_measures'] = log_complexity_measures
+
+            if args.create_animation:
+                # now plot the evolution over time
+                vector_visualization.visualize_time_evolution(val_batch_y, data=custom_hook_data, block_name='simple', save_to_directory='result-{}'.format(args.shooting_model))
+
+    # now with the evaluation data (short range)
     with torch.no_grad():
 
         # now evaluate the evolution over time
@@ -461,19 +661,29 @@ if __name__ == '__main__':
         shooting_block.shooting_integrand.set_custom_hook_data(data=custom_hook_data)
 
         # run the evaluation for the validation data and record it via the hook
-        val_pred_y, current_norm = compute_validation_data(shooting_block=shooting_block,
-                                                           t=val_t, y0=val_y0,
-                                                           validate_with_long_range=args.validate_with_long_range,
-                                                           chunk_time=args.chunk_time)
+        dataiter = iter(train_eval_loader)
+        test_batch = dataiter.next()
+        val_batch_t = train_eval_loader.dataset.t
+        val_batch_y0, val_batch_y = test_batch['y0'], test_batch['y'].transpose(0, 1)
 
+        loss, sim_loss, norm_loss, norm_penalty, val_pred_y = compute_loss(args=args,
+                                                                           batch_y0=val_batch_y0,
+                                                                           batch_t=val_batch_t,
+                                                                           batch_y=val_batch_y,
+                                                                           shooting_block=shooting_block,
+                                                                           validation_mode=True)
         hook.remove()
 
-        complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
-        print('\nLog complexity measures:')
-        for m in complexity_measures:
-            print('  {} = {:.3f}'.format(m,complexity_measures[m]))
+        log_complexity_measures = validation_measures.compute_complexity_measures(data=custom_hook_data)
+        print('Validation measures = {}'.format(log_complexity_measures))
 
-        if args.create_animation:
-            # now plot the evolution over time
-            vector_visualization.visualize_time_evolution(val_y, data=custom_hook_data, block_name='simple', save_to_directory='result-{}'.format(args.shooting_model))
+        values_to_save['short_range_log_complexity_measures'] = log_complexity_measures
 
+    if args.save_figures:
+        # in this case we also save the results
+        if not os.path.exists(args.output_directory):
+            os.mkdir(args.output_directory)
+
+        result_filename = os.path.join(args.output_directory,'{}-results.pt'.format(args.output_basename))
+        print('Saving results in {}'.format(result_filename))
+        torch.save(values_to_save,result_filename)

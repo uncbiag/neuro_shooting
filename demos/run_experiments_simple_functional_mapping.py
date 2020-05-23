@@ -28,6 +28,8 @@ if __name__ == '__main__':
     # run for particle-free
     eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep,
                         run_args_template=run_args_template,
-                        python_script='simple_functional_mapping_example.py', output_dir_prefix='particles_')
+                        python_script='simple_functional_mapping_example.py',
+                        output_dir_prefix='particles_',
+                        do_not_recompute=not args.force_recompute)
 
     print('Done processing')
