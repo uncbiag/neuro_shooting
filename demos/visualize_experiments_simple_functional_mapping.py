@@ -100,17 +100,31 @@ def find_nonempty_values(vals):
 
     return ne_vals
 
-def find_nonempty_values_and_positions(vals,pos):
+def find_nonempty_values_and_positions(vals,pos,ignore_outliers=False):
+
     ne_vals = []
     ne_pos = []
-    for v,p in zip(vals,pos):
+    ne_outliers = []
+
+    nr_of_entries = len(vals)
+
+    for itr in range(nr_of_entries):
+        v = vals[itr]
+        p = pos[itr]
+
+        if ignore_outliers:
+            v, nr_of_outliers = remove_outliers(v)
+        else:
+            nr_of_outliers = 0
+
         if len(v)>0:
             ne_vals.append(v)
             ne_pos.append(p)
+            ne_outliers.append(nr_of_outliers)
 
-    return ne_vals,ne_pos
+    return ne_vals,ne_pos,ne_outliers
 
-def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False):
+def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False,ignore_outliers=True):
 
     # Create a figure instance
     fig = plt.figure( facecolor='white')
@@ -147,8 +161,11 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
     # fill with colors
     colors = ['silver', 'deepskyblue', 'seagreen']
 
+    outlier_info = []
+
     for n in range(nr_of_groups):
-        ne_vals, ne_pos = find_nonempty_values_and_positions(vals=vals[n],pos=default_positions-position_offsets[n])
+        ne_vals, ne_pos, nr_of_outliers = find_nonempty_values_and_positions(vals=vals[n],pos=default_positions-position_offsets[n], ignore_outliers=ignore_outliers)
+
         if len(ne_vals)>0:
             if use_boxplot:
                 bp = ax.boxplot(x=ne_vals, widths=width, positions=ne_pos, notch=False, patch_artist=True)
@@ -161,6 +178,8 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
 
             legend_names.append(names[n])
 
+        outlier_info.append((ne_pos,nr_of_outliers))
+
     ax.set_xticks(np.arange(1, len(unique_values) + 1))
     ax.set_xticklabels(labels)
     ax.legend(bps, legend_names, loc='best')
@@ -168,6 +187,14 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
     # create verticle lines
     for x in vert_lines:
         ax.axvline(x=x,color='k',linewidth=0.5)
+
+    # now plot how many outliers there were if any (need to do this at the end so we can get the axis information)
+    ylim = ax.get_ylim()
+    desired_ypos = ylim[0] + 0.025*(ylim[1]-ylim[0])
+    for ne_pos,nr_of_outliers in outlier_info:
+        for nr_o, c_pos in zip(nr_of_outliers, ne_pos):
+            if nr_o > 0:  # there was an outlier
+                plt.text(c_pos, desired_ypos, '{}*'.format(nr_o), horizontalalignment='center')
 
 
 def _side_by_side_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False):
@@ -397,18 +424,50 @@ def ignore_values(np_array, key, ignore_list):
     else:
         return np_array
 
-def compute_statistics(pd_vals):
+def remove_outliers(np_vals,max_vals=1e8):
+
+    perc_25 = np.percentile(np_vals,25)
+    perc_75 = np.percentile(np_vals,75)
+    iqr = perc_75-perc_25
+
+    # standard rule for boxplot outlier rejection
+    outlier_multiplier = 1.5 # how many interquartile ranges away from 75th or 25th quantiles to count as an outlier; 1.5 is the MATLAB rule
+
+    min_outlier_val = perc_25-outlier_multiplier*iqr
+    max_outlier_val = perc_75+outlier_multiplier*iqr
+
+    np_vals_outliers_removed = np_vals[(np_vals>=min_outlier_val) & (np_vals<=max_outlier_val) & (np_vals<=max_vals)]
+    nr_of_outliers = len(np_vals)-len(np_vals_outliers_removed)
+
+    return np_vals_outliers_removed,nr_of_outliers
+
+
+def compute_statistics(pd_vals,determine_outliers=True):
+
+    raw_vals = pd_vals.to_numpy()
+
+    if np.max(raw_vals)>100000:
+        print('{}'.format(raw_vals))
+        print('Hello')
+
+    if determine_outliers:
+        vals, nr_of_outliers = remove_outliers(raw_vals)
+    else:
+        nr_of_outliers = 0
+        vals = raw_vals
 
     stats = dict()
-    stats['mean'] = pd_vals.mean()
-    stats['median'] = pd_vals.median()
-    stats['std'] = pd_vals.std()
-    stats['min'] = pd_vals.min()
-    stats['max'] = pd_vals.max()
-    stats['perc_25'] = pd_vals.quantile(0.25)
-    stats['perc_75'] = pd_vals.quantile(0.75)
+    stats['mean'] = np.mean(vals)
+    stats['median'] = np.median(vals)
+    stats['std'] = np.std(vals)
+    stats['min'] = np.min(vals)
+    stats['max'] = np.max(vals)
+    stats['perc_25'] = np.percentile(vals,25)
+    stats['perc_75'] = np.percentile(vals,75)
     stats['iqr'] = stats['perc_75']-stats['perc_25']
-    stats['raw_vals'] = pd_vals.to_numpy()
+    stats['raw_vals'] = vals
+    stats['nr_of_values'] = len(stats['raw_vals'])
+    stats['nr_of_outliers'] = nr_of_outliers
 
     return stats
 
@@ -418,11 +477,16 @@ def get_stats_from_row(row,name):
         vals.append(d[name])
     return vals
 
-def create_interleaved_string(vals1,vals2,format_str,delimiter):
+def create_interleaved_string(vals,format_str,delimiter):
 
     str = ''
-    for v1,v2 in zip(vals1,vals2):
-        str += format_str.format(v1,v2) + delimiter
+    nr_of_values = len(vals[0])
+
+    for itr in range(nr_of_values):
+        current_vals = []
+        for vs in vals: # this is a list
+            current_vals.append(vs[itr])
+        str += format_str.format(*current_vals) + delimiter
     return str
 
 def print_table(table,table_name,row_name,row_vals,col_name,col_vals):
@@ -433,12 +497,25 @@ def print_table(table,table_name,row_name,row_vals,col_name,col_vals):
     for i,rv in enumerate(row_vals):
         current_row = table[i]
 
-        means = get_stats_from_row(current_row,'mean')
-        stds = get_stats_from_row(current_row,'std')
+        # means = get_stats_from_row(current_row,'mean')
+        # stds = get_stats_from_row(current_row,'std')
+        #
+        # interleaved_string = create_interleaved_string(means,stds,'{:2.2f}({:2.2f})','; ')
 
-        interleaved_string = create_interleaved_string(means,stds,'{:2.2f}({:2.2f})','; ')
+        medians = get_stats_from_row(current_row,'median')
+        iqrs = get_stats_from_row(current_row,'iqr')
+        nr_of_outliers = get_stats_from_row(current_row,'nr_of_outliers')
+
+        interleaved_string = create_interleaved_string([medians,iqrs,nr_of_outliers],'{:2.2f}({:2.2f})({})','; ')
 
         print('{}={}: {}'.format(row_name,rv,interleaved_string))
+
+    print('\nNumber of values for computations:\n')
+    for i,rv in enumerate(row_vals):
+        current_row = table[i]
+
+        nr_of_values = get_stats_from_row(current_row,'nr_of_values')
+        print('{}={}: {}'.format(row_name,rv,nr_of_values))
 
 
 
@@ -468,6 +545,8 @@ def create_table(data,keys=['args.nr_of_particles','args.inflation_factors'],mea
 
     tables = []
 
+    determine_outliers = True
+
     for current_data,current_name in data:
         table = []
         # create table
@@ -490,7 +569,7 @@ def create_table(data,keys=['args.nr_of_particles','args.inflation_factors'],mea
                         cur_col_selection = cur_row_selection.loc[cur_row_selection[col_name]==default_value]
 
                 cur_vals = cur_col_selection[measure]
-                stats = compute_statistics(cur_vals)
+                stats = compute_statistics(cur_vals,determine_outliers=determine_outliers)
                 current_row.append(stats)
 
             table.append(current_row)
@@ -557,8 +636,8 @@ if __name__ == '__main__':
     model_data = select_data(data=data,selection=selection)
 
     # computing some statistics and output as LaTeX table
+    create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='nr_of_parameters.overall', ignore_list=ignore_list, default_list=default_list)
     create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='test_loss', ignore_list=ignore_list, default_list=default_list)
-
 
     # creating some plots
 
