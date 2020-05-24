@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import neuro_shooting.figure_settings as figure_settings
 import neuro_shooting.figure_utils as figure_utils
+import copy
 
 import json
 
@@ -14,12 +15,13 @@ import argparse
 def setup_cmdline_parsing():
 
     # Example configuration: --output_json_config simple_functional_mapping_experiments.json --output_base_directory current_results --figure_base_directory figure_results --shooting_model updown_universal --fcn cubic
+    # --output_json_config spiral_experiments.json --output_base_directory current_spiral_results --figure_base_directory figure_results_spiral --shooting_model updown_universal
 
     parser = argparse.ArgumentParser('Simple functional mapping')
     parser.add_argument('--output_base_directory', type=str, default='sfm_results', help='Main directory that results have been stored in.')
     parser.add_argument('--output_json_config', type=str, default=None, help='Allows to specify a json configuration file for the outputs and the mappings to labels.')
     parser.add_argument('--figure_base_directory', type=str, default='results', help='Directory that the resulting figures will be in.')
-    parser.add_argument('--fcn', type=str, default='cubic', choices=['cubic','quadratic'])
+    parser.add_argument('--fcn', type=str, default=None, choices=['cubic','quadratic'])
     parser.add_argument('--shooting_model', type=str, default='updown_universal', choices=['updown_universal','univeral','periodic','dampened_updown','simple', '2nd_order', 'updown', 'general_updown'])
     args = parser.parse_args()
 
@@ -50,7 +52,7 @@ def convert_to_flat_dictionary(d,d_keys=['args']):
 
     return d_ret
 
-def get_plot_values_and_names(data,xname,yname,default_xval=None):
+def get_plot_values_and_names(data,xname,yname,default_xval=None,ignore_list=None):
 
     # first get all the values there are for the query key (xname)
     all_unique_values = None
@@ -67,12 +69,15 @@ def get_plot_values_and_names(data,xname,yname,default_xval=None):
 
     all_unique_values = np.sort(np.unique(all_unique_values))
 
+    # filter out all the values we want to ignore for plotting
+    all_unique_values = ignore_values(all_unique_values,key=xname,ignore_list=ignore_list)
+
     all_vals = []
     all_names = []
     for current_data, current_name in data:
 
         vals = []
-        for v in unique_values:
+        for v in all_unique_values:
             # current_vals = data.loc[data[xname]==v][yname].to_numpy()
             current_vals = current_data.loc[current_data[xname]==v][yname].to_numpy()
             if (len(current_vals)==0) & (default_xval is not None):
@@ -205,7 +210,7 @@ def _side_by_side_plot(vals,names,unique_values,do_printing,title_string,use_box
 
     fig.suptitle(title_string,y=1.0)
 
-def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None):
+def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None,ignore_list=None):
 
     if not visualize and not save_figure_name and not save_figure_directory:
         return
@@ -224,7 +229,7 @@ def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True
             save_figure_name = 'plot_{}_over_{}'.format(yname,xname)
 
 
-    vals, names, unique_values = get_plot_values_and_names(data=data,xname=xname,yname=yname,default_xval=default_xval)
+    vals, names, unique_values = get_plot_values_and_names(data=data,xname=xname,yname=yname,default_xval=default_xval,ignore_list=ignore_list)
 
     #_side_by_side_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
     _all_in_one_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
@@ -240,19 +245,19 @@ def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True
         plt.show()
 
 
-def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None,default_xval=None):
+def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None,default_xval=None,ignore_list=None):
 
     if len(data)==0:
         print('INFO: empty data for {}/{} -- not plotting'.format(xname,yname))
         return
 
     if not visualize and save_figure_directory is None and save_figure_name is None:
-        _plot_data(data=data, xname=xname,yname=yname,default_xval=default_xval,title_string=title_string,visualize=True)
+        _plot_data(data=data, xname=xname,yname=yname,default_xval=default_xval,title_string=title_string,visualize=True,ignore_list=ignore_list)
     else:
         if visualize:
-            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=True, save_figure_directory=None, save_figure_name=None)
+            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=True, save_figure_directory=None, save_figure_name=None,ignore_list=ignore_list)
         if save_figure_directory is not None:
-            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name)
+            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name,ignore_list=ignore_list)
 
 def load_JSON(filename):
     """
@@ -324,7 +329,7 @@ def get_pandas_dataframes(files):
         # now read the data and create a pandas data fram
         for f in current_files:
             current_data = torch.load(f)
-            current_data = convert_to_flat_dictionary(current_data, ['args', 'nr_of_parameters', 'log_complexity_measures'])
+            current_data = convert_to_flat_dictionary(current_data, ['args', 'nr_of_parameters', 'log_complexity_measures', 'short_range_log_complexity_measures'])
             if data is None:
                 data = pd.DataFrame([current_data])
             else:
@@ -371,6 +376,21 @@ def select_data(data,selection,default_val=None):
 
     return selected_data
 
+
+def ignore_values(np_array, key, ignore_list):
+
+    if ignore_list is None:
+        return np_array
+
+    if key in ignore_list:
+        values_to_ignore = ignore_list[key]
+        ret = np_array
+        for v in values_to_ignore:
+            ret = ret[ret!=v]
+        return ret
+    else:
+        return np_array
+
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
@@ -396,12 +416,34 @@ if __name__ == '__main__':
     fcn_name = args.fcn
     model_name = args.shooting_model
 
-    save_figure_directory = '{}_figures_model_{}_fcn_{}'.format(args.figure_base_directory,model_name,fcn_name)
+    # here we can add key-value pairs (with lists) of things we do not wish to plot
+    ignore_list = dict()
 
-    selection = {
-        'args.shooting_model': model_name,
-        'args.fcn': fcn_name
-    }
+    uses_fcn = fcn_name is not None;
+
+    if uses_fcn:
+        save_figure_directory = '{}_figures_model_{}_fcn_{}'.format(args.figure_base_directory,model_name,fcn_name)
+
+        selection = {
+            'args.shooting_model': model_name,
+            'args.fcn': fcn_name
+        }
+        ynames_to_plot = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+
+    else:
+        save_figure_directory = '{}_figures_model_{}'.format(args.figure_base_directory, model_name)
+
+        selection = {
+            'args.shooting_model': model_name,
+        }
+        ynames_to_plot_template = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+        ynames_to_plot = copy.deepcopy(ynames_to_plot_template)
+        for n in ynames_to_plot_template:
+            ynames_to_plot.append('short_range_{}'.format(n))
+
+        ignore_list['args.nr_of_particles'] = [2]
+
+        all_nr_of_particles = ignore_values(all_nr_of_particles,key='args.nr_of_particles',ignore_list=ignore_list)
 
     model_data = select_data(data=data,selection=selection)
 
@@ -413,10 +455,10 @@ if __name__ == '__main__':
         data = select_data(data=model_data,selection={'args.nr_of_particles': nr_of_particles},default_val=2)
 
         title_string = '{} particles'.format(nr_of_particles)
-        ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+        ynames = ynames_to_plot
         for yname in ynames:
             save_figure_name = 'plot_{}_{}_{}_over_{}_for_{}_particles'.format(model_name,fcn_name,yname,xname,nr_of_particles)
-            plot_data(data=data,xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name)
+            plot_data(data=data,xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name,ignore_list=ignore_list)
 
     # create plots for a particular inflation factor
     for inflation_factor in all_inflation_factors:
@@ -426,7 +468,7 @@ if __name__ == '__main__':
         data = select_data(data=model_data,selection={'args.inflation_factor': inflation_factor})
 
         title_string = 'inflation factor = {}'.format(inflation_factor)
-        ynames = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+        ynames =ynames_to_plot
         for yname in ynames:
             save_figure_name = 'plot_{}_{}_{}_over_{}_for_inflation_factor_{}'.format(model_name,fcn_name,yname,xname,inflation_factor)
-            plot_data(data=data, xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name,default_xval=2)
+            plot_data(data=data, xname=xname, yname=yname, title_string=title_string, save_figure_directory=save_figure_directory,save_figure_name=save_figure_name,default_xval=2,ignore_list=ignore_list)
