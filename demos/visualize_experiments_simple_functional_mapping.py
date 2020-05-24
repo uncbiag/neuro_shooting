@@ -112,10 +112,11 @@ def find_nonempty_values_and_positions(vals,pos,ignore_outliers=False):
         v = vals[itr]
         p = pos[itr]
 
-        if ignore_outliers:
-            v, nr_of_outliers = remove_outliers(v)
-        else:
-            nr_of_outliers = 0
+        if len(v)>0:
+            if ignore_outliers:
+                v, nr_of_outliers = remove_outliers(v)
+            else:
+                nr_of_outliers = 0
 
         if len(v)>0:
             ne_vals.append(v)
@@ -445,6 +446,8 @@ def remove_outliers(np_vals,max_vals=1e8):
 def compute_statistics(pd_vals,determine_outliers=True):
 
     raw_vals = pd_vals.to_numpy()
+    if len(raw_vals)==0:
+        return None
 
     if np.max(raw_vals)>100000:
         print('{}'.format(raw_vals))
@@ -474,7 +477,10 @@ def compute_statistics(pd_vals,determine_outliers=True):
 def get_stats_from_row(row,name):
     vals = []
     for d in row:
-        vals.append(d[name])
+        if d is not None:
+            vals.append(d[name])
+        else:
+            vals.append(np.nan)
     return vals
 
 def create_interleaved_string(vals,format_str,delimiter):
