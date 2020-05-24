@@ -128,6 +128,8 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
     position_offsets = -(position_offsets-np.mean(position_offsets))
     default_positions = np.arange(1,nr_of_unique_values+1)
 
+    vert_lines = (default_positions[0:-1]+default_positions[1:])/2
+
     if do_printing:
         xlabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
         ylabel_name = figure_utils.escape_latex_special_characters(ylabel_name)
@@ -162,6 +164,10 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
     ax.set_xticks(np.arange(1, len(unique_values) + 1))
     ax.set_xticklabels(labels)
     ax.legend(bps, legend_names, loc='best')
+
+    # create verticle lines
+    for x in vert_lines:
+        ax.axvline(x=x,color='k',linewidth=0.5)
 
 
 def _side_by_side_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False):
@@ -391,6 +397,107 @@ def ignore_values(np_array, key, ignore_list):
     else:
         return np_array
 
+def compute_statistics(pd_vals):
+
+    stats = dict()
+    stats['mean'] = pd_vals.mean()
+    stats['median'] = pd_vals.median()
+    stats['std'] = pd_vals.std()
+    stats['min'] = pd_vals.min()
+    stats['max'] = pd_vals.max()
+    stats['perc_25'] = pd_vals.quantile(0.25)
+    stats['perc_75'] = pd_vals.quantile(0.75)
+    stats['iqr'] = stats['perc_75']-stats['perc_25']
+    stats['raw_vals'] = pd_vals.to_numpy()
+
+    return stats
+
+def get_stats_from_row(row,name):
+    vals = []
+    for d in row:
+        vals.append(d[name])
+    return vals
+
+def create_interleaved_string(vals1,vals2,format_str,delimiter):
+
+    str = ''
+    for v1,v2 in zip(vals1,vals2):
+        str += format_str.format(v1,v2) + delimiter
+    return str
+
+def print_table(table,table_name,row_name,row_vals,col_name,col_vals):
+
+    print('{}'.format(table_name))
+    print('{}: {}'.format(col_name,col_vals))
+
+    for i,rv in enumerate(row_vals):
+        current_row = table[i]
+
+        means = get_stats_from_row(current_row,'mean')
+        stds = get_stats_from_row(current_row,'std')
+
+        interleaved_string = create_interleaved_string(means,stds,'{:2.2f}({:2.2f})','; ')
+
+        print('{}={}: {}'.format(row_name,rv,interleaved_string))
+
+
+
+def print_tables(tables,row_name,row_vals,col_name,col_vals,measure):
+
+    print('\nMeasure = {}:\n'.format(measure))
+    for table,table_name in tables:
+        print_table(table=table,table_name=table_name,row_name=row_name,row_vals=row_vals,col_name=col_name,col_vals=col_vals)
+        print('\n')
+
+
+def create_table(data,keys=['args.nr_of_particles','args.inflation_factors'],measure='test_loss', ignore_list=None, default_list=dict()):
+    # creates a table for the specified keys which gives the statistics for the specified measure
+
+    if len(keys)!=2:
+        raise ValueError('Two key values were expected, but obtained {}'.format(len(keys)))
+
+    row_name = keys[0]
+    col_name = keys[1]
+
+    row_vals = get_data_range(data=data, key=row_name)
+    col_vals = get_data_range(data=data, key=col_name)
+
+    # filter out in case we do not want some of them
+    row_vals = ignore_values(row_vals, key=row_name, ignore_list=ignore_list)
+    col_vals = ignore_values(col_vals, key=col_name, ignore_list=ignore_list)
+
+    tables = []
+
+    for current_data,current_name in data:
+        table = []
+        # create table
+        for rv in row_vals:
+            current_row = []
+            cur_row_selection = current_data.loc[current_data[row_name]==rv]
+            if len(cur_row_selection)==0:
+                if row_name in default_list:
+                    default_value = default_list[row_name]
+                    print('WARNING: {}: {}: {}->{}'.format(current_name,row_name,rv,default_value))
+                    cur_row_selection = current_data.loc[current_data[row_name] == default_value]
+
+            for cv in col_vals:
+                cur_col_selection = cur_row_selection.loc[cur_row_selection[col_name]==cv]
+                if len(cur_col_selection)==0:
+                    # try the default if there is one
+                    if col_name in default_list:
+                        default_value = default_list[col_name]
+                        print('WARNING: {}: {}: {}->{}'.format(current_name, col_name, cv, default_value))
+                        cur_col_selection = cur_row_selection.loc[cur_row_selection[col_name]==default_value]
+
+                cur_vals = cur_col_selection[measure]
+                stats = compute_statistics(cur_vals)
+                current_row.append(stats)
+
+            table.append(current_row)
+        tables.append((table,current_name))
+
+    print_tables(tables=tables,row_name=row_name,row_vals=row_vals,col_name=col_name,col_vals=col_vals,measure=measure)
+
 if __name__ == '__main__':
 
     args = setup_cmdline_parsing()
@@ -418,6 +525,7 @@ if __name__ == '__main__':
 
     # here we can add key-value pairs (with lists) of things we do not wish to plot
     ignore_list = dict()
+    default_list = dict()
 
     uses_fcn = fcn_name is not None;
 
@@ -442,10 +550,17 @@ if __name__ == '__main__':
             ynames_to_plot.append('short_range_{}'.format(n))
 
         ignore_list['args.nr_of_particles'] = [2]
+        default_list['args.nr_of_particles'] = 2
 
         all_nr_of_particles = ignore_values(all_nr_of_particles,key='args.nr_of_particles',ignore_list=ignore_list)
 
     model_data = select_data(data=data,selection=selection)
+
+    # computing some statistics and output as LaTeX table
+    create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='test_loss', ignore_list=ignore_list, default_list=default_list)
+
+
+    # creating some plots
 
     # create plots for a particular number of particles
     for nr_of_particles in all_nr_of_particles:
