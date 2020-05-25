@@ -387,13 +387,20 @@ def get_data_range(data,key):
     vals = np.sort(np.unique(vals))
     return vals
 
-def select_data(data,selection,default_val=None):
+def select_data(data,selection,default_list=dict()):
 
     selected_data = []
 
     for current_data,current_name in data:
         current_selection = None
         for s in selection:
+
+            # check if there is a default value if needed
+            if s in default_list:
+                default_val = default_list[s]
+            else:
+                default_val = None
+
             if current_selection is None:
                 # e.g.,: data.loc[(data['args.shooting_model']==model_name) & (data['args.fcn']==fcn_name)]
                 current_selection = current_data.loc[current_data[s]==selection[s]] # key s has the value
@@ -449,9 +456,8 @@ def compute_statistics(pd_vals,determine_outliers=True):
     if len(raw_vals)==0:
         return None
 
-    if np.max(raw_vals)>100000:
-        print('{}'.format(raw_vals))
-        print('Hello')
+    #if np.max(raw_vals)>100000:
+    #    print('{}'.format(raw_vals))
 
     if determine_outliers:
         vals, nr_of_outliers = remove_outliers(raw_vals)
@@ -622,6 +628,8 @@ if __name__ == '__main__':
             'args.fcn': fcn_name
         }
         ynames_to_plot = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+        ignore_list['args.inflation_factor'] = [4,8]
+        default_list['args.nr_of_particles'] = 2
 
     else:
         save_figure_directory = '{}_figures_model_{}'.format(args.figure_base_directory, model_name)
@@ -637,9 +645,11 @@ if __name__ == '__main__':
         ignore_list['args.nr_of_particles'] = [2]
         default_list['args.nr_of_particles'] = 2
 
-        all_nr_of_particles = ignore_values(all_nr_of_particles,key='args.nr_of_particles',ignore_list=ignore_list)
 
-    model_data = select_data(data=data,selection=selection)
+    all_nr_of_particles = ignore_values(all_nr_of_particles,key='args.nr_of_particles',ignore_list=ignore_list)
+    all_inflation_factors = ignore_values(all_inflation_factors,key='args.inflation_factor',ignore_list=ignore_list)
+
+    model_data = select_data(data=data,selection=selection,default_list=default_list)
 
     # computing some statistics and output as LaTeX table
     create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='nr_of_parameters.overall', ignore_list=ignore_list, default_list=default_list)
@@ -652,7 +662,7 @@ if __name__ == '__main__':
         # get the current data
         xname = 'args.inflation_factor'
         #data = model_data.loc[model_data['args.nr_of_particles'] == nr_of_particles]
-        data = select_data(data=model_data,selection={'args.nr_of_particles': nr_of_particles},default_val=2)
+        data = select_data(data=model_data,selection={'args.nr_of_particles': nr_of_particles},default_list=default_list)
 
         title_string = '{} particles'.format(nr_of_particles)
         ynames = ynames_to_plot
@@ -665,7 +675,7 @@ if __name__ == '__main__':
         # get the current data
         xname = 'args.nr_of_particles'
         #data = model_data.loc[model_data['args.inflation_factor'] == inflation_factor]
-        data = select_data(data=model_data,selection={'args.inflation_factor': inflation_factor})
+        data = select_data(data=model_data,selection={'args.inflation_factor': inflation_factor},default_list=default_list)
 
         title_string = 'inflation factor = {}'.format(inflation_factor)
         ynames =ynames_to_plot
