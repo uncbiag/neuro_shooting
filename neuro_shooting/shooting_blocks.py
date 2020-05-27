@@ -97,6 +97,7 @@ class ShootingBlockBase(nn.Module):
                  use_particle_free_rnn_mode=False,
                  use_particle_free_time_dependent_mode=False,
                  nr_of_particle_free_time_dependent_steps=10,
+                 max_integration_time=None,
                  *args, **kwargs):
         """
 
@@ -113,6 +114,7 @@ class ShootingBlockBase(nn.Module):
         :param use_particle_free_rnn_mode: if set to true than the particles are not used to compute the parameterization, instead an RNN model is assumed and the layer parameters are optimized directly, particles will stay as initialized
         :param use_particle_free_time_dependent_mode: mimicks a more classical resnet, by parameterizing via a finite number of direct transformations
         :param nr_of_particle_free_time_dependent_steps: specifies the number of steps where the parameterization happens (piecewise constant in the middle)
+        :param max_integration_time: sets the maximum integration time. So default integrations are from 0 to max_integration_times. Also affects time-interval for particle_free_time_dependent_mode
         :param args:
         :param kwargs:
         """
@@ -139,7 +141,12 @@ class ShootingBlockBase(nn.Module):
 
         #self.add_module(name='shooting_integrand', module=self.shooting_integrand) # probably remove
 
-        self.integration_time = torch.tensor([0, 1]).float()
+        if max_integration_time is not None:
+            self.integration_time = torch.tensor([0, max_integration_time]).float()
+        else:
+            # set to default integration interval
+            self.integration_time = torch.tensor([0, 1]).float()
+
         self.integration_time_vector = None
 
         if integrator is not None:

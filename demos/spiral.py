@@ -130,7 +130,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                          optimize_over_data_initial_conditions=False,
                          optimize_over_data_initial_conditions_type='linear',
                          use_analytic_solution=True,
-                         optional_weight=10):
+                         optional_weight=10,
+                         max_integraton_time=1.0):
 
     if shooting_model=='updown':
         smodel = shooting_models.AutoShootingIntegrandModelUpDown(in_features=2, nonlinearity=nonlinearity,
@@ -185,7 +186,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
                                                        use_particle_free_rnn_mode=use_particle_free_rnn_mode,
                                                        use_particle_free_time_dependent_mode=use_particle_free_time_dependent_mode,
                                                        nr_of_particle_free_time_dependent_steps=nr_of_particle_free_time_dependent_steps,
-                                                       integrator=integrator)
+                                                       integrator=integrator,
+                                                       max_integration_time=max_integration_time)
 
     return shooting_block
 
@@ -376,7 +378,7 @@ def get_function_data_loaders(args, data_dict,
     return train_loader, train_eval_loader, short_range_test_loader, test_loader
 
 
-def get_time_chunks(t, chunk_time):
+def get_time_chunks(t, chunk_time, start_time_chunk_from_zero=True):
     time_chunks = []
 
     if chunk_time<=0:
@@ -392,13 +394,18 @@ def get_time_chunks(t, chunk_time):
             if desired_idx>=last_t:
                 desired_idx = last_t
                 continue_chunking = False
-            current_chunk = t[cur_idx:desired_idx]
+            if start_time_chunk_from_zero:
+                # if the equation is not time-dependent (as is the case for the spiral), we can just start the time
+                # at the beginning. This will allow us to also run the direct time-dependent model
+                current_chunk = t[0:(desired_idx-cur_idx)]
+            else:
+                current_chunk = t[cur_idx:desired_idx]
             time_chunks.append(current_chunk)
             cur_idx = desired_idx-1
 
     return time_chunks
 
-def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chunk_time):
+def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chunk_time, start_time_chunk_from_zero=True):
 
     if validate_with_long_range:
 
@@ -407,7 +414,7 @@ def compute_validation_data(shooting_block, t, y0, validate_with_long_range, chu
 
         # now we chunk it
         cur_idx = 0
-        time_chunks = get_time_chunks(t=t, chunk_time=chunk_time)
+        time_chunks = get_time_chunks(t=t, chunk_time=chunk_time, start_time_chunk_from_zero=start_time_chunk_from_zero)
         for i,time_chunk in enumerate(time_chunks):
             shooting_block.set_integration_time_vector(integration_time_vector=time_chunk, suppress_warning=True)
             if i==0:
@@ -484,6 +491,13 @@ if __name__ == '__main__':
     # create the data immediately after setting the random seed to make sure it is always consistent across the experiments
     train_loader, train_eval_loader, short_range_test_loader, test_loader = get_function_data_loaders(args=args, data_dict=data)
 
+    # draw an initial batch from it
+    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size,
+                                           distance_based_sampling=not args.disable_distance_based_sampling)
+
+    # determine the maximum integration time (important for proper setup of particle_free_time_dependent_mode
+    max_integration_time = (torch.max(batch_t)).item()
+
     # create the shooting block
     shooting_block = setup_shooting_block(integrator=integrator,
                                           shooting_model=args.shooting_model,
@@ -498,11 +512,9 @@ if __name__ == '__main__':
                                           optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
                                           optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type,
                                           use_analytic_solution=not args.do_not_use_analytic_solution,
-                                          optional_weight=args.optional_weight)
+                                          optional_weight=args.optional_weight,
+                                          max_integraton_time=max_integration_time)
 
-    # draw an initial batch from it
-    batch_y0, batch_t, batch_y = get_batch(data_dict=data, batch_time=args.batch_time, batch_size=args.batch_size,
-                                           distance_based_sampling=not args.disable_distance_based_sampling)
 
     # run through the shooting block once (to get parameters as needed)
     shooting_block(x=batch_y)

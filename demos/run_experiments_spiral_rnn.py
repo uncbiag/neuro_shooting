@@ -77,13 +77,11 @@ if __name__ == '__main__':
                         python_script='spiral.py',output_dir_prefix='spiral_particle_free_rnn_',
                         do_not_recompute=not args.force_recompute)
 
-    # we are not running the time-dependent model as it would require adapting to the non-standard time integration interval of the spiral
-    # TODO: fix this later if we really want to add this experiment
-    # # run for particle-free time-dependent model
-    # eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep_particle_free_time_dependent_rnn,
-    #                     run_args_template=run_args_template_particle_free_time_dependent_rnn,
-    #                     python_script='spiral.py', output_dir_prefix='spiral_particle_free_time_dependent_rnn_',
-    #                     do_not_recompute=not args.force_recompute)
+    # run for particle-free time-dependent model
+    eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep_particle_free_time_dependent_rnn,
+                        run_args_template=run_args_template_particle_free_time_dependent_rnn,
+                        python_script='spiral.py', output_dir_prefix='spiral_particle_free_time_dependent_rnn_',
+                        do_not_recompute=not args.force_recompute)
 
     # run with particles
     eu.sweep_parameters(args, run_args_to_sweep=run_args_to_sweep_particle_rnn,
