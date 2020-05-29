@@ -8,6 +8,10 @@ def compute_complexity_measures(data):
     t = np.array(data['t'])
     delta_t = t[1:]-t[0:-1]
 
+    # if delta_t is negative we set it to zero, this can for example happen if we chunked the time together and we always restart from zero
+    ind = delta_t<0
+    delta_t[ind] = 0.0
+
     ss_fro = np.array(data['sum_sqr_frobenius_norm'])
     ss_fro = 0.5*(ss_fro[0:-1]+ss_fro[1:]) # midpoint
 

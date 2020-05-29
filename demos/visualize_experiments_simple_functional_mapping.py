@@ -125,14 +125,14 @@ def find_nonempty_values_and_positions(vals,pos,ignore_outliers=False):
 
     return ne_vals,ne_pos,ne_outliers
 
-def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False,ignore_outliers=True):
-
-    # Create a figure instance
-    fig = plt.figure( facecolor='white')
-    ax = fig.add_subplot(111, frameon=True)
+def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxplot=False,ignore_outliers=True,with_legend=True):
 
     nr_of_groups = len(names)
     nr_of_unique_values = len(unique_values)
+
+    # Create a figure instance
+    fig = plt.figure( figsize=(2 * nr_of_groups, 4), facecolor='white')
+    ax = fig.add_subplot(111, frameon=True)
 
     width = 1.0/(nr_of_groups+1)
 
@@ -183,7 +183,9 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
 
     ax.set_xticks(np.arange(1, len(unique_values) + 1))
     ax.set_xticklabels(labels)
-    ax.legend(bps, legend_names, loc='best')
+
+    if with_legend:
+        ax.legend(bps, legend_names, loc='best')
 
     # create verticle lines
     for x in vert_lines:
@@ -244,7 +246,7 @@ def _side_by_side_plot(vals,names,unique_values,do_printing,title_string,use_box
 
     fig.suptitle(title_string,y=1.0)
 
-def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True,save_figure_directory=None,save_figure_name=None,ignore_list=None):
+def _plot_data(data,xname,yname,default_xval=None,title_string='',with_legend=True,visualize=True,save_figure_directory=None,save_figure_name=None,ignore_list=None):
 
     if not visualize and not save_figure_name and not save_figure_directory:
         return
@@ -266,7 +268,7 @@ def _plot_data(data,xname,yname,default_xval=None,title_string='',visualize=True
     vals, names, unique_values = get_plot_values_and_names(data=data,xname=xname,yname=yname,default_xval=default_xval,ignore_list=ignore_list)
 
     #_side_by_side_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
-    _all_in_one_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string)
+    _all_in_one_plot(vals=vals,names=names,unique_values=unique_values,do_printing=do_printing,title_string=title_string,with_legend=with_legend)
 
 
     if do_printing:
@@ -285,13 +287,23 @@ def plot_data(data,xname,yname,title_string='',visualize=True,save_figure_direct
         print('INFO: empty data for {}/{} -- not plotting'.format(xname,yname))
         return
 
+    with_legend = [True,False]
+
     if not visualize and save_figure_directory is None and save_figure_name is None:
         _plot_data(data=data, xname=xname,yname=yname,default_xval=default_xval,title_string=title_string,visualize=True,ignore_list=ignore_list)
     else:
         if visualize:
             _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=True, save_figure_directory=None, save_figure_name=None,ignore_list=ignore_list)
         if save_figure_directory is not None:
-            _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=False, save_figure_directory=save_figure_directory, save_figure_name=save_figure_name,ignore_list=ignore_list)
+
+            for wl in with_legend:
+
+                if not wl:
+                    if save_figure_name is not None:
+                        save_figure_name = 'wo_legend_{}'.format(save_figure_name)
+
+                _plot_data(data=data, xname=xname, yname=yname, default_xval=default_xval, title_string=title_string, visualize=False, with_legend=wl,
+                           save_figure_directory=save_figure_directory, save_figure_name=save_figure_name,ignore_list=ignore_list)
 
 def load_JSON(filename):
     """
@@ -330,8 +342,15 @@ def _translate_label(label_name):
         'args.inflation_factor': 'inflation factor',
         'test_loss': 'loss',
         'norm_loss': 'parameter norm loss',
-        'log_complexity_measures.log2_frobenius': 'log_2(frobenius norm complexity)',
-        'log_complexity_measures.log2_nuclear': 'log_2(nuclear norm complexity)'
+        'log_complexity_measures.log2_frobenius': 'log_2(complexity)',
+        'log_complexity_measures.log2_nuclear': 'log_2(nuclear norm complexity)',
+        'short_range_sim_loss': 'similarity loss',
+        'args.nr_of_particles': '# of particles',
+        'args.inflation_factor': 'inflation factor',
+        'short_range_test_loss': 'loss',
+        'short_range_norm_loss': 'parameter norm loss',
+        'short_range_log_complexity_measures.log2_frobenius': 'log_2(complexity)',
+        'short_range_log_complexity_measures.log2_nuclear': 'log_2(nuclear norm complexity)'
     }
 
     if label_name in label_mappings:
@@ -558,6 +577,7 @@ def create_table(data,keys=['args.nr_of_particles','args.inflation_factors'],mea
     tables = []
 
     determine_outliers = True
+    found_values = False
 
     for current_data,current_name in data:
         table = []
@@ -580,16 +600,24 @@ def create_table(data,keys=['args.nr_of_particles','args.inflation_factors'],mea
                         print('WARNING: {}: {}: {}->{}'.format(current_name, col_name, cv, default_value))
                         cur_col_selection = cur_row_selection.loc[cur_row_selection[col_name]==default_value]
 
-                cur_vals = cur_col_selection[measure]
-                stats = compute_statistics(cur_vals,determine_outliers=determine_outliers)
+                if measure in cur_col_selection.keys():
+                    cur_vals = cur_col_selection[measure]
+                    if len(cur_vals)>0:
+                        found_values = True
+                    stats = compute_statistics(cur_vals, determine_outliers=determine_outliers)
+                else:
+                    stats = None
                 current_row.append(stats)
 
             table.append(current_row)
         tables.append((table,current_name))
 
-    print_tables(tables=tables,row_name=row_name,row_vals=row_vals,col_name=col_name,col_vals=col_vals,measure=measure)
+    if found_values:
+        print_tables(tables=tables,row_name=row_name,row_vals=row_vals,col_name=col_name,col_vals=col_vals,measure=measure)
 
 if __name__ == '__main__':
+
+    figure_settings.setup_plotting()
 
     args = setup_cmdline_parsing()
 
@@ -627,7 +655,7 @@ if __name__ == '__main__':
             'args.shooting_model': model_name,
             'args.fcn': fcn_name
         }
-        ynames_to_plot = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+        ynames_to_plot = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius']
         ignore_list['args.inflation_factor'] = [4,8]
         default_list['args.nr_of_particles'] = 2
 
@@ -637,7 +665,7 @@ if __name__ == '__main__':
         selection = {
             'args.shooting_model': model_name,
         }
-        ynames_to_plot_template = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius','log_complexity_measures.log2_nuclear']
+        ynames_to_plot_template = ['sim_loss','test_loss','norm_loss','log_complexity_measures.log2_frobenius']
         ynames_to_plot = copy.deepcopy(ynames_to_plot_template)
         for n in ynames_to_plot_template:
             ynames_to_plot.append('short_range_{}'.format(n))
@@ -653,7 +681,20 @@ if __name__ == '__main__':
 
     # computing some statistics and output as LaTeX table
     create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='nr_of_parameters.overall', ignore_list=ignore_list, default_list=default_list)
+
     create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='test_loss', ignore_list=ignore_list, default_list=default_list)
+    create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='sim_loss', ignore_list=ignore_list, default_list=default_list)
+    create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='norm_loss', ignore_list=ignore_list, default_list=default_list)
+    create_table(model_data,keys=['args.nr_of_particles','args.inflation_factor'],measure='log_complexity_measures.log2_frobenius', ignore_list=ignore_list, default_list=default_list)
+
+    create_table(model_data, keys=['args.nr_of_particles', 'args.inflation_factor'], measure='short_range_test_loss',
+                 ignore_list=ignore_list, default_list=default_list)
+    create_table(model_data, keys=['args.nr_of_particles', 'args.inflation_factor'], measure='short_range_sim_loss',
+                 ignore_list=ignore_list, default_list=default_list)
+    create_table(model_data, keys=['args.nr_of_particles', 'args.inflation_factor'], measure='short_range_norm_loss',
+                 ignore_list=ignore_list, default_list=default_list)
+    create_table(model_data, keys=['args.nr_of_particles', 'args.inflation_factor'],
+                 measure='short_range_log_complexity_measures.log2_frobenius', ignore_list=ignore_list, default_list=default_list)
 
     # creating some plots
 
