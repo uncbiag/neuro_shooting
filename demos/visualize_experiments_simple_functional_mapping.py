@@ -132,6 +132,7 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
 
     # Create a figure instance
     fig = plt.figure( figsize=(2 * nr_of_groups, 4), facecolor='white')
+
     ax = fig.add_subplot(111, frameon=True)
 
     width = 1.0/(nr_of_groups+1)
@@ -149,6 +150,10 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
         xlabel_name = figure_utils.escape_latex_special_characters(xlabel_name)
         ylabel_name = figure_utils.escape_latex_special_characters(ylabel_name)
 
+    # ax.set_xlabel(xlabel_name,color='white')
+    # ax.set_ylabel(ylabel_name,color='white')
+    # ax.set_title(title_string,color='white')
+
     ax.set_xlabel(xlabel_name)
     ax.set_ylabel(ylabel_name)
     ax.set_title(title_string)
@@ -160,7 +165,13 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
     legend_names = []
 
     # fill with colors
-    colors = ['silver', 'deepskyblue', 'seagreen']
+    box_plot_colors = ['silver', 'deepskyblue', 'seagreen']
+    # get ten colors
+    violin_plot_colors = [ax._get_lines.get_next_color() for i in range(10)]
+    # remove second one
+    #violin_plot_colors = [violin_plot_colors[0]]+violin_plot_colors[2:]
+    # remove first one
+    #violin_plot_colors = violin_plot_colors[1:]
 
     outlier_info = []
 
@@ -170,11 +181,28 @@ def _all_in_one_plot(vals,names,unique_values,do_printing,title_string,use_boxpl
         if len(ne_vals)>0:
             if use_boxplot:
                 bp = ax.boxplot(x=ne_vals, widths=width, positions=ne_pos, notch=False, patch_artist=True)
-                for patch in bp['boxes']:
-                    patch.set_facecolor(colors[n])
+
+                if box_plot_colors is not None:
+                    for patch in bp['boxes']:
+                        patch.set_facecolor(box_plot_colors[n])
+
                 bps.append(bp['boxes'][0])
             else:
                 bp = ax.violinplot(dataset=ne_vals,widths=width, positions=ne_pos, showmedians=True, quantiles=[[0.25,0.75]]*len(ne_vals))
+
+                if violin_plot_colors is not None:
+                    # set colors for everything
+                    bp['cmaxes'].set_color(violin_plot_colors[n])
+                    bp['cmins'].set_color(violin_plot_colors[n])
+                    bp['cbars'].set_color(violin_plot_colors[n])
+                    bp['cmedians'].set_color(violin_plot_colors[n])
+                    bp['cquantiles'].set_color(violin_plot_colors[n])
+
+                    for pc in bp['bodies']:
+                        pc.set_color(violin_plot_colors[n])
+                        #pc.set_facecolor(violin_plot_colors[n])
+                        #pc.set_edgecolor('black')
+
                 bps.append(bp['bodies'][0])
 
             legend_names.append(names[n])
