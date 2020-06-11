@@ -1,7 +1,8 @@
 # neuro_shooting
-Shooting approaches for deep neural networks.
 
-# Neuro_shooting development installation
+Shooting approaches for deep neural networks. 
+
+# neuro_shooting development installation
 
 Sometimes it is desirable to install *neuro_shooting* for development purposes. To do this, first download the git repository
 
@@ -65,6 +66,10 @@ at
 - run_experiments_spiral_rnn.py
  
 These two python scripts specify the entire experimental setting for the spiral for all the four models in the paper.
+
+### Rotating MNIST and bouncing balls
+
+We are in the process of cleaning up our Jupyter notebooks for these example and will make them available shortly.
 
 # Documentation
 
