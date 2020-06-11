@@ -16,7 +16,7 @@ The repository's main folder contains a setup.py file (see [python setup file](h
    python setup.py develop
 ```
 
-This will install all library links and all missing packages and will allow neuro_shooting imports (the command above needs to be run twice sometimes; TODO: change package order) with the exception of the `torchdiffeq` package which can be installed via
+This will install all library links and all missing packages and will allow neuro_shooting imports with the exception of the `torchdiffeq` package which can be installed via
 
 ```
    pip install git+https://github.com/rtqichen/torchdiffeq
