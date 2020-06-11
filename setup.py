@@ -20,29 +20,34 @@ AUTHOR = ''
 REQUIRES_PYTHON = '>=3.6.0'
 VERSION = '0.1.0'
 
+# what packages need to be setup first
+SETUP_REQUIRED = [
+    "sphinx"
+]
+
 # What packages are required for this module to be executed?
 REQUIRED = [
+    "sphinx",
+    "torch",
+    "torchvision",
+    "tb-nightly",
+    "matplotlib",
+    "sortedcontainers",
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
     "ipython",
     "jupyter",
     "ipykernel",
     "future",
     "tqdm",
     "termcolor",
-    "torch",
-    "torchvision",
-    "tb-nightly",
-    "matplotlib",
-    "pandas",
-    "scipy",
-    "scikit-learn",
-    "sphinx",
     "nbsphinx",
     "sphinx-gallery",
     "pandoc",
     "pypandoc",
-    "numpy",
     "graphviz",
-    "sortedcontainers",
     "docutils",
 #    "git+https://github.com/rtqichen/torchdiffeq"
     # 'requests', 'maya', 'records',
@@ -137,6 +142,7 @@ setup(
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],
     # },
+    setup_requires=SETUP_REQUIRED,
     install_requires=REQUIRED,
     extras_require=EXTRAS,
     include_package_data=True,
