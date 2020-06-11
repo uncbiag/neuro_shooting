@@ -39,8 +39,10 @@ The main python scripts to run these two examples is *simple_functional_mapping_
 line configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
 
 ```
-    python simple_functional_mapping_example.py --fcn cubic --custom_parameter_freezing --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
-    python simple_functional_mapping_example.py --fcn quadratic --custom_parameter_freezing --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
+    python simple_functional_mapping_example.py --fcn cubic --custom_parameter_freezing 
+        --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
+    python simple_functional_mapping_example.py --fcn quadratic --custom_parameter_freezing 
+        --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
 ``` 
 
 If you are interested in how the results for the paper where obtained (that are the basis for the boxplots for example) have a look
@@ -56,7 +58,10 @@ all the four models in the paper.
 The main python script to run the spiral example is *sprial.py*. As for the cubic and the quadratic-like
 examples the default parameters should already be pretty good. It can be run as follow:
 ```
-    python spiral.py --seed 0 --shooting_model updown_universal --niters 2000 --optional_weight 10 --save_figures --viz_freq 50 --validate_with_long_range --optimize_over_data_initial_conditions --inflation_factor 32 --viz --nr_of_particles 25 --custom_parameter_freezing --unfreeze_parameters_at_iter 50
+    python spiral.py --seed 0 --shooting_model updown_universal --niters 2000 
+        --optional_weight 10 --save_figures --viz_freq 50 --validate_with_long_range 
+        --optimize_over_data_initial_conditions --inflation_factor 32 --viz 
+        --nr_of_particles 25 --custom_parameter_freezing --unfreeze_parameters_at_iter 50
 ```
 
 If you are interested in how the results for the paper where obtained (that are the basis for the boxplots for example) have a look
