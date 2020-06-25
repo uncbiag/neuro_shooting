@@ -19,6 +19,7 @@ import neuro_shooting.resnet_fx as resnet
 #import neuro_shooting.res_net as resnet
 import simple_discrete_neural_networks as sdnn
 import neuro_shooting.utils as utils
+import torch.optim as optim
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--network', type=str, choices=['resnet', 'odenet', 'shooting'], default='shooting')
@@ -32,7 +33,7 @@ parser.add_argument('--particle_number', type=int, default=10, help='Number of p
 parser.add_argument('--particle_size', type=int, default=6, help='Particle size for shooting.')
 
 parser.add_argument('--downsampling-method', type=str, default='res', choices=['conv', 'res'])
-parser.add_argument('--nepochs', type=int, default=20)
+parser.add_argument('--nepochs', type=int, default=80)
 parser.add_argument('--data_aug', type=eval, default=True, choices=[True, False])
 parser.add_argument('--lr', type=float, default=0.02)
 parser.add_argument('--batch_size', type=int, default=32)
@@ -40,7 +41,7 @@ parser.add_argument('--test_batch_size', type=int, default=1000)
 
 parser.add_argument('--save', type=str, default='./experiment1')
 parser.add_argument('--debug', action='store_true')
-parser.add_argument('--gpu', type=int, default=8)
+parser.add_argument('--gpu', type=int, default=9)
 
 parser.add_argument('--seed', required=False, type=int, default=1234,
                     help='Sets the random seed which affects data shuffling')
@@ -115,7 +116,7 @@ def accuracy(model, dataset_loader):
 if __name__ == '__main__':
 
     ## define the model
-    model = sdnn.MyCNNResNet(nr_layers = 10,inflation_factor = 4,in_channels = 64)
+    model = sdnn.MyCNNResNet(nr_layers = 10,inflation_factor = 3,in_channels = 64)
     train_loader, test_loader, train_eval_loader = get_mnist_loaders(args.data_aug, args.batch_size, args.test_batch_size)
 
     #define the data generator
@@ -132,32 +133,48 @@ if __name__ == '__main__':
 
     # define criterion and optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+
+
+    def setup_optimizer_and_scheduler(params, lr=0.1, weight_decay=0):
+
+        #optimizer = optim.Adam(params, lr=lr, weight_decay=weight_decay)
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 3)
+        #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, verbose=True, factor=0.5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer,step_size=10, gamma=0.8)
+        return optimizer, scheduler
+
+    optimizer, scheduler = setup_optimizer_and_scheduler(params=model.parameters(), lr=args.lr)
 
     best_acc = 0
     start = time.time()
-    for itr in range(args.nepochs * batches_per_epoch):
+    for itr in range(args.nepochs):
+        scheduler.step()
+        for itr_batch, sampled_batch in enumerate(train_loader):
+            optimizer.zero_grad()
+            x,y = data_gen.__next__()
+    #for itr in range(args.nepochs * batches_per_epoch):
+    #    scheduler.step()
+    #    optimizer.zero_grad()
+    #    x, y = data_gen.__next__()
+            x = x.to(device)
+            y = y.to(device)
+            logits = model(x)
+            loss = criterion(logits, y)
+            loss.backward()
+            optimizer.step()
+            #print(loss)
+        #if itr%500==0:
+        #    print(itr," loss ",loss.item())
 
-        optimizer.zero_grad()
-        x, y = data_gen.__next__()
-        x = x.to(device)
-        y = y.to(device)
-        logits = model(x)
-        loss = criterion(logits, y)
-
-        loss.backward()
-        optimizer.step()
-        if itr%500==0:
-            print(itr," loss ",loss.item())
-
-        if itr % batches_per_epoch == 0:
-            print(loss.data)
-            with torch.no_grad():
-                stop = time.time()
-                train_acc = accuracy(model, train_eval_loader)
-                val_acc = accuracy(model, test_loader)
-                if val_acc > best_acc:
-                    best_acc = val_acc
-                    print(best_acc)
-            print("Epoch {:04d} | Time {:.3f} | Train Acc {:.4f} ".format(itr // batches_per_epoch, stop - start, val_acc))
-            start = time.time()
+        #if itr % batches_per_epoch == 0:
+        print(loss.data)
+        with torch.no_grad():
+            stop = time.time()
+            train_acc = accuracy(model, train_eval_loader)
+            val_acc = accuracy(model, test_loader)
+            if val_acc > best_acc:
+                best_acc = val_acc
+                print(best_acc)
+        print("Epoch {:04d} | Time {:.3f} | Train Acc {:.4f} ".format(itr , stop - start, val_acc))
+        start = time.time()

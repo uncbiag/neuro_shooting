@@ -170,10 +170,35 @@ class MyCNNResNet(nn.Module):
     def forward(self,x):
         temp = self.conv0(x)
         ret = self.model(temp)
-
         ret = nn.AdaptiveMaxPool2d(1)(ret)
         ret = ret.view(ret.size(0), -1)
         ret = self.last_linear(ret)
         return ret
 
+class MyCNNResRecNet(nn.Module):
+
+    def __init__(self,nr_layers = 3,inflation_factor = 5,in_channels = 32):
+        super(MyCNNResRecNet,self).__init__()
+        self.nr_layers = nr_layers
+        self.inflation_factor = inflation_factor
+        self.in_channels = in_channels
+        self.last_linear = nn.Linear(in_channels, 10)
+        self.conv0 = nn.Conv2d(1, self.in_channels, kernel_size=3,stride = 1,padding = 1,padding_mode = "zeros")
+        self.conv1 = nn.Conv2d(self.in_channels,self.in_channels * self.inflation_factor,kernel_size = 3,stride= 1,padding_mode='zeros',padding=1)
+        self.conv2 = nn.Conv2d(self.in_channels * self.inflation_factor,self.in_channels ,kernel_size=3,stride = 1,padding_mode='zeros',padding=1)
+        self.bn = nn.GroupNorm(self.in_channels, self.in_channels )
+        #modules = replicate_modules(module=CNNResNetBlock, nr_of_layers=self.nr_layers,
+        #                            inflation_factor=self.inflation_factor,in_channels = self.in_channels,nr_layers = self.nr_layers)
+        #self.model = nn.Sequential(modules)
+
+    def forward(self,x):
+        temp = self.conv0(x)
+        for i in range(self.nr_layers):
+            temp2 = self.conv1(temp)
+            temp3 = self.conv2(F.relu(temp2))
+            temp =  temp + 1. / self.nr_layers * temp3
+        ret = nn.AdaptiveMaxPool2d(1)(temp)
+        ret = ret.view(ret.size(0), -1)
+        ret = self.last_linear(ret)
+        return ret
 
