@@ -1,7 +1,6 @@
-# neuro_shooting
+# A Shooting Formulation of Deep learning
 
-Shooting approaches for deep neural networks. In case you use the code for your research, please use the following
-BibTeX entry.
+In case you use the code for your research, please use the following BibTeX entry.
 
 ```
 @inproceedings{Vialard20a,
@@ -11,9 +10,9 @@ BibTeX entry.
    year      = {2020}}
 ```
 
-# neuro_shooting development installation
+# Development installation
 
-Sometimes it is desirable to install *neuro_shooting* for development purposes. To do this, first download the git repository
+Sometimes it is desirable to install `neuro_shooting` for development purposes. To do this, first clone the git repository via
 
 ```
    git clone https://github.com/uncbiag/neuro_shooting.git
@@ -40,12 +39,12 @@ import neuro_shooting
 
 # Running demos and recreating some of the results in the paper
 
-The examples can be run based on code in the *demos* directory
+The examples can be run based on code in the `demos` directory.
 
 ### Cubic and quadratic-like function fitting
 
-The main python scripts to run these two examples is *simple_functional_mapping_example.py*. It comes with various command 
-line configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
+The main python script to run these two examples is `simple_functional_mapping_example.py`. It comes with various command-line 
+configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
 
 ```
     python simple_functional_mapping_example.py --fcn cubic --custom_parameter_freezing 
@@ -54,18 +53,19 @@ line configuration options, but the base configuration should already be reasona
         --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
 ``` 
 
-If you are interested in how the results for the paper where obtained (that are the basis for the boxplots for example) have a look
+If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
 at
-- run_long_iteration_experiments_simple_functional_mapping.py
-- run_long_iteration_experiments_simple_functional_mapping_rnn.py
+
+- `run_long_iteration_experiments_simple_functional_mapping.py` and
+- `run_long_iteration_experiments_simple_functional_mapping_rnn.py`
 
 These two python scripts specify the entire experimental setting for the cubic and the quadratic-like functions for 
 all the four models in the paper.
 
 ### Spiral example
 
-The main python script to run the spiral example is *sprial.py*. As for the cubic and the quadratic-like
-examples the default parameters should already be pretty good. It can be run as follow:
+The main python script to run the spiral example is `sprial.p`. As for the cubic and the quadratic-like
+examples, the default parameters should already be pretty good. It can be run as follows:
 ```
     python spiral.py --seed 0 --shooting_model updown_universal --niters 2000 
         --optional_weight 10 --save_figures --viz_freq 50 --validate_with_long_range 
@@ -73,11 +73,11 @@ examples the default parameters should already be pretty good. It can be run as 
         --nr_of_particles 25 --custom_parameter_freezing --unfreeze_parameters_at_iter 50
 ```
 
-If you are interested in how the results for the paper where obtained (that are the basis for the boxplots for example) have a look
+If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
 at
 
-- run_experiments_spiral.py
-- run_experiments_spiral_rnn.py
+- `run_experiments_spiral.py` and
+- `run_experiments_spiral_rnn.py`
  
 These two python scripts specify the entire experimental setting for the spiral for all the four models in the paper.
 
