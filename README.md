@@ -119,7 +119,7 @@ Then simply open index.html which will be in the build/html directory (of the do
 
 It is now also possible to add hooks to shooting blocks. Most easily results are displayed via tensorboard. Once tensorboard output exists you can simply start a tensorboard server by typing
 
-```
+```bash
 tensorboard --logdir=runs
 ```
 
