@@ -15,25 +15,25 @@ In case you use the code for your research, please use the following BibTeX entr
 Sometimes it is desirable to install `neuro_shooting` for development purposes. To do this, first clone the git repository via
 
 ```
-   git clone https://github.com/uncbiag/neuro_shooting.git
+git clone https://github.com/uncbiag/neuro_shooting.git
 ```
 
 The repository's main folder contains a setup.py file (see [python setup file](https://github.com/kennethreitz/setup.py "python setup file")). For development purposes then simply execute
 
-```
-   cd neuro_shooting
-   python setup.py develop
+```bash
+cd neuro_shooting
+python setup.py develop
 ```
 
 This will install all library links and all missing packages and will allow `neuro_shooting` imports with the exception of the `torchdiffeq` package which can be installed via
 
-```
-   pip install git+https://github.com/rtqichen/torchdiffeq
+```bash
+pip install git+https://github.com/rtqichen/torchdiffeq
 ```
 
 Once done, you simply import the library as
 
-```
+```python
 import neuro_shooting
 ```
 
@@ -46,18 +46,18 @@ The examples can be run based on code in the `demos` directory.
 The main python script to run these two examples is `simple_functional_mapping_example.py`. It comes with various command-line 
 configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
 
-```
-    python simple_functional_mapping_example.py \
-      --fcn cubic --custom_parameter_freezing 
-      --unfreeze_parameters_at_iter 50 \ 
-      --optimize_over_data_initial_conditions \
-      --niter 500
+```bash
+python simple_functional_mapping_example.py \
+   --fcn cubic --custom_parameter_freezing 
+   --unfreeze_parameters_at_iter 50 \ 
+   --optimize_over_data_initial_conditions \
+   --niter 500
       
-    python simple_functional_mapping_example.py \
-      --fcn quadratic --custom_parameter_freezing 
-      --unfreeze_parameters_at_iter 50 \
-      --optimize_over_data_initial_conditions \
-      --niter 500
+python simple_functional_mapping_example.py \
+   --fcn quadratic --custom_parameter_freezing 
+   --unfreeze_parameters_at_iter 50 \
+   --optimize_over_data_initial_conditions \
+   --niter 500
 ``` 
 
 If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
@@ -73,11 +73,22 @@ all the four models in the paper.
 
 The main python script to run the spiral example is `sprial.p`. As for the cubic and the quadratic-like
 examples, the default parameters should already be pretty good. It can be run as follows:
-```
-    python spiral.py --seed 0 --shooting_model updown_universal --niters 2000 
-        --optional_weight 10 --save_figures --viz_freq 50 --validate_with_long_range 
-        --optimize_over_data_initial_conditions --inflation_factor 32 --viz 
-        --nr_of_particles 25 --custom_parameter_freezing --unfreeze_parameters_at_iter 50
+
+```bash
+python spiral.py \
+   --seed 0 \
+   --shooting_model updown_universal \
+   --niters 2000 \
+  --optional_weight 10 \
+  --save_figures \
+  --viz_freq 50 \
+  --validate_with_long_range \
+  --optimize_over_data_initial_conditions \
+  --inflation_factor 32 \
+  --viz \
+  --nr_of_particles 25 \
+  --custom_parameter_freezing \
+  --unfreeze_parameters_at_iter 50
 ```
 
 If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
@@ -96,7 +107,7 @@ We are in the process of cleaning up our Jupyter notebooks for these examples an
 
 There is also some rudimentary documentation available. This documentation can currently be compiled via the following
 
-```
+```bash
 cd neuro_shooting
 cd docs
 make html
