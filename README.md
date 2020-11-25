@@ -47,10 +47,17 @@ The main python script to run these two examples is `simple_functional_mapping_e
 configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
 
 ```
-    python simple_functional_mapping_example.py --fcn cubic --custom_parameter_freezing 
-        --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
-    python simple_functional_mapping_example.py --fcn quadratic --custom_parameter_freezing 
-        --unfreeze_parameters_at_iter 50 --optimize_over_data_initial_conditions --niter 500
+    python simple_functional_mapping_example.py \
+      --fcn cubic --custom_parameter_freezing 
+      --unfreeze_parameters_at_iter 50 \ 
+      --optimize_over_data_initial_conditions \
+      --niter 500
+      
+    python simple_functional_mapping_example.py \
+      --fcn quadratic --custom_parameter_freezing 
+      --unfreeze_parameters_at_iter 50 \
+      --optimize_over_data_initial_conditions \
+      --niter 500
 ``` 
 
 If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
