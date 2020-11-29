@@ -1,4 +1,4 @@
-# A Shooting Formulation of Deep learning
+# A Shooting Formulation of Deep Learning
 
 In case you use the code for your research, please use the following BibTeX entry.
 
