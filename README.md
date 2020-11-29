@@ -79,16 +79,16 @@ python spiral.py \
    --seed 0 \
    --shooting_model updown_universal \
    --niters 2000 \
-  --optional_weight 10 \
-  --save_figures \
-  --viz_freq 50 \
-  --validate_with_long_range \
-  --optimize_over_data_initial_conditions \
-  --inflation_factor 32 \
-  --viz \
-  --nr_of_particles 25 \
-  --custom_parameter_freezing \
-  --unfreeze_parameters_at_iter 50
+   --optional_weight 10 \
+   --save_figures \
+   --viz_freq 50 \
+   --validate_with_long_range \
+   --optimize_over_data_initial_conditions \
+   --inflation_factor 32 \
+   --viz \
+   --nr_of_particles 25 \
+   --custom_parameter_freezing \
+   --unfreeze_parameters_at_iter 50
 ```
 
 If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
