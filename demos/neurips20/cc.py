@@ -9,7 +9,6 @@ import random
 import argparse
 import numpy as np
 from collections import defaultdict
-sys.path.append('../../')
 
 from sklearn.metrics import accuracy_score
 
@@ -18,6 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
+sys.path.append('../../')
 from neuro_shooting.shooting_models import AutoShootingIntegrandModelUpDown as UpDown
 from neuro_shooting.shooting_models import AutoShootingIntegrandModelUpDownUniversal as Universal
 from neuro_shooting.shooting_models import AutoShootingIntegrandModelSimple as Simple
@@ -29,7 +29,6 @@ import neuro_shooting.utils as utils
 import neuro_shooting.shooting_blocks as shooting_blocks
 import neuro_shooting.shooting_models as shooting_models
 import neuro_shooting.generic_integrator as generic_integrator
-
 
 from utils import ConcentricSphere, dataset_to_numpy, sample
 
@@ -399,7 +398,6 @@ if __name__ == '__main__':
     tracker = []
     results = []
     for epoch in range(args.niters):
-        #freeze_parameters(model.blk, ['q1'])
         train_loss = train(
             args,
             model, 
