@@ -1,8 +1,11 @@
 The following sections describe how to run (and reproduce) the results from the paper.
 
-* [Cubic and quadratic like function fitting](#cubic-and-quadratic-like-function-fitting)
+* [Cubic and quadratic like function fitting experiment](#cubic-and-quadratic-like-function-fitting-experiment)
+* [Spiral experiment](#spiral-experiment)
+* [Concentric circles experiment](#concentric-circles-experiment)
+* [Rotated MNIST experiment](#rotated-mnist-experiment)
 
-## Cubic and quadratic like function fitting
+## Cubic and quadratic like function fitting experiment
 
 The main python script to run these two examples is `simple_functional_mapping_example.py`. It comes with various command-line 
 configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
@@ -30,7 +33,7 @@ at
 These two python scripts specify the entire experimental setting for the cubic and the quadratic-like functions for 
 all the four models in the paper.
 
-## Spiral example
+## Spiral experiment
 
 The main python script to run the spiral example is `sprial.p`. As for the cubic and the quadratic-like
 examples, the default parameters should already be pretty good. It can be run as follows:
@@ -61,7 +64,7 @@ at
 These two python scripts specify the entire experimental setting for the spiral for all the four models in the paper.
 
 
-## Concentric circles
+## Concentric circles experiment
 
 ```bash
 for run in `seq 10`; do
@@ -86,7 +89,7 @@ for run in `seq 10`; do
 done
 ```
 
-## Rotated MNIST 
+## Rotated MNIST experiment
 
 To experiment with the *Rotated MNIST* data, check out the `rot.py` file.
 
