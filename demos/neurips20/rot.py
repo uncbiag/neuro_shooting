@@ -1,5 +1,8 @@
+"""Rotated MNIST experiment."""
+
 import os
 import sys
+import pickle
 import random
 import argparse
 import numpy as np
@@ -7,15 +10,15 @@ import matplotlib.pyplot as plt
 
 from scipy.io import loadmat
 from collections import defaultdict
-
+from torchvision.utils import make_grid
 
 import torch
 import torch.nn as nn
+from torch.utils import data
 import torch.optim as optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
 sys.path.append('../../')
 import neuro_shooting.shooting_blocks as shooting_blocks
@@ -27,22 +30,33 @@ import neuro_shooting.validation_measures as validation_measures
 import neuro_shooting.parameter_initialization as pi
 import neuro_shooting.utils as utils
 
+from utils import load_data, Dataset
+from autoencoder import ShootingAE, ShootingAEMasked
+
 
 def setup_cmdline_parsing():
-    parser = argparse.ArgumentParser('CMU MOCAP (Single)')
+    parser = argparse.ArgumentParser('Rotated MNIST')
     parser.add_argument('--method', 
         type=str, 
         choices=['dopri5', 'adams','rk4'], 
         default='rk4', 
         help='Selects the desired integrator')
+    parser.add_argument('--n_skip', 
+        type=int, 
+        default=4, 
+        help='How many time points to randomly exclude during training.')   
+    parser.add_argument('--i_eval', 
+        type=int, 
+        default=4, 
+        help='Timepoint index (16 total) at which to evaluate.')
+    parser.add_argument('--shooting_dim', 
+        type=int, 
+        default=20, 
+        help='Dimensionality of latent space where to learn dynamics.')
     parser.add_argument('--stepsize', 
         type=float, 
         default=0.05, 
         help='Step size for the integrator (if not adaptive).')
-    parser.add_argument('--subject_id', 
-        type=int, 
-        default=0, 
-        help='Subject ID of MOCAP data.')
     parser.add_argument('--niters', 
         type=int, 
         default=500, 
@@ -55,11 +69,15 @@ def setup_cmdline_parsing():
         required=False, 
         type=int, 
         default=-1,
-        help='Sets the random seed which affects data shuffling')
+        help='Sets the random seed which affects data shuffling.')
+    parser.add_argument('--batch_size', 
+        type=int, 
+        default=25,
+        help='Sets the batch size.')
     parser.add_argument('--shooting_model', 
         type=str, 
         default='updown', 
-        choices=['simple', 'updown', 'periodic'])
+        choices=['simple', 'updown', 'updown_universal'])
     parser.add_argument('--nr_of_particles', 
         type=int, 
         default=25, 
@@ -90,9 +108,6 @@ def setup_cmdline_parsing():
     parser.add_argument('--use_particle_free_rnn_mode', 
         action='store_true',
         help='This is directly optimizing over the parameters -- no particles here; a la Neural ODE')
-    parser.add_argument('--do_not_use_parameter_penalty_energy', 
-        action='store_true', 
-        default=False)
     parser.add_argument('--optimize_over_data_initial_conditions', 
         action='store_true', 
         default=False)
@@ -100,26 +115,18 @@ def setup_cmdline_parsing():
         type=str, choices=['direct','linear','mini_nn'], 
         default='linear', 
         help='Different ways to predict the initial conditions for higher order models. Currently only supported for updown model.')
-    parser.add_argument('--custom_parameter_freezing', 
-        action='store_true', 
-        default=False, 
-        help='Enable custom code for parameter freezing -- development mode')
-    parser.add_argument('--custom_parameter_initialization', 
-        action='store_true', 
-        default=False, 
-        help='Enable custom code for parameter initialization -- development mode')
     parser.add_argument('--verbose', 
         action='store_true', 
         default=False, 
         help='Enable verbose output')
+    parser.add_argument('--save', 
+        action='store_true', 
+        default=False, 
+        help='Save model and tracking results to runs/.')
     parser.add_argument('--gpu', 
         type=int, 
         default=0, 
         help='Enable GPU computation on specified GPU.')
-    parser.add_argument('--save_prefix', 
-        type=str, 
-        default="subject_",
-        help='Prefix to saved files.')
     args = parser.parse_args()
     return args
 
@@ -132,66 +139,6 @@ def setup_random_seed(seed):
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
-
-# taken from ODE^2 VAE repo
-class MyBatch:
-    def __init__(self,x,y=None):
-        self.x = x # high-dim data
-        self.y = y # time points
-        self.N = x.shape[0]
-        
-    def next_batch(self,N=None): # draw N samples from the first M samples
-        if N is None or N>self.N:
-            ids = np.arange(self.N)
-        else:
-            ids = ss.uniform.rvs(size=N)*self.N
-        
-        ids = [int(i) for i in ids]
-        xs = self.x[ids,:]
-        if self.y is None:
-            ys = None
-        else:
-            ys = self.y[ids,:]
-        return xs, ys
-
-# taken from ODE^2 VAE repo
-class MyDataset:
-    def __init__(self,xtr,ytr,xval=None,yval=None,xtest=None,ytest=None):
-        self.train = MyBatch(xtr, ytr)
-        if xval is not None:
-            self.val = MyBatch(xval, yval)
-        if xtest is not None:
-            self.test = MyBatch(xtest, ytest)
-
-
-def load_mocap_data_single_walk(data_dir ,subject_id, dt=0.1, plot=False):
-    fname = os.path.join(data_dir, 'mocap43.mat')
-    mocap_data = loadmat(fname)
-    
-    Xtest = mocap_data['Ys'][subject_id][0]
-    Xtest = np.expand_dims(Xtest,0)
-    Ytest = dt*np.arange(0,Xtest.shape[1],dtype=np.float32)
-    Ytest = np.tile(Ytest,[Xtest.shape[0],1])
-    Xval  = mocap_data['Yobss'][subject_id][0]
-    Xval  = np.expand_dims(Xval,0)
-    Yval  = dt*np.arange(0,Xval.shape[1],dtype=np.float32)
-    Yval  = np.tile(Yval,[Xval.shape[0],1])
-    N = Xval.shape[1]
-    Xtr   = Xval[:,:4*N//5,:]
-    Ytr   = dt*np.arange(0,Xtr.shape[1],dtype=np.float32)
-    Ytr   = np.tile(Ytr,[Xtr.shape[0],1])
-
-    dataset = MyDataset(Xtr,Ytr,Xval,Yval,Xtest,Ytest)
-    
-    if plot:
-        x,y = dataset.train.next_batch()
-        plt.figure(2,(10,20))
-        for i in range(50):
-            plt.subplot(10,5,i+1)
-            plt.title('sensor-{:d}'.format(i+1))
-            plt.plot(x[0,:,i])
-            plt.tight_layout()
-    return dataset
 
 
 def setup_integrator(method, use_adjoint, step_size, rtol=1e-3, atol=1e-5):
@@ -210,43 +157,53 @@ def setup_integrator(method, use_adjoint, step_size, rtol=1e-3, atol=1e-5):
     return integrator
 
 
-def setup_shooting_block(integrator=None, shooting_model='updown', parameter_weight=1.0, nr_of_particles=10,
-                         inflation_factor=2, nonlinearity='relu',
-                         use_particle_rnn_mode=False, use_particle_free_rnn_mode=False,
-                         optimize_over_data_initial_conditions=False,
-                         optimize_over_data_initial_conditions_type='linear'):
+def setup_shooting_block(integrator=None, 
+    in_features=20,
+    shooting_model='updown', 
+    parameter_weight=1.0, 
+    nr_of_particles=10,
+    inflation_factor=2, 
+    nonlinearity='relu',
+    use_particle_rnn_mode=False, 
+    use_particle_free_rnn_mode=False,
+    optimize_over_data_initial_conditions=False,
+    optimize_over_data_initial_conditions_type='linear'):
 
     if shooting_model=='updown':
         smodel = shooting_models.AutoShootingIntegrandModelUpDown(
-            in_features=50, 
+            in_features=in_features, 
             nonlinearity=nonlinearity,
             parameter_weight=parameter_weight,
             inflation_factor=inflation_factor,
             nr_of_particles=nr_of_particles, 
             particle_dimension=1,
-            particle_size=50,
+            particle_size=in_features,
             use_analytic_solution=True,
             use_rnn_mode=use_particle_rnn_mode,
             optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
             optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
-    elif shooting_model=='periodic':
-        smodel = shooting_models.AutoShootingIntegrandModelUpdownPeriodic(
-            in_features=2, 
+    elif shooting_model=='updown_universal':
+        smodel = shooting_models.AutoShootingIntegrandModelUpDownUniversal(
+            in_features=in_features, 
             nonlinearity=nonlinearity,
             parameter_weight=parameter_weight,
             inflation_factor=inflation_factor,
-            nr_of_particles=nr_of_particles, particle_dimension=1,
-            particle_size=2,
+            nr_of_particles=nr_of_particles, 
+            particle_dimension=1,
+            particle_size=in_features,
             use_analytic_solution=True,
+            optional_weight=0.1,
             use_rnn_mode=use_particle_rnn_mode,
             optimize_over_data_initial_conditions=optimize_over_data_initial_conditions,
             optimize_over_data_initial_conditions_type=optimize_over_data_initial_conditions_type)
     elif shooting_model=='simple':
         smodel = shooting_models.AutoShootingIntegrandModelSimple(
-            in_features=2, nonlinearity=nonlinearity,
+            in_features=in_features, 
+            nonlinearity=nonlinearity,
             parameter_weight=parameter_weight,
-            nr_of_particles=nr_of_particles, particle_dimension=1,
-            particle_size=2,
+            nr_of_particles=nr_of_particles, 
+            particle_dimension=1,
+            particle_size=in_features,
             use_analytic_solution=True,
             use_rnn_mode=use_particle_rnn_mode)
 
@@ -255,8 +212,8 @@ def setup_shooting_block(integrator=None, shooting_model='updown', parameter_wei
     par_initializer = pi.VectorEvolutionParameterInitializer(
         only_random_initialization=True, 
         random_initialization_magnitude=0.5)
+    smodel.set_state_initializer(state_initializer=par_initializer)
 
-    #smodel.set_state_initializer(state_initializer=par_initializer)
     shooting_block = shooting_blocks.ShootingBlockBase(
         name='simple', 
         shooting_integrand=smodel,
@@ -273,16 +230,37 @@ def setup_optimizer_and_scheduler(args, params):
     return optimizer, scheduler
 
 
-def evaluate(data, shooting_block, D):
-    shooting_block.eval()
-    inp, t = data.next_batch()
-    t = torch.tensor(t, dtype=torch.float).squeeze()
-    inp = torch.tensor(inp, dtype=torch.float).to(device)
-    shooting_block.set_integration_time_vector(t,suppress_warning=True)
-    out,_,_,_ = shooting_block(inp[0,0,:].view(1,1,D))
-    out_y = out.squeeze().cpu().detach().numpy()
-    inp_y = inp.squeeze().cpu().detach().numpy()
-    return out_y, inp_y, np.mean(np.power(out_y[:,:]-inp_y[:,:],2.0))
+def evaluate(args, model, loader, device):
+    model.eval()
+    errors = []
+    ntotal = 0
+    for inp in loader:
+        inp = inp.to(device)    
+        _,_,out = model(inp[:,0,...], use_mask=False)
+        R = out.cpu().detach().squeeze().numpy()
+        V = inp.cpu().detach().squeeze().numpy()
+        for i in range(inp.size(0)):
+            error = np.mean(np.power(R[i,args.i_eval,:,:]-V[i,args.i_eval,:,:], 2.0))
+            errors.append(error)
+            ntotal += 1
+    return errors, ntotal
+
+
+def plot_reconstructions(npbatch, indices, where, prefix):
+    for idx in indices:
+        img_list = [torch.tensor(npbatch[idx,i,:,:]).unsqueeze(0) for i in range(16)]
+        imgsave(
+            make_grid(img_list, padding=0, nrow=16, normalize=True), 
+            where,
+            '{}{}.png'.format(prefix, idx))
+    
+
+def imgsave(img, where, fname):
+    npimg = img.cpu().numpy()
+    plt.figure(figsize=(15,3))
+    plt.imshow(np.transpose(npimg, (1,2,0)), interpolation='nearest')
+    plt.savefig(os.path.join(where, fname), bbox_inches='tight', pad_inches=0)
+    plt.close('all')
 
 
 if __name__ == '__main__':
@@ -306,9 +284,11 @@ if __name__ == '__main__':
             use_adjoint=False,
             rtol=1e-3,
             atol=1e-5)
-
+    
+    # setup shooting block
     shooting_block = setup_shooting_block(
         integrator=integrator,
+        in_features=args.shooting_dim,
         shooting_model=args.shooting_model,
         parameter_weight=args.pw,
         nr_of_particles=args.nr_of_particles,
@@ -318,76 +298,123 @@ if __name__ == '__main__':
         use_particle_free_rnn_mode=args.use_particle_free_rnn_mode,
         optimize_over_data_initial_conditions=args.optimize_over_data_initial_conditions,
         optimize_over_data_initial_conditions_type=args.optimize_over_data_initial_conditions_type)
+    
+    Xtr, Xtest, N, T = load_data()
+    trainset = Dataset(Xtr)
+    trainset = data.DataLoader(trainset, batch_size=25, shuffle=True)
+    testset  = Dataset(Xtest)
+    testset  = data.DataLoader(testset, batch_size=25, shuffle=False)
 
-    # load data
-    ds = load_mocap_data_single_walk(
-        '../../data/', 
-        args.subject_id ,
-        0.1, 
-        False)
+    # setup model
+    model = ShootingAEMasked(
+        n_filt=8, 
+        shooting_dim=args.shooting_dim,
+        n_skip=args.n_skip,
+        i_eval=args.i_eval,
+        T=T)
 
-    # get data properties
-    [N,T,D] = ds.train.x.shape
-    if args.verbose:
-        print('{} data points, {} time steps, {} features'.format(
-            N,T,D))
+    model.set_shooting_block(shooting_block)
+    model.to(device)
 
-    shooting_block = shooting_block.to(device)
+    # setup integration time vector
+    t = 0.1*torch.arange(T, dtype=torch.float)
+    model.set_integration_time_vector(t)
 
-    x = torch.tensor(ds.train.x, dtype=torch.float).to(device)
-    print(x.view(T,1,D).size())
-    shooting_block(x.view(T,1,D))
-
+    # setup optimizer/scheduler
     optimizer, scheduler = setup_optimizer_and_scheduler(
         args, 
-        shooting_block.parameters())
-    nr_of_pars = utils.compute_number_of_parameters(model=shooting_block)
+        model.parameters())
 
-    losses = defaultdict(list)
-
+    tracker = []
+    losses = defaultdict(list) 
     for it in range(args.niters):
-        optimizer.zero_grad()
-    
-        inp, t = ds.train.next_batch()
-        t = torch.tensor(t, dtype=torch.float).squeeze()
-        inp = torch.tensor(inp, dtype=torch.float).to(device)
-        shooting_block.set_integration_time_vector(t, suppress_warning=True)
-        out,_,_,_ = shooting_block(inp[0,0,:].view(1,1,D))
 
-        loss0 = torch.mean(torch.abs(out.squeeze() - inp.squeeze())) 
-        loss1 = shooting_block.get_norm_penalty()
-        loss =  loss0 + 1.0*loss1
-        loss.backward()
-        optimizer.step()
+        it_sim_loss = 0
+        it_npe_loss = 0 
+        it_loss = 0
 
-        # validation 
-        _,_,val_mse = evaluate(ds.val, shooting_block, D)
+        for inp in trainset:
+            optimizer.zero_grad()
+            
+            """
+            Input is a batch of images; we take the FIRST one and run it through the model. This generates, for each image, a trajectory for (T-n_skip-1) timepoints, where n_skip denotes the number of left-out timepoints and the -1 is the timepoint at which we want to evaluate later.
+            """
+            inp = inp.to(device)
+            _, idx, out = model(inp[:,0,:,:], use_mask=True)
+            
+            """
+            Next, we also need to make sure that the loss is only computed from the non-masked timepoints.
+            """
+            idx = idx[:,:,0].view(
+                inp.size(0),T-(args.n_skip+1),1).expand(-1,-1,28*28)            
+            inp = inp.view(inp.size(0),inp.size(1),28*28)
+            inp = inp.gather(1, idx)
+            
+            """
+            Loss computation: similarity loss + norm penalty for shooting
+            """
+            diff = inp - out.view(out.size(0),out.size(1),28*28)
+            sim_loss = args.sim_weight  * torch.sum(torch.pow(diff,2.0))/float(idx.numel())
+            npe_loss = args.norm_weight * model.blk.get_norm_penalty() 
+            loss = sim_loss + npe_loss
+            loss.backward()
+            optimizer.step()
+
+            it_sim_loss += sim_loss.item()
+            it_npe_loss += npe_loss.item()
+            it_loss += loss.item()
         
-        losses['sim_loss'].append(loss0.item())
-        losses['npe_loss'].append(loss1.item())
-        losses['val_mse'].append(val_mse.item())
+            losses['sim_loss'].append(sim_loss.item())
+            losses['npe_loss'].append(npe_loss.item())
+        
+        scheduler.step()
 
-        print('Iter={:04d} | Loss={:.4f} | Sim={:.4f} | Norm-Penalty={:.4f} | Val={:.4f} '.format(
+        eval_errors, eval_total = evaluate(args, model, testset, device)
+        
+        print('Epoch={:04d} | Loss={:.4f} | Sim={:.8f} | NPE={:.8f} | Test={:.4f}'.format(
             it, 
-            loss.item(),
-            loss0.item(),
-            loss1.item(),
-            val_mse.item()))
+            it_loss/len(trainset), 
+            it_sim_loss/len(trainset), 
+            it_npe_loss/len(trainset),
+            np.sum(eval_errors)/eval_total))
 
-    train_pred, train_true, train_mse = evaluate(ds.train, shooting_block, D)
-    test_pred, test_true, test_mse    = evaluate(ds.test,  shooting_block, D)
-    val_pred, val_true, val_mse       = evaluate(ds.val,   shooting_block, D)
+        tracker.append({
+          'it': it,
+          'it_loss': it_loss/len(trainset),
+          'it_sim_loss': it_sim_loss/len(trainset), 
+          'it_npe_loss': it_npe_loss/len(trainset),
+          'all_eval_error': np.sum(eval_errors)/eval_total,
+          'img_eval_errors': eval_errors
+        })
 
-    print('MSEs on subject {}: Train={:.4f} | Val={:.4f} | Test={:4f} '.format(
-        int(args.subject_id), train_mse, val_mse, test_mse))
+    model.eval()
+    Rs = []
+    Vs = []
+    for inp in testset:
+        inp = inp.to(device)    
+        _,_,out = model(inp[:,0,...], use_mask=False)
+        R = out.cpu().detach().squeeze().numpy()
+        V = inp.cpu().detach().squeeze().numpy()
+        Rs.append(R)
+        Vs.append(V)
+
+    #plot_reconstructions(R, list(range(inp.size(0))), png_dirname, 'pred_')
+    #plot_reconstructions(V, list(range(inp.size(0))), png_dirname, 'true_')
+
+    if args.save:
+        import uuid
+        save_dirname = os.path.join('runs',str(uuid.uuid4())) 
+        os.makedirs(save_dirname, exist_ok=False)   
+
+        torch.save(model, os.path.join(save_dirname, 'model.pt'))
+        with open(os.path.join(save_dirname, 'tracker.pkl'), 'wb') as fid:
+            pickle.dump(tracker, fid)
+        with open(os.path.join(save_dirname, 'args.pkl'), 'wb') as fid:
+            pickle.dump(args, fid)
+        with open(os.path.join(save_dirname, 'images.pkl'), 'wb') as fid:
+            pickle.dump({'Rs': Rs, 'Vs': Vs}, fid)
+            
+        # png_dirname = os.path.join(save_dirname, 'png')
+        # os.makedirs(png_dirname, exist_ok=True)
         
-    import pickle
-    res = {'subject_id': args.subject_id, 
-           'train'    :  (train_pred, train_true, train_mse),
-           'test'     :  (test_pred, test_true, test_mse),
-           'val'      :  (val_pred, val_true, val_mse),
-           'losses'   :  losses}
-
-    fname = '{}{}.pkl'.format(args.save_prefix, args.subject_id)
-    with open(fname, 'wb') as fid:
-        pickle.dump(res, fid)
+       
