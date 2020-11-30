@@ -24,6 +24,7 @@ The (PyTorch-based) code has, so far, been tested on a system running Ubuntu Lin
 We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). The following describes the full setup. We assume Anaconda Python will be installed in `/scratch/anaconda` and `neuro_shooting` will be reside in `/scratch/neuro_shooting`.
 
 ```
+cd /scratch/
 wget https://repo.anaconda.com/archive/Anaconda3-2020.11-Linux-x86_64.sh
 chmod +x Anaconda3-2020.11-Linux-x86_64.sh
 ./Anaconda3-2020.11-Linux-x86_64.sh
