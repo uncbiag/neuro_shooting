@@ -1,9 +1,19 @@
-The following sections describe how to run (and reproduce) the results from the paper.
+# NeurIPS 2020 Experiments
+
+The following sections describe how to run (and reproduce) the experimental results from 
+
+F.X. Vialard and R. Kwitt and S. Wei and M. Niethammer         
+**A Shooting Formulation of Deep Learning**    
+*NeurIPS 2020*    
+[Paper](https://proceedings.neurips.cc//paper/2020/file/89562dccfeb1d0394b9ae7e09544dc70-Paper.pdf)
+
+# Overview
 
 * [Cubic and quadratic like function fitting experiment](#cubic-and-quadratic-like-function-fitting-experiment)
 * [Spiral experiment](#spiral-experiment)
 * [Concentric circles experiment](#concentric-circles-experiment)
 * [Rotated MNIST experiment](#rotated-mnist-experiment)
+* [Bouncing balls experiment)(#bouncing-balls-experiment)
 
 # Cubic and quadratic like function fitting experiment
 
@@ -70,7 +80,7 @@ These two python scripts specify the entire experimental setting for the spiral 
 
 In the concenctric circles experiment, we use synthetic data (generated from two concentric circles; one circle = one class) to train a simple binary classifier that uses a  **dyn. w. particles UpDown** model and a simple affine layer.
 
-## Training
+### Training
 
 To run the concentric circles experiment, see `cc.py`. For example, to train a classifer base on the **dyn. w. particles UpDown** model of the paper using an inflation factor ($\alpha$) of 20, run:
 
@@ -93,7 +103,7 @@ python cc.py \
 
 For comparison, you can then, e.g., also experiment with an inflation factor of $\alpha=5$. The Juyter notebook `Analysis-ConcentricCircles.ipynb` contains the analyses performed in the paper.
 
-## Pre-trained models
+### Pre-trained models
 
 You can also download 10 pre-trained models (five models for $\alpha=5$ and five models for $\alpha=20$) using
 
@@ -107,7 +117,7 @@ This creates a subfolder `concentric_circles_runs` which contains the models. Th
 
 To experiment with the *Rotated MNIST* data, check out the `rot.py` file.
 
-## Data
+### Data
 
 To get the rotated MNIST data (and also used in [Yildiz et al., NeurIPS 19](https://papers.nips.cc/paper/2019/hash/99a401435dcb65c4008d3ad22c8cdad0-Abstract.html)), go to the `data` folder and, from there, execute 
 
@@ -122,7 +132,7 @@ pip install gdown
 pip install tarfile
 ```
 
-## Training
+### Training
 
 To run experiments with the particle shooting approach of the paper (using the *UpDown* model) you can use:
 
@@ -151,7 +161,7 @@ In case you want to experiment with the *static direct* version (i.e., not using
 
 *This will create a subfolder (within the current directory) called `runs`. Once model training has finished, you can then run the `RotatedMNIST_Analysis.ipynb` notebook that allows to load all tracked stats and plot some visualization.*
 
-## Pre-trained models
+### Pre-trained models
 
 You can also download some pre-trained models via 
 
@@ -160,3 +170,12 @@ python download_rotated_mnist_runs.py
 ```
 
 which will create a directory `rotated_mnist_runs`. Again, the `RotatedMNIST_Analysis.ipynb` can then be used. In particular, we include 5 trained models for the **dyn. w. particles UpDown model** and the **static direct UpDown model**. 
+
+# Bouncing balls experiment
+
+*We will release the code for the bouncing balls experiment shortly!*
+
+
+
+
+
