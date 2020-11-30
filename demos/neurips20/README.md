@@ -5,7 +5,7 @@ The following sections describe how to run (and reproduce) the results from the 
 * [Concentric circles experiment](#concentric-circles-experiment)
 * [Rotated MNIST experiment](#rotated-mnist-experiment)
 
-## Cubic and quadratic like function fitting experiment
+# Cubic and quadratic like function fitting experiment
 
 The main python script to run these two examples is `simple_functional_mapping_example.py`. It comes with various command-line 
 configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
@@ -33,7 +33,7 @@ at
 These two python scripts specify the entire experimental setting for the cubic and the quadratic-like functions for 
 all the four models in the paper.
 
-## Spiral experiment
+# Spiral experiment
 
 The main python script to run the spiral example is `sprial.p`. As for the cubic and the quadratic-like
 examples, the default parameters should already be pretty good. It can be run as follows:
@@ -64,36 +64,33 @@ at
 These two python scripts specify the entire experimental setting for the spiral for all the four models in the paper.
 
 
-## Concentric circles experiment
+# Concentric circles experiment
+
+To run the concentric circles experiment, see `cc.py`. E.g., to train a classification model with the **dyn. w. particles UpDown** model of the paper with an inflation factor ($\alpha$) of 20, run:
 
 ```bash
-for run in `seq 10`; do
-  for inf in ${INFLATION[*]}; do
-    CMD="$PYTHON cc.py \
-      --shooting_dim 2 \
-      --method rk4 \
-      --stepsize 0.1 \
-      --pw 1.5 \
-      --shooting_model updown_universal \
-      --nr_of_particles 20 \
-      --gpu 1 \
-      --batch_size 128 \
-      --inflation_factor ${inf}\
-      --sim_weight 1.0 \
-      --lr 5e-3 \
-      --niters 20 \
-      --save_model model_${inf}_run_${run}"
-    echo $CMD
-    $CMD
-  done
-done
+python cc.py \
+   --shooting_dim 2 \
+   --method rk4 \
+   --stepsize 0.1 \
+   --pw 1.5 \
+   --shooting_model updown_universal \
+   --nr_of_particles 20 \
+   --gpu 0 \
+   --batch_size 128 \
+   --inflation_factor 20 \
+   --sim_weight 1.0 \
+   --lr 5e-3 \
+   --niters 20 \
+   --save_model model_20
 ```
+For comparison, you can then, e.g., experiment with an inflation factor of 5. The Juyter notebook `Analysis-ConcentricCircles.ipynb` contains the analyses performed in the paper.
 
-## Rotated MNIST experiment
+# Rotated MNIST experiment
 
 To experiment with the *Rotated MNIST* data, check out the `rot.py` file.
 
-### Data
+## Data
 
 To get the rotated MNIST data (and also used in [Yildiz et al., NeurIPS 19](https://papers.nips.cc/paper/2019/hash/99a401435dcb65c4008d3ad22c8cdad0-Abstract.html)), go to the `data` folder and, from there, execute 
 
@@ -108,7 +105,7 @@ pip install gdown
 pip install tarfile
 ```
 
-### Running experiments
+## Training
 
 To run experiments with the particle shooting approach of the paper (using the *UpDown* model) you can use:
 
@@ -137,7 +134,7 @@ In case you want to experiment with the *static direct* version (i.e., not using
 
 *This will create a subfolder (within the current directory) called `runs`. Once model training has finished, you can then run the `RotatedMNIST_Analysis.ipynb` notebook that allows to load all tracked stats and plot some visualization.*
 
-### Experimenting with pre-trained models
+## Pre-trained models
 
 You can also download some pre-trained models via 
 
@@ -145,4 +142,4 @@ You can also download some pre-trained models via
 python download_rotated_mnist_runs.py
 ```
 
-which will create a directory `rotated_mnist_runs`. Again, the ``RotatedMNIST_Analysis.ipynb` can then be used. In particular, we include 5 trained models for the **dyn. w. particles UpDown model** and the **static direct UpDown model**. 
+which will create a directory `rotated_mnist_runs`. Again, the `RotatedMNIST_Analysis.ipynb` can then be used. In particular, we include 5 trained models for the **dyn. w. particles UpDown model** and the **static direct UpDown model**. 
