@@ -12,13 +12,15 @@ configuration options, but the base configuration should already be reasonable. 
 
 ```bash
 python simple_functional_mapping_example.py \
-   --fcn cubic --custom_parameter_freezing 
+   --fcn cubic \
+   --custom_parameter_freezing \
    --unfreeze_parameters_at_iter 50 \ 
    --optimize_over_data_initial_conditions \
    --niter 500
       
 python simple_functional_mapping_example.py \
-   --fcn quadratic --custom_parameter_freezing 
+   --fcn quadratic \
+   --custom_parameter_freezing 
    --unfreeze_parameters_at_iter 50 \
    --optimize_over_data_initial_conditions \
    --niter 500
@@ -35,7 +37,7 @@ all the four models in the paper.
 
 # Spiral experiment
 
-The main python script to run the spiral example is `sprial.p`. As for the cubic and the quadratic-like
+The main python script to run the spiral example is `sprial.py`. As for the cubic and the quadratic-like
 examples, the default parameters should already be pretty good. It can be run as follows:
 
 ```bash
@@ -66,7 +68,11 @@ These two python scripts specify the entire experimental setting for the spiral 
 
 # Concentric circles experiment
 
-To run the concentric circles experiment, see `cc.py`. E.g., to train a classification model with the **dyn. w. particles UpDown** model of the paper with an inflation factor ($\alpha$) of 20, run:
+In the concenctric circles experiment, we use synthetic data (generated from two concentric circles; one circle = one class) to train a simple binary classifier that uses a  **dyn. w. particles UpDown** model and a simple affine layer.
+
+## Training
+
+To run the concentric circles experiment, see `cc.py`. For example, to train a classifer base on the **dyn. w. particles UpDown** model of the paper using an inflation factor ($\alpha$) of 20, run:
 
 ```bash
 python cc.py \
@@ -84,7 +90,18 @@ python cc.py \
    --niters 20 \
    --save_model model_20
 ```
-For comparison, you can then, e.g., experiment with an inflation factor of 5. The Juyter notebook `Analysis-ConcentricCircles.ipynb` contains the analyses performed in the paper.
+
+For comparison, you can then, e.g., also experiment with an inflation factor of $\alpha=5$. The Juyter notebook `Analysis-ConcentricCircles.ipynb` contains the analyses performed in the paper.
+
+## Pre-trained models
+
+You can also download 10 pre-trained models (five models for $\alpha=5$ and five models for $\alpha=20$) using
+
+```bash
+python download_concentric_circles_runs.py
+```
+
+This creates a subfolder `concentric_circles_runs` which contains the models. The `Analysis-ConcentricCircles.ipynb` Jupyter notebook can then be directly executed. It contains an analysis of how often each model could perfectly fit the training data.
 
 # Rotated MNIST experiment
 
