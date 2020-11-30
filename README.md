@@ -19,37 +19,42 @@ In case you use the code for your research, please use the following BibTeX entr
 
 # Development installation
 
-The (PyTorch-based) code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.4 and CUDA 10.1. We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). 
-
-To install `neuro_shooting` for development purposes, first clone the git repository via
+The (PyTorch-based) code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.7.0 and CUDA 10.1. We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). The following describes the full setup. We assume Anaconda Python will be installed in `/scratch/anaconda` and `neuro_shooting` will be reside in `/scratch/neuro_shooting`.
 
 ```
+wget https://repo.anaconda.com/archive/Anaconda3-2020.11-Linux-x86_64.sh
+chmod +x Anaconda3-2020.11-Linux-x86_64.sh
+./Anaconda3-2020.11-Linux-x86_64.sh
+<FOLLOW INSTRUCTIONS TO INSTALL in /scratch/anaconda>
+source /scratch/anaconda/bin/activate
+```
+
+Next, clone the `neuro_shooting` git repository via
+
+```
+cd /scratch/
 git clone https://github.com/uncbiag/neuro_shooting.git
 ```
 
-The repository's main folder contains a `setup.py` file (see [python setup file](https://github.com/kennethreitz/setup.py "python setup file")). For development purposes then simply execute
+Install PyTorch (here 1.7.0 and CUDA 10.1) and the `torchdiffeq` package via:
 
-```bash
-cd neuro_shooting
-python setup.py develop
 ```
-
-This will install all library links and all missing packages and will allow `neuro_shooting` imports with the exception of the `torchdiffeq` package which can be installed via
-
-```bash
+conda install pytorch torchvision torchaudio cudatoolkit=10.1 -c pytorch
 pip install git+https://github.com/rtqichen/torchdiffeq
 ```
 
-Once done, you simply import the library as
+Install the remaining dependencies and install `neuro_shooting` in development mode via
+
+```bash
+cd /scratch/neuro_shooting
+pip install -r requirements.txt
+conda develop /scratch/neuro_shooting 
+```
+
+Test your installation via
 
 ```python
 import neuro_shooting
-```
-
-In case you use Anaconda Python you can also install all required packages (see `requirements.txt` and `torchdiffeq`) by hand, clone the repository and add the base folder via
-
-```bash
-conda develop neuro_shooting
 ```
 
 # Experiments/Demos
