@@ -54,4 +54,30 @@ You can also download some pre-trained models via
 python download_rotated_mnist_runs.py
 ```
 
-which will create a directory `rotated_mnist_runs`. Again, the ``RotatedMNIST_Analysis.ipynb` can then be used. In particular, we include 5 trained models for the **dyn. w. particles UpDown model** and the **static direct UpDown model**.  
+which will create a directory `rotated_mnist_runs`. Again, the ``RotatedMNIST_Analysis.ipynb` can then be used. In particular, we include 5 trained models for the **dyn. w. particles UpDown model** and the **static direct UpDown model**. 
+
+### Concentric circles
+
+```bash
+for run in `seq 10`; do
+  for inf in ${INFLATION[*]}; do
+    CMD="$PYTHON cc.py \
+      --shooting_dim 2 \
+      --method rk4 \
+      --stepsize 0.1 \
+      --pw 1.5 \
+      --shooting_model updown_universal \
+      --nr_of_particles 20 \
+      --gpu 1 \
+      --batch_size 128 \
+      --inflation_factor ${inf}\
+      --sim_weight 1.0 \
+      --lr 5e-3 \
+      --niters 20 \
+      --save_model model_${inf}_run_${run}"
+    echo $CMD
+    $CMD
+  done
+done
+```
+
