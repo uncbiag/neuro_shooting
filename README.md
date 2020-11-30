@@ -19,13 +19,15 @@ In case you use the code for your research, please use the following BibTeX entr
 
 # Development installation
 
-Sometimes it is desirable to install `neuro_shooting` for development purposes. To do this, first clone the git repository via
+The code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.4 and CUDA 10.1. We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). 
+
+To install `neuro_shooting` for development purposes, first clone the git repository via
 
 ```
 git clone https://github.com/uncbiag/neuro_shooting.git
 ```
 
-The repository's main folder contains a setup.py file (see [python setup file](https://github.com/kennethreitz/setup.py "python setup file")). For development purposes then simply execute
+The repository's main folder contains a `setup.py` file (see [python setup file](https://github.com/kennethreitz/setup.py "python setup file")). For development purposes then simply execute
 
 ```bash
 cd neuro_shooting
@@ -58,7 +60,7 @@ cd docs
 make html
 ```
 
-Then simply open index.html which will be in the build/html directory (of the docs subdirectory).
+Then simply open `index.html` which will be in the `build/html` directory (of the `docs` subdirectory).
 
 # Tensorboard support
 
