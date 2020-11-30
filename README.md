@@ -7,7 +7,7 @@ F.X. Vialard and R. Kwitt and S. Wei and M. Niethammer
 *NeurIPS 2020*    
 [Paper](https://proceedings.neurips.cc//paper/2020/file/89562dccfeb1d0394b9ae7e09544dc70-Paper.pdf)
 
-In case you use the code for your research, please use the following BibTeX entry.
+In case you use the code for your research, please use the following BibTeX entry:
 
 ```
 @inproceedings{Vialard20a,
@@ -19,7 +19,7 @@ In case you use the code for your research, please use the following BibTeX entr
 
 # Development installation
 
-The code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.4 and CUDA 10.1. We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). 
+The (PyTorch-based) code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.4 and CUDA 10.1. We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). 
 
 To install `neuro_shooting` for development purposes, first clone the git repository via
 
@@ -46,9 +46,15 @@ Once done, you simply import the library as
 import neuro_shooting
 ```
 
+As an *alternative* to `python setup.py develop` (see above), you can install all required packages (see `requirements.txt`) by hand, clone the repository and add the base folder via
+
+```bash
+conda develop neuro_shooting
+```
+
 # Experiments/Demos
 
-The experiments from the NeurIPS 2020 paper can be found in the `demos/neurips20` folder, [here](demos/neurips20).
+The experiments from the NeurIPS 2020 paper can be found in the `demos/neurips20` folder, see [here](demos/neurips20).
 
 # Documentation
 
