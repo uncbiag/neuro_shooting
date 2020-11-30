@@ -1,4 +1,11 @@
-# A Shooting Formulation of Deep Learning
+# neuro_shooting
+
+This is the official repository for   
+
+F.X. Vialard and R. Kwitt and S. Wei and M. Niethammer         
+**A Shooting Formulation of Deep Learning**    
+*NeurIPS 2020*    
+[Paper](https://proceedings.neurips.cc//paper/2020/file/89562dccfeb1d0394b9ae7e09544dc70-Paper.pdf)
 
 In case you use the code for your research, please use the following BibTeX entry.
 
