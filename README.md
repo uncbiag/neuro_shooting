@@ -46,7 +46,7 @@ Once done, you simply import the library as
 import neuro_shooting
 ```
 
-As an *alternative* to `python setup.py develop` (see above), you can install all required packages (see `requirements.txt`) by hand, clone the repository and add the base folder via
+In case you use Anaconda Python, an *alternative* to `python setup.py develop` (see above), you can also install all required packages (see `requirements.txt` and `torchdiffeq`) by hand, clone the repository and add the base folder via
 
 ```bash
 conda develop neuro_shooting
