@@ -44,71 +44,9 @@ Once done, you simply import the library as
 import neuro_shooting
 ```
 
-# Running demos and recreating some of the results in the paper
+# Experiments/Demos
 
-The examples can be run based on code in the `demos` directory.
-
-### Cubic and quadratic-like function fitting
-
-The main python script to run these two examples is `simple_functional_mapping_example.py`. It comes with various command-line 
-configuration options, but the base configuration should already be reasonable. Here are examples how to run the scripts:
-
-```bash
-python simple_functional_mapping_example.py \
-   --fcn cubic --custom_parameter_freezing 
-   --unfreeze_parameters_at_iter 50 \ 
-   --optimize_over_data_initial_conditions \
-   --niter 500
-      
-python simple_functional_mapping_example.py \
-   --fcn quadratic --custom_parameter_freezing 
-   --unfreeze_parameters_at_iter 50 \
-   --optimize_over_data_initial_conditions \
-   --niter 500
-``` 
-
-If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
-at
-
-- `run_long_iteration_experiments_simple_functional_mapping.py` and
-- `run_long_iteration_experiments_simple_functional_mapping_rnn.py`
-
-These two python scripts specify the entire experimental setting for the cubic and the quadratic-like functions for 
-all the four models in the paper.
-
-### Spiral example
-
-The main python script to run the spiral example is `sprial.p`. As for the cubic and the quadratic-like
-examples, the default parameters should already be pretty good. It can be run as follows:
-
-```bash
-python spiral.py \
-   --seed 0 \
-   --shooting_model updown_universal \
-   --niters 2000 \
-   --optional_weight 10 \
-   --save_figures \
-   --viz_freq 50 \
-   --validate_with_long_range \
-   --optimize_over_data_initial_conditions \
-   --inflation_factor 32 \
-   --viz \
-   --nr_of_particles 25 \
-   --custom_parameter_freezing \
-   --unfreeze_parameters_at_iter 50
-```
-
-If you are interested in how the results for the paper where obtained (i.e., the basis for the boxplots for example) have a look
-at
-
-- `run_experiments_spiral.py` and
-- `run_experiments_spiral_rnn.py`
- 
-These two python scripts specify the entire experimental setting for the spiral for all the four models in the paper.
-
-### Rotating MNIST and bouncing balls
-
-We are in the process of cleaning up our Jupyter notebooks for these examples and will make them available shortly.
+The experiments from the NeurIPS 2020 paper can be found in the `demos/neurips20` folder, [here](demos/neurips20).
 
 # Documentation
 
