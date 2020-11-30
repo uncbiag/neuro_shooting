@@ -4,8 +4,6 @@ jupyter
 ipykernel
 future
 termcolor
-torch
-torchvision
 tb-nightly
 matplotlib
 scipy
@@ -14,7 +12,6 @@ nbsphinx
 sphinx-gallery==0.3.1
 pandoc
 pypandoc
-numpy
 graphviz
 sortedcontainers
 docutils
