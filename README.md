@@ -19,9 +19,12 @@ In case you use the code for your research, please use the following BibTeX entr
 
 # Development installation
 
-The (PyTorch-based) code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.7.0 and CUDA 10.1. We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). The following describes the full setup. We assume Anaconda Python will be installed in `/scratch/anaconda` and `neuro_shooting` will be reside in `/scratch/neuro_shooting`.
+The (PyTorch-based) code has, so far, been tested on a system running Ubuntu Linux 18.04, with four NVIDIA GeForce RTX 2080 Ti cards using PyTorch 1.7.0 and CUDA 10.1.
+
+We do recommend a setup using [Anaconda Python](https://www.anaconda.com/products/individual). The following describes the full setup. We assume Anaconda Python will be installed in `/scratch/anaconda` and `neuro_shooting` will be reside in `/scratch/neuro_shooting`.
 
 ```
+cd /scratch/
 wget https://repo.anaconda.com/archive/Anaconda3-2020.11-Linux-x86_64.sh
 chmod +x Anaconda3-2020.11-Linux-x86_64.sh
 ./Anaconda3-2020.11-Linux-x86_64.sh

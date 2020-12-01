@@ -13,7 +13,7 @@ F.X. Vialard and R. Kwitt and S. Wei and M. Niethammer
 * [Spiral experiment](#spiral-experiment)
 * [Concentric circles experiment](#concentric-circles-experiment)
 * [Rotated MNIST experiment](#rotated-mnist-experiment)
-* [Bouncing balls experiment)(#bouncing-balls-experiment)
+* [Bouncing balls experiment](#bouncing-balls-experiment)
 
 # Cubic and quadratic like function fitting experiment
 
