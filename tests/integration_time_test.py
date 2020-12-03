@@ -123,6 +123,3 @@ for current_model in check_models:
     print('diff(pred) = {}\n'.format(pred[1:,0,0,:]-pred[:-1,0,0,:]))
 
     print('diff(pred_step_by_step) = {}\n'.format(pred_step_by_step[1:,0,0,:]-pred_step_by_step[:-1,0,0,:]))
-
-
-    print('Hello world')

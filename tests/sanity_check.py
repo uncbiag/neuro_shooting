@@ -61,7 +61,7 @@ def setup_problem(args):
 
     true_A = torch.tensor([
         [-0.1, -1.0],
-        [1.0, -0.1]])
+        [1.0, -0.1]]).to(device)
     true_b = torch.rand((1, args.in_features)).to(device)
 
     ## Generate (noiseless) trajectory from dy/dt = f(t,y(t))

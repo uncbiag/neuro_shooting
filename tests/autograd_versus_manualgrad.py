@@ -195,6 +195,3 @@ print('dot_qt/as_dot_qt = {}'.format(dot_qt/as_dot_qt))
 
 # check_dot_pt
 print('dot_pt/as_dot_pt = {}'.format(dot_pt/as_dot_pt))
-
-print('Hello world')
-
